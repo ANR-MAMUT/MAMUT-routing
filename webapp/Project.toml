@@ -1,0 +1,10 @@
+[deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+OSMToolset = "a1c25ae6-0f93-4b3a-bddf-c248cb99b9fa"
+OpenStreetMapX = "86cd37e6-c0ff-550b-95fe-21d72c8d4fc9"
+
+[compat]
+HTTP = "1"
+JSON3 = "1"
+julia = "1.12"
