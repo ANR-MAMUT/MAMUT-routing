@@ -141,7 +141,8 @@ end
 
 struct ObjectiveAvailability
     objective_function::String
-    count::Int
+    cost::Union{Nothing,Int,Float64}
+    num_routes::Union{Nothing,Int}
 end
 
 
@@ -227,6 +228,8 @@ end
 struct InstanceListItem
     locator::BenchmarkLocator
     display_name::String
+    instance_id::String
+    num_customers::Int
     route_path::String
     artifact_vrp_json_path::String
     place_slug::Union{Nothing,String}
@@ -911,10 +914,13 @@ function SiteCounts(; problem_count, family_count, variant_count, place_count, s
 end
 
 
-function ObjectiveAvailability(; objective_function, count)
+function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=nothing)
+    num_routes_int = coerce_optional_int(num_routes, "num_routes")
+    num_routes_int === nothing || require_nonnegative(num_routes_int, "num_routes")
     return ObjectiveAvailability(
         require_choice(coerce_string(objective_function, "objective_function"), OBJECTIVE_FUNCTIONS, "objective_function"),
-        require_nonnegative(coerce_int(count, "count"), "count"),
+        coerce_cost(cost, "cost"),
+        num_routes_int,
     )
 end
 
@@ -1018,10 +1024,12 @@ function CatalogSummary(; instance_count, bks_count, place_count, size_bucket_co
 end
 
 
-function InstanceListItem(; locator, display_name, route_path, artifact_vrp_json_path, place_slug=nothing, historical_topology_type=nothing, historical_tw_type=nothing, bks_count, viewer_render_mode="straight_line", road_cache_status="not_applicable", objective_availability)
+function InstanceListItem(; locator, display_name, instance_id, num_customers, route_path, artifact_vrp_json_path, place_slug=nothing, historical_topology_type=nothing, historical_tw_type=nothing, bks_count, viewer_render_mode="straight_line", road_cache_status="not_applicable", objective_availability)
     return InstanceListItem(
         locator isa BenchmarkLocator ? locator : benchmark_locator_from_dict(locator),
         coerce_string(display_name, "display_name"),
+        coerce_string(instance_id, "instance_id"),
+        require_nonnegative(coerce_int(num_customers, "num_customers"), "num_customers"),
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
         validate_relative_path(coerce_string(artifact_vrp_json_path, "artifact_vrp_json_path")),
         coerce_optional_string(place_slug, "place_slug"),
@@ -2264,11 +2272,12 @@ end
 
 
 function objective_availability_from_dict(payload::AbstractDict)
-    allowed = Set(["objective_function", "count"])
+    allowed = Set(["objective_function", "cost", "num_routes"])
     ensure_allowed_keys(payload, allowed, "ObjectiveAvailability")
     return ObjectiveAvailability(
         objective_function=require_field(payload, "objective_function"),
-        count=require_field(payload, "count"),
+        cost=get(payload, "cost", nothing),
+        num_routes=get(payload, "num_routes", nothing),
     )
 end
 
@@ -2389,11 +2398,13 @@ end
 
 
 function instance_list_item_from_dict(payload::AbstractDict)
-    allowed = Set(["locator", "display_name", "route_path", "artifact_vrp_json_path", "place_slug", "historical_topology_type", "historical_tw_type", "bks_count", "viewer_render_mode", "road_cache_status", "objective_availability"])
+    allowed = Set(["locator", "display_name", "instance_id", "num_customers", "route_path", "artifact_vrp_json_path", "place_slug", "historical_topology_type", "historical_tw_type", "bks_count", "viewer_render_mode", "road_cache_status", "objective_availability"])
     ensure_allowed_keys(payload, allowed, "InstanceListItem")
     return InstanceListItem(
         locator=require_field(payload, "locator"),
         display_name=require_field(payload, "display_name"),
+        instance_id=require_field(payload, "instance_id"),
+        num_customers=require_field(payload, "num_customers"),
         route_path=require_field(payload, "route_path"),
         artifact_vrp_json_path=require_field(payload, "artifact_vrp_json_path"),
         place_slug=get(payload, "place_slug", nothing),
