@@ -15,10 +15,11 @@ julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 From `papers/paper7/MAMUT-routing`:
 
 ```bash
-julia --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
 ```
 
 The default API prefix is `/api/site-payload` and the default bind address is `127.0.0.1:8081`.
+Use `-t auto` (or set `JULIA_NUM_THREADS`) so missing road geometry segments can be rendered in parallel.
 
 The same server now serves:
 

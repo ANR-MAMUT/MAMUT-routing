@@ -2,6 +2,7 @@
 
 using OpenStreetMapX
 using OSMToolset
+using Hygese
 
 
 const DEFAULT_SITE_API_PREFIX = "/api/site-payload"
@@ -9,6 +10,7 @@ const DEFAULT_SITE_OUTPUT_ROOT = "dist"
 const DEFAULT_SITE_PAYLOAD_ROOT = "site-payloads"
 const DEFAULT_SITE_API_HOST = "127.0.0.1"
 const DEFAULT_SITE_API_PORT = 8081
+const WORKBENCH_CACHE_ENDPOINT_TOLERANCE_METERS = 250.0
 const WORKBENCH_MAP_CACHE = Dict{String,Any}()
 const REPO_ARTIFACT_ROOT_ENTRIES = Set([
     "LICENSE",
@@ -357,6 +359,86 @@ function workbench_graph_vertex_id_map(meta)
 end
 
 
+function workbench_node_lonlat(node)
+    poi_lon = site_api_payload_get(node, "poi_lon", nothing)
+    poi_lat = site_api_payload_get(node, "poi_lat", nothing)
+    (poi_lon === nothing || poi_lat === nothing) && return nothing
+    return (lon=Float64(poi_lon), lat=Float64(poi_lat))
+end
+
+
+function workbench_current_graph_vertex_id_map(meta, map_data)
+    nodes = site_api_payload_get(meta, "nodes", nothing)
+    nodes isa AbstractVector || return Dict{Int,Int}()
+
+    ref_lla = OpenStreetMapX.center(map_data.bounds)
+    node_index = NodeSpatIndex(map_data, ref_lla)
+    mapping = Dict{Int,Int}()
+    for node in nodes
+        node_id = workbench_node_id(node)
+        lonlat = workbench_node_lonlat(node)
+        (node_id === nothing || lonlat === nothing) && continue
+        _, osm_id = findnode(node_index, LLA(lonlat.lat, lonlat.lon))
+        if osm_id != 0 && haskey(map_data.v, osm_id)
+            mapping[node_id] = map_data.v[osm_id]
+        end
+    end
+    return mapping
+end
+
+
+function workbench_node_edge_cache_key(from_node::Int, to_node::Int)
+    return "node:$(from_node)_$(to_node)"
+end
+
+
+function workbench_map_option_candidates(only_intersections::Bool, trim_to_connected_graph::Bool)
+    options = Tuple{Bool,Bool}[
+        (only_intersections, trim_to_connected_graph),
+        (false, trim_to_connected_graph),
+        (only_intersections, false),
+        (false, false),
+    ]
+    seen = Set{Tuple{Bool,Bool}}()
+    unique_options = Tuple{Bool,Bool}[]
+    for option in options
+        option in seen && continue
+        push!(seen, option)
+        push!(unique_options, option)
+    end
+    return unique_options
+end
+
+
+function workbench_route_map_candidates(
+    repo_root::AbstractString,
+    meta,
+    meta_file_path::AbstractString,
+    only_intersections::Bool,
+    trim_to_connected_graph::Bool,
+)
+    osm_path = workbench_resolve_source_osm_path(repo_root, meta, meta_file_path)
+    candidates = Any[]
+    for (oi, ttcg) in workbench_map_option_candidates(only_intersections, trim_to_connected_graph)
+        map_data = try
+            workbench_get_map_data_cached(osm_path; only_intersections=oi, trim_to_connected_graph=ttcg)
+        catch error
+            if error isa ArgumentError || error isa SystemError
+                continue
+            end
+            rethrow(error)
+        end
+        push!(candidates, (
+            only_intersections=oi,
+            trim_to_connected_graph=ttcg,
+            map_data=map_data,
+            graph_vertex_ids=workbench_current_graph_vertex_id_map(meta, map_data),
+        ))
+    end
+    return candidates
+end
+
+
 function workbench_route_demand(route::AbstractVector, meta)
     nodes = site_api_payload_get(meta, "nodes", nothing)
     nodes isa AbstractVector || return 0
@@ -522,36 +604,137 @@ function workbench_resolve_source_osm_path(repo_root::AbstractString, meta, meta
 end
 
 
-function workbench_live_route_coordinates(repo_root::AbstractString, meta_file_path::AbstractString, route::AbstractVector, metric::AbstractString, edge_cache::Dict{String,Vector{Vector{Float64}}})
+function workbench_cached_route_segment(
+    edge_cache::Dict{String,Vector{Vector{Float64}}},
+    graph_vertex_maps::AbstractVector,
+    from_node::Int,
+    to_node::Int,
+    from_coordinates,
+    to_coordinates,
+)
+    segment = workbench_cached_node_segment(edge_cache, from_node, to_node, from_coordinates, to_coordinates)
+    segment !== nothing && return segment
+
+    for graph_vertex_ids in graph_vertex_maps
+        graph_vertex_ids isa AbstractDict || continue
+        (haskey(graph_vertex_ids, from_node) && haskey(graph_vertex_ids, to_node)) || continue
+        segment = workbench_cached_segment(edge_cache, graph_vertex_ids[from_node], graph_vertex_ids[to_node], from_coordinates, to_coordinates)
+        segment !== nothing && return segment
+    end
+    return nothing
+end
+
+
+function workbench_candidate_route_segment(
+    map_candidates::AbstractVector,
+    from_node::Int,
+    to_node::Int,
+    from_coordinates,
+    to_coordinates,
+    metric::AbstractString,
+)
+    for candidate in map_candidates
+        graph_vertex_ids = candidate.graph_vertex_ids
+        graph_vertex_ids isa AbstractDict || continue
+        (haskey(graph_vertex_ids, from_node) && haskey(graph_vertex_ids, to_node)) || continue
+        candidate_segment = try
+            workbench_segment_coords(candidate.map_data, graph_vertex_ids[from_node], graph_vertex_ids[to_node], metric)
+        catch error
+            if error isa ArgumentError || error isa KeyError
+                nothing
+            else
+                rethrow(error)
+            end
+        end
+        candidate_segment === nothing && continue
+        workbench_cached_segment_matches_endpoints(candidate_segment, from_coordinates, to_coordinates) || continue
+        return candidate_segment
+    end
+    return nothing
+end
+
+
+function workbench_fill_missing_route_segments!(
+    segments::Vector{Any},
+    full_route::Vector{Int},
+    node_coordinates::Dict{Int,Vector{Float64}},
+    edge_cache::Dict{String,Vector{Vector{Float64}}},
+    map_candidates::AbstractVector,
+    metric::AbstractString,
+)
+    missing_edges = Tuple{Int,Int}[]
+    seen_edges = Set{Tuple{Int,Int}}()
+    for index in eachindex(segments)
+        segments[index] !== nothing && continue
+        edge = (full_route[index], full_route[index + 1])
+        edge in seen_edges && continue
+        push!(seen_edges, edge)
+        push!(missing_edges, edge)
+    end
+    isempty(missing_edges) && return false
+
+    resolved_segments = Vector{Any}(undef, length(missing_edges))
+    Threads.@threads for index in eachindex(missing_edges)
+        from_node, to_node = missing_edges[index]
+        resolved_segments[index] = workbench_candidate_route_segment(
+            map_candidates,
+            from_node,
+            to_node,
+            node_coordinates[from_node],
+            node_coordinates[to_node],
+            metric,
+        )
+    end
+
+    used_live_routing = false
+    for (index, edge) in enumerate(missing_edges)
+        segment = resolved_segments[index]
+        segment === nothing && continue
+        from_node, to_node = edge
+        edge_cache[workbench_node_edge_cache_key(from_node, to_node)] = segment
+        used_live_routing = true
+    end
+
+    for index in eachindex(segments)
+        segments[index] !== nothing && continue
+        from_node = full_route[index]
+        to_node = full_route[index + 1]
+        segments[index] = workbench_cached_node_segment(edge_cache, from_node, to_node, node_coordinates[from_node], node_coordinates[to_node])
+    end
+
+    return used_live_routing
+end
+
+
+function workbench_live_route_coordinates(repo_root::AbstractString, meta, meta_file_path::AbstractString, route::AbstractVector, metric::AbstractString, edge_cache::Dict{String,Vector{Vector{Float64}}})
     metric in ("shortest", "fastest") || throw(ArgumentError("Live road rendering only supports 'shortest' and 'fastest' metrics"))
 
-    meta = load_json_from_file(meta_file_path)
     node_coordinates = workbench_node_coordinates_map(meta)
-    graph_vertex_ids = workbench_graph_vertex_id_map(meta)
+    saved_graph_vertex_ids = workbench_graph_vertex_id_map(meta)
     depot_node_id = Int(site_api_payload_get(meta, "depot_instance_node_id", 1))
     full_route = [depot_node_id; Int.(collect(route)); depot_node_id]
     length(full_route) >= 2 || throw(ArgumentError("Routes must include at least one customer stop"))
     all(haskey(node_coordinates, node_id) for node_id in full_route) || throw(ArgumentError("Route references unknown instance node ids"))
-    all(haskey(graph_vertex_ids, node_id) for node_id in full_route) || throw(ArgumentError("Route references nodes without graph vertex ids in '$(meta_file_path)'"))
 
     map_options = site_api_payload_get(meta, "map_options", Dict{String,Any}())
     only_intersections = Bool(site_api_payload_get(map_options, "only_intersections", true))
     trim_to_connected_graph = Bool(site_api_payload_get(map_options, "trim_to_connected_graph", true))
 
-    osm_path_ref = Ref{Union{Nothing,String}}(nothing)
-    map_data_ref = Ref{Any}(nothing)
-    fallback_map_data_ref = Ref{Any}(nothing)
+    map_candidates_ref = Ref{Any}(nothing)
     map_loaded = Ref(false)
     map_unavailable = Ref(false)
 
     function ensure_map_loaded!()
         (map_loaded[] || map_unavailable[]) && return
         try
-            osm_path_ref[] = workbench_resolve_source_osm_path(repo_root, meta, meta_file_path)
-            map_data_ref[] = workbench_get_map_data_cached(osm_path_ref[]; only_intersections=only_intersections, trim_to_connected_graph=trim_to_connected_graph)
-            if only_intersections
-                fallback_map_data_ref[] = workbench_get_map_data_cached(osm_path_ref[]; only_intersections=false, trim_to_connected_graph=trim_to_connected_graph)
-            end
+            map_candidates_ref[] = workbench_route_map_candidates(
+                repo_root,
+                meta,
+                meta_file_path,
+                only_intersections,
+                trim_to_connected_graph,
+            )
+            isempty(map_candidates_ref[]) && throw(ArgumentError("No usable OSM road graph was available"))
             map_loaded[] = true
         catch error
             if error isa ArgumentError || error isa SystemError
@@ -568,46 +751,74 @@ function workbench_live_route_coordinates(repo_root::AbstractString, meta_file_p
     used_straight_fallback = false
     cache_miss_count = 0
     straight_fallback_count = 0
-    vertices = [graph_vertex_ids[node_id] for node_id in full_route]
 
-    for index in 1:(length(vertices) - 1)
-        from_vertex = vertices[index]
-        to_vertex = vertices[index + 1]
-        segment = workbench_cached_segment(edge_cache, from_vertex, to_vertex)
-        if segment === nothing
-            ensure_map_loaded!()
-            if map_loaded[]
-                segment = try
-                    workbench_segment_coords(map_data_ref[], from_vertex, to_vertex, metric)
-                catch error
-                    if fallback_map_data_ref[] !== nothing
-                        workbench_segment_coords(fallback_map_data_ref[], from_vertex, to_vertex, metric)
-                    elseif error isa ArgumentError || error isa KeyError
-                        nothing
-                    else
-                        rethrow(error)
-                    end
+    edge_count = length(full_route) - 1
+    segments = Vector{Any}(undef, edge_count)
+    fill!(segments, nothing)
+    saved_graph_vertex_maps = Any[saved_graph_vertex_ids]
+    for index in 1:edge_count
+        from_node = full_route[index]
+        to_node = full_route[index + 1]
+        from_coordinates = node_coordinates[from_node]
+        to_coordinates = node_coordinates[to_node]
+        segment = workbench_cached_route_segment(edge_cache, saved_graph_vertex_maps, from_node, to_node, from_coordinates, to_coordinates)
+        if segment !== nothing
+            segments[index] = segment
+            used_cache = true
+        end
+    end
+
+    if any(segment -> segment === nothing, segments)
+        ensure_map_loaded!()
+        map_candidates = map_loaded[] ? map_candidates_ref[] : Any[]
+
+        if map_loaded[]
+            current_graph_vertex_maps = [candidate.graph_vertex_ids for candidate in map_candidates]
+            for index in 1:edge_count
+                segments[index] !== nothing && continue
+                from_node = full_route[index]
+                to_node = full_route[index + 1]
+                from_coordinates = node_coordinates[from_node]
+                to_coordinates = node_coordinates[to_node]
+                segment = workbench_cached_route_segment(edge_cache, current_graph_vertex_maps, from_node, to_node, from_coordinates, to_coordinates)
+                if segment !== nothing
+                    segments[index] = segment
+                    used_cache = true
                 end
             end
 
-            if segment === nothing
-                segment = workbench_straight_segment(node_coordinates, full_route[index], full_route[index + 1])
-                used_straight_fallback = true
-                straight_fallback_count += 1
-            else
-                edge_cache["$(from_vertex)_$(to_vertex)"] = segment
-                used_live_routing = true
+            missing_before_live = count(segment -> segment === nothing, segments)
+            if missing_before_live > 0
+                cache_miss_count += missing_before_live
+                used_live_routing |= workbench_fill_missing_route_segments!(
+                    segments,
+                    full_route,
+                    node_coordinates,
+                    edge_cache,
+                    map_candidates,
+                    metric,
+                )
             end
-            cache_miss_count += 1
         else
-            used_cache = true
+            cache_miss_count += count(segment -> segment === nothing, segments)
+        end
+    end
+
+    for index in 1:edge_count
+        segment = segments[index]
+        if segment === nothing
+            segment = workbench_straight_segment(node_coordinates, full_route[index], full_route[index + 1])
+            used_straight_fallback = true
+            straight_fallback_count += 1
         end
 
         start_index = index == 1 ? 1 : 2
         append!(route_coordinates, segment[start_index:end])
     end
 
-    render_mode = if used_straight_fallback || (used_live_routing && used_cache)
+    render_mode = if used_straight_fallback && (used_cache || used_live_routing)
+        "mixed"
+    elseif used_live_routing && used_cache
         "mixed"
     elseif used_live_routing
         "road"
@@ -617,25 +828,51 @@ function workbench_live_route_coordinates(repo_root::AbstractString, meta_file_p
         "straight_line"
     end
 
-    return meta, route_coordinates, render_mode, cache_miss_count, used_live_routing, used_straight_fallback, straight_fallback_count
+    return route_coordinates, render_mode, cache_miss_count, used_live_routing, used_straight_fallback, straight_fallback_count
 end
 
 
-function workbench_render_routes_from_meta_path(repo_root::AbstractString, meta_path::AbstractString, routes::AbstractVector, metric::AbstractString)
-    metric in ("shortest", "fastest") || throw(ArgumentError("Persistent benchmark rendering only supports 'shortest' and 'fastest' metrics"))
+function workbench_bootstrap_edge_cache_from_meta(meta, metric::AbstractString)
+    cache = Dict{String,Vector{Vector{Float64}}}()
+    road_cache = site_api_payload_get(meta, "road_cache", nothing)
+    road_cache isa AbstractDict || return cache
+    metric_cache = site_api_payload_get(road_cache, String(metric), nothing)
+    metric_cache isa AbstractDict || return cache
+    for (key, value) in pairs(metric_cache)
+        cache[String(key)] = [Float64.(collect(point)) for point in value]
+    end
+    return cache
+end
 
-    meta_file_path = workbench_resolve_repo_relative_path(repo_root, meta_path)
-    edge_cache = workbench_load_road_cache(meta_file_path, metric)
+
+function workbench_render_routes_with_live_routing(
+    repo_root::AbstractString,
+    meta,
+    routes::AbstractVector,
+    metric::AbstractString;
+    meta_file_path::AbstractString="",
+    persist_cache::Bool=false,
+    meta_path_label::AbstractString="",
+)
+    metric in ("shortest", "fastest") || throw(ArgumentError("Live road rendering only supports 'shortest' and 'fastest' metrics"))
+
+    edge_cache = if persist_cache && !isempty(meta_file_path) && isfile(meta_file_path)
+        workbench_load_road_cache(meta_file_path, metric)
+    else
+        workbench_bootstrap_edge_cache_from_meta(meta, metric)
+    end
+    initial_cache_size = length(edge_cache)
+
     features = Any[]
     used_cache = false
     used_live_routing = false
     straight_fallback_count = 0
     cache_miss_count = 0
-    meta = nothing
 
     for (route_index, route) in enumerate(routes)
-        meta, coordinates, render_mode, route_cache_misses, route_used_live_routing, route_used_straight_fallback, route_straight_fallback_count = workbench_live_route_coordinates(
+        coordinates, render_mode, route_cache_misses, route_used_live_routing, route_used_straight_fallback, route_straight_fallback_count = workbench_live_route_coordinates(
             repo_root,
+            meta,
             meta_file_path,
             route,
             metric,
@@ -661,10 +898,15 @@ function workbench_render_routes_from_meta_path(repo_root::AbstractString, meta_
         ))
     end
 
-    cache_persisted = used_live_routing && cache_miss_count > 0
-    cache_persisted && workbench_save_road_cache(meta_file_path, metric, edge_cache)
+    cache_persisted = false
+    if persist_cache && used_live_routing && cache_miss_count > 0 && !isempty(meta_file_path) && isfile(meta_file_path)
+        workbench_save_road_cache(meta_file_path, metric, edge_cache)
+        cache_persisted = true
+    end
 
-    render_mode = if straight_fallback_count > 0 || (used_live_routing && used_cache)
+    render_mode = if straight_fallback_count > 0 && (used_cache || used_live_routing)
+        "mixed"
+    elseif used_live_routing && used_cache
         "mixed"
     elseif used_live_routing
         "road"
@@ -674,40 +916,118 @@ function workbench_render_routes_from_meta_path(repo_root::AbstractString, meta_
         "straight_line"
     end
 
+    new_cache_entry_count = length(edge_cache) - initial_cache_size
+
+    summary = Dict{String,Any}(
+        "metric" => metric,
+        "route_count" => length(routes),
+        "render_mode" => render_mode,
+        "used_cache" => used_cache,
+        "cache_miss_count" => cache_miss_count,
+        "straight_fallback_count" => straight_fallback_count,
+        "cache_persisted" => cache_persisted,
+        "new_cache_entry_count" => new_cache_entry_count,
+        "meta_path" => String(meta_path_label),
+    )
+
     return Dict(
         "ok" => true,
         "geojson" => Dict(
             "type" => "FeatureCollection",
             "features" => features,
         ),
-        "summary" => Dict(
-            "metric" => metric,
-            "route_count" => length(routes),
-            "render_mode" => render_mode,
-            "used_cache" => used_cache,
-            "cache_miss_count" => cache_miss_count,
-            "straight_fallback_count" => straight_fallback_count,
-            "cache_persisted" => cache_persisted,
-            "meta_path" => String(meta_path),
-        ),
+        "summary" => summary,
     )
 end
 
 
-function workbench_cached_segment(metric_cache, from_vertex::Int, to_vertex::Int)
+function workbench_render_routes_from_meta_path(repo_root::AbstractString, meta_path::AbstractString, routes::AbstractVector, metric::AbstractString)
+    metric in ("shortest", "fastest") || throw(ArgumentError("Persistent benchmark rendering only supports 'shortest' and 'fastest' metrics"))
+
+    meta_file_path = workbench_resolve_repo_relative_path(repo_root, meta_path)
+    meta = load_json_from_file(meta_file_path)
+    return workbench_render_routes_with_live_routing(
+        repo_root,
+        meta,
+        routes,
+        metric;
+        meta_file_path=meta_file_path,
+        persist_cache=true,
+        meta_path_label=meta_path,
+    )
+end
+
+
+function workbench_is_lonlat_point(point::AbstractVector)
+    length(point) >= 2 || return false
+    return abs(Float64(point[1])) <= 180.0 && abs(Float64(point[2])) <= 90.0
+end
+
+
+function workbench_point_distance_meters(first_point::AbstractVector, second_point::AbstractVector)
+    if workbench_is_lonlat_point(first_point) && workbench_is_lonlat_point(second_point)
+        mean_lat = (Float64(first_point[2]) + Float64(second_point[2])) / 2
+        lon_scale = 111_320.0 * cosd(mean_lat)
+        lat_scale = 111_320.0
+        return hypot((Float64(first_point[1]) - Float64(second_point[1])) * lon_scale, (Float64(first_point[2]) - Float64(second_point[2])) * lat_scale)
+    end
+    return hypot(Float64(first_point[1]) - Float64(second_point[1]), Float64(first_point[2]) - Float64(second_point[2]))
+end
+
+
+function workbench_cached_segment_matches_endpoints(segment::Vector{Vector{Float64}}, from_coordinates, to_coordinates)
+    (from_coordinates === nothing || to_coordinates === nothing) && return true
+    length(segment) >= 2 || return false
+
+    from_distance = workbench_point_distance_meters(segment[1], from_coordinates)
+    to_distance = workbench_point_distance_meters(segment[end], to_coordinates)
+    return from_distance <= WORKBENCH_CACHE_ENDPOINT_TOLERANCE_METERS && to_distance <= WORKBENCH_CACHE_ENDPOINT_TOLERANCE_METERS
+end
+
+
+function workbench_cached_segment_by_keys(
+    metric_cache,
+    forward_key::AbstractString,
+    reverse_key::AbstractString,
+    from_coordinates=nothing,
+    to_coordinates=nothing,
+)
     metric_cache isa AbstractDict || return nothing
 
-    forward_key = "$(from_vertex)_$(to_vertex)"
     if haskey(metric_cache, forward_key)
-        return [Float64.(collect(point)) for point in metric_cache[forward_key]]
+        segment = [Float64.(collect(point)) for point in metric_cache[forward_key]]
+        workbench_cached_segment_matches_endpoints(segment, from_coordinates, to_coordinates) && return segment
+        return nothing
     end
 
-    reverse_key = "$(to_vertex)_$(from_vertex)"
     if haskey(metric_cache, reverse_key)
         reverse_segment = [Float64.(collect(point)) for point in metric_cache[reverse_key]]
-        return reverse(reverse_segment)
+        segment = reverse(reverse_segment)
+        workbench_cached_segment_matches_endpoints(segment, from_coordinates, to_coordinates) && return segment
     end
     return nothing
+end
+
+
+function workbench_cached_node_segment(metric_cache, from_node::Int, to_node::Int, from_coordinates=nothing, to_coordinates=nothing)
+    return workbench_cached_segment_by_keys(
+        metric_cache,
+        workbench_node_edge_cache_key(from_node, to_node),
+        workbench_node_edge_cache_key(to_node, from_node),
+        from_coordinates,
+        to_coordinates,
+    )
+end
+
+
+function workbench_cached_segment(metric_cache, from_vertex::Int, to_vertex::Int, from_coordinates=nothing, to_coordinates=nothing)
+    return workbench_cached_segment_by_keys(
+        metric_cache,
+        "$(from_vertex)_$(to_vertex)",
+        "$(to_vertex)_$(from_vertex)",
+        from_coordinates,
+        to_coordinates,
+    )
 end
 
 
@@ -749,8 +1069,11 @@ function workbench_route_coordinates(route::AbstractVector, meta, metric::Abstra
         from_node = full_route[index]
         to_node = full_route[index + 1]
         segment = nothing
-        if metric_cache isa AbstractDict && haskey(graph_vertex_ids, from_node) && haskey(graph_vertex_ids, to_node)
-            segment = workbench_cached_segment(metric_cache, graph_vertex_ids[from_node], graph_vertex_ids[to_node])
+        if metric_cache isa AbstractDict
+            segment = workbench_cached_node_segment(metric_cache, from_node, to_node, node_coordinates[from_node], node_coordinates[to_node])
+            if segment === nothing && haskey(graph_vertex_ids, from_node) && haskey(graph_vertex_ids, to_node)
+                segment = workbench_cached_segment(metric_cache, graph_vertex_ids[from_node], graph_vertex_ids[to_node], node_coordinates[from_node], node_coordinates[to_node])
+            end
         end
 
         if segment === nothing
@@ -782,6 +1105,18 @@ function workbench_render_routes_payload(payload; repo_root::AbstractString=defa
 
     meta = site_api_payload_get(payload, "meta", nothing)
     meta === nothing && throw(ArgumentError("Missing required 'meta' object"))
+
+    if metric in ("shortest", "fastest")
+        return workbench_render_routes_with_live_routing(
+            repo_root,
+            meta,
+            routes,
+            metric;
+            meta_file_path="",
+            persist_cache=false,
+        )
+    end
+
     features = Any[]
     used_cache = false
     cache_miss_count = 0
@@ -1027,6 +1362,127 @@ function workbench_generation_preview_payload(repo_root::AbstractString, payload
 end
 
 
+function workbench_parse_vrp_for_hgs(vrp_text::AbstractString)
+    text = String(vrp_text)
+    dim_match = match(r"DIMENSION\s*:\s*(\d+)"i, text)
+    dim_match === nothing && throw(ArgumentError("Missing DIMENSION header in VRP text"))
+    dimension = parse(Int, dim_match[1])
+
+    cap_match = match(r"CAPACITY\s*:\s*(\d+)"i, text)
+    cap_match === nothing && throw(ArgumentError("Missing CAPACITY header in VRP text"))
+    capacity = parse(Int, cap_match[1])
+
+    weight_match = match(r"EDGE_WEIGHT_SECTION\s*\n([\s\S]*?)\nNODE_COORD_SECTION"i, text)
+    weight_match === nothing && throw(ArgumentError("Missing EDGE_WEIGHT_SECTION (HGS requires EXPLICIT FULL_MATRIX edge weights)"))
+    weight_values = parse.(Float64, split(strip(weight_match[1])))
+    expected_count = dimension * dimension
+    length(weight_values) == expected_count || throw(ArgumentError(
+        "EDGE_WEIGHT_SECTION has $(length(weight_values)) values, expected $(expected_count) for DIMENSION=$(dimension)"
+    ))
+    weights = Matrix(reshape(weight_values, (dimension, dimension))')
+
+    demand_match = match(r"DEMAND_SECTION\s*\n([\s\S]*?)\nDEPOT_SECTION"i, text)
+    demand_match === nothing && throw(ArgumentError("Missing DEMAND_SECTION in VRP text"))
+    demands = zeros(Int, dimension)
+    for line in split(strip(demand_match[1]), '\n')
+        parts = split(strip(line))
+        length(parts) >= 2 || continue
+        index = parse(Int, parts[1])
+        (1 <= index <= dimension) || throw(ArgumentError("DEMAND_SECTION references node $(index) outside [1, $(dimension)]"))
+        demands[index] = parse(Int, parts[2])
+    end
+
+    return dimension, capacity, weights, demands
+end
+
+
+function workbench_extract_hgs_inputs_from_vrp_json(payload)
+    payload isa AbstractDict || throw(ArgumentError("'vrp_json' must be an object"))
+
+    capacity_raw = site_api_payload_get(payload, "vehicle_capacity", site_api_payload_get(payload, "capacity", nothing))
+    capacity_raw === nothing && throw(ArgumentError("Instance JSON is missing 'vehicle_capacity'"))
+    capacity = Int(capacity_raw)
+
+    arc_costs = site_api_payload_get(payload, "arc_costs", nothing)
+    arc_costs isa AbstractVector || throw(ArgumentError("Instance JSON is missing 'arc_costs' matrix"))
+    dimension = length(arc_costs)
+    dimension >= 2 || throw(ArgumentError("'arc_costs' must contain at least 2 rows"))
+
+    weights = Matrix{Float64}(undef, dimension, dimension)
+    for (row_index, row) in enumerate(arc_costs)
+        row isa AbstractVector || throw(ArgumentError("'arc_costs' rows must be arrays"))
+        length(row) == dimension || throw(ArgumentError("'arc_costs' must be square (row $(row_index) has length $(length(row)) for dimension $(dimension))"))
+        for (col_index, value) in enumerate(row)
+            weights[row_index, col_index] = Float64(value)
+        end
+    end
+
+    demands_raw = site_api_payload_get(payload, "demands", nothing)
+    demands_raw isa AbstractVector || throw(ArgumentError("Instance JSON is missing 'demands' array"))
+    length(demands_raw) == dimension || throw(ArgumentError("'demands' length $(length(demands_raw)) must match dimension $(dimension)"))
+    demands = [Int(value) for value in demands_raw]
+
+    depot_raw = site_api_payload_get(payload, "depot", 0)
+    depot_index = Int(depot_raw)
+    depot_index == 0 || throw(ArgumentError("HGS solving currently requires depot index 0, got $(depot_index)"))
+
+    return dimension, capacity, weights, demands
+end
+
+
+function workbench_solve_hgs_payload(payload)
+    vrp_text = site_api_payload_get(payload, "vrp_text", nothing)
+    vrp_json = site_api_payload_get(payload, "vrp_json", nothing)
+
+    raw_time_limit = site_api_payload_get(payload, "time_limit", 30.0)
+    time_limit = Float64(raw_time_limit)
+    (isfinite(time_limit) && time_limit > 0.0) || throw(ArgumentError("'time_limit' must be a positive number"))
+
+    local dimension::Int
+    local capacity::Int
+    local weights::Matrix{Float64}
+    local demands::Vector{Int}
+    local input_source::String
+    if vrp_json !== nothing
+        dimension, capacity, weights, demands = workbench_extract_hgs_inputs_from_vrp_json(vrp_json)
+        input_source = "vrp_json"
+    elseif vrp_text !== nothing
+        vrp_text_string = String(vrp_text)
+        isempty(strip(vrp_text_string)) && throw(ArgumentError("Empty 'vrp_text' field"))
+        dimension, capacity, weights, demands = workbench_parse_vrp_for_hgs(vrp_text_string)
+        input_source = "vrp_text"
+    else
+        throw(ArgumentError("Missing required 'vrp_text' or 'vrp_json' field"))
+    end
+
+    parameters = AlgorithmParameters(timeLimit=time_limit, seed=Int32(0))
+    result = solve_cvrp(weights, demands, capacity, parameters; verbose=false)
+
+    customer_routes = Vector{Vector{Int}}()
+    for route in result.routes
+        customers = Int[]
+        for node_id in route
+            id = Int(node_id)
+            id == 1 && continue
+            (2 <= id <= dimension) || throw(ArgumentError("HGS returned node $(id) outside [2, $(dimension)]"))
+            push!(customers, id - 1)
+        end
+        isempty(customers) || push!(customer_routes, customers)
+    end
+
+    return Dict(
+        "ok" => true,
+        "cost" => result.cost,
+        "time" => result.time,
+        "routes" => customer_routes,
+        "n_routes" => length(customer_routes),
+        "dimension" => dimension,
+        "capacity" => capacity,
+        "input_source" => input_source,
+    )
+end
+
+
 function build_site_api_handler(; repo_root::AbstractString=default_site_repo_root(), api_prefix::AbstractString=DEFAULT_SITE_API_PREFIX, indent::Int=2, sort_keys::Bool=false)
     http = load_http_module()
     resolved_repo_root = canonical_site_repo_root(repo_root)
@@ -1056,6 +1512,15 @@ function build_site_api_handler(; repo_root::AbstractString=default_site_repo_ro
             try
                 payload = materialize_json(JSON3.read(String(request.body)))
                 return site_api_json_response(200, workbench_generation_preview_payload(resolved_repo_root, payload))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/solve"
+            try
+                payload = materialize_json(JSON3.read(String(request.body)))
+                return site_api_json_response(200, workbench_solve_hgs_payload(payload))
             catch error
                 return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
             end
