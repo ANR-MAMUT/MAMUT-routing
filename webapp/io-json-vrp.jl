@@ -5,6 +5,9 @@ const INSTANCE_ORIGINS = Set(["Solomon1987", "GehHom1999", "OsmCvrpGen"])
 const PROBLEM_TYPES = Set(["CVRP", "VRPTW"])
 const METRIC_VARIANTS = Set(["fastest", "shortest", "euclidean"])
 const OBJECTIVE_FUNCTIONS = Set(["HierarchicalVehicleCost", "MonoCost"])
+const FAMILY_CHANGE_KINDS = Set(["added", "removed"])
+const INSTANCE_CHANGE_KINDS = Set(["added", "removed"])
+const BKS_CHANGE_KINDS = Set(["added", "removed", "improved", "regressed"])
 const SITE_PAYLOAD_KINDS = Set([
     "home_page",
     "site_snapshot",
@@ -301,6 +304,73 @@ struct SiteSnapshotManifest
 end
 
 
+struct BksValue
+    cost::Union{Nothing,Int,Float64}
+    num_routes::Union{Nothing,Int}
+    authors::Union{Nothing,String}
+    method::Union{Nothing,String}
+end
+
+
+struct FamilyChange
+    problem_type::String
+    benchmark_name::String
+    kind::String
+end
+
+
+struct InstanceChange
+    instance_id::String
+    problem_type::String
+    benchmark_name::String
+    metric_variant::Union{Nothing,String}
+    place_slug::Union{Nothing,String}
+    num_customers::Int
+    instance_name::String
+    kind::String
+end
+
+
+struct BksChange
+    instance_id::String
+    problem_type::String
+    benchmark_name::String
+    metric_variant::Union{Nothing,String}
+    place_slug::Union{Nothing,String}
+    num_customers::Int
+    instance_name::String
+    objective_function::String
+    kind::String
+    prev::Union{Nothing,BksValue}
+    new::Union{Nothing,BksValue}
+    cost_delta::Union{Nothing,Int,Float64}
+    cost_pct::Union{Nothing,Float64}
+    routes_delta::Union{Nothing,Int}
+    routes_pct::Union{Nothing,Float64}
+end
+
+
+struct ChangeCounts
+    families_added::Int
+    families_removed::Int
+    instances_added::Int
+    instances_removed::Int
+    bks_added::Int
+    bks_removed::Int
+    bks_improved::Int
+    bks_regressed::Int
+end
+
+
+struct SnapshotChangeLog
+    is_initial::Bool
+    counts::ChangeCounts
+    family_changes::Vector{FamilyChange}
+    instance_changes::Vector{InstanceChange}
+    bks_changes::Vector{BksChange}
+end
+
+
 struct SiteHistoryEntry
     snapshot::SnapshotRef
     summary::String
@@ -308,6 +378,7 @@ struct SiteHistoryEntry
     affected_problem_types::Vector{String}
     affected_benchmark_names::Vector{String}
     affected_objective_functions::Vector{String}
+    change_counts::ChangeCounts
 end
 
 
@@ -355,6 +426,7 @@ struct HistoryDetailPayload
     affected_problem_types::Vector{String}
     affected_benchmark_names::Vector{String}
     affected_objective_functions::Vector{String}
+    change_log::SnapshotChangeLog
 end
 
 
@@ -1121,7 +1193,93 @@ function SiteSnapshotManifest(; payload_kind, schema_version, generated_at, snap
 end
 
 
-function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[])
+function BksValue(; cost=nothing, num_routes=nothing, authors=nothing, method=nothing)
+    num_routes_int = coerce_optional_int(num_routes, "num_routes")
+    num_routes_int === nothing || require_nonnegative(num_routes_int, "num_routes")
+    return BksValue(
+        coerce_cost(cost, "cost"),
+        num_routes_int,
+        coerce_optional_string(authors, "authors"),
+        coerce_optional_string(method, "method"),
+    )
+end
+
+
+function FamilyChange(; problem_type, benchmark_name, kind)
+    return FamilyChange(
+        require_choice(coerce_string(problem_type, "problem_type"), PROBLEM_TYPES, "problem_type"),
+        require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
+        require_choice(coerce_string(kind, "kind"), FAMILY_CHANGE_KINDS, "kind"),
+    )
+end
+
+
+function InstanceChange(; instance_id, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, num_customers, instance_name, kind)
+    metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
+    metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
+    return InstanceChange(
+        coerce_string(instance_id, "instance_id"),
+        require_choice(coerce_string(problem_type, "problem_type"), PROBLEM_TYPES, "problem_type"),
+        require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
+        metric_variant_value,
+        coerce_optional_string(place_slug, "place_slug"),
+        require_nonnegative(coerce_int(num_customers, "num_customers"), "num_customers"),
+        coerce_string(instance_name, "instance_name"),
+        require_choice(coerce_string(kind, "kind"), INSTANCE_CHANGE_KINDS, "kind"),
+    )
+end
+
+
+function BksChange(; instance_id, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, num_customers, instance_name, objective_function, kind, prev=nothing, new=nothing, cost_delta=nothing, cost_pct=nothing, routes_delta=nothing, routes_pct=nothing)
+    metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
+    metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
+    routes_delta_int = coerce_optional_int(routes_delta, "routes_delta")
+    return BksChange(
+        coerce_string(instance_id, "instance_id"),
+        require_choice(coerce_string(problem_type, "problem_type"), PROBLEM_TYPES, "problem_type"),
+        require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
+        metric_variant_value,
+        coerce_optional_string(place_slug, "place_slug"),
+        require_nonnegative(coerce_int(num_customers, "num_customers"), "num_customers"),
+        coerce_string(instance_name, "instance_name"),
+        require_choice(coerce_string(objective_function, "objective_function"), OBJECTIVE_FUNCTIONS, "objective_function"),
+        require_choice(coerce_string(kind, "kind"), BKS_CHANGE_KINDS, "kind"),
+        prev === nothing ? nothing : (prev isa BksValue ? prev : bks_value_from_dict(prev)),
+        new === nothing ? nothing : (new isa BksValue ? new : bks_value_from_dict(new)),
+        coerce_cost(cost_delta, "cost_delta"),
+        cost_pct === nothing ? nothing : Float64(cost_pct),
+        routes_delta_int,
+        routes_pct === nothing ? nothing : Float64(routes_pct),
+    )
+end
+
+
+function ChangeCounts(; families_added=0, families_removed=0, instances_added=0, instances_removed=0, bks_added=0, bks_removed=0, bks_improved=0, bks_regressed=0)
+    return ChangeCounts(
+        require_nonnegative(coerce_int(families_added, "families_added"), "families_added"),
+        require_nonnegative(coerce_int(families_removed, "families_removed"), "families_removed"),
+        require_nonnegative(coerce_int(instances_added, "instances_added"), "instances_added"),
+        require_nonnegative(coerce_int(instances_removed, "instances_removed"), "instances_removed"),
+        require_nonnegative(coerce_int(bks_added, "bks_added"), "bks_added"),
+        require_nonnegative(coerce_int(bks_removed, "bks_removed"), "bks_removed"),
+        require_nonnegative(coerce_int(bks_improved, "bks_improved"), "bks_improved"),
+        require_nonnegative(coerce_int(bks_regressed, "bks_regressed"), "bks_regressed"),
+    )
+end
+
+
+function SnapshotChangeLog(; is_initial, counts, family_changes=Any[], instance_changes=Any[], bks_changes=Any[])
+    return SnapshotChangeLog(
+        Bool(is_initial),
+        counts isa ChangeCounts ? counts : change_counts_from_dict(counts),
+        family_changes isa AbstractVector ? [c isa FamilyChange ? c : family_change_from_dict(c) for c in family_changes] : error("family_changes must be a list"),
+        instance_changes isa AbstractVector ? [c isa InstanceChange ? c : instance_change_from_dict(c) for c in instance_changes] : error("instance_changes must be a list"),
+        bks_changes isa AbstractVector ? [c isa BksChange ? c : bks_change_from_dict(c) for c in bks_changes] : error("bks_changes must be a list"),
+    )
+end
+
+
+function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[], change_counts)
     return SiteHistoryEntry(
         snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
         coerce_string(summary, "summary"),
@@ -1129,6 +1287,7 @@ function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_probl
         normalize_choice_vector(affected_problem_types, PROBLEM_TYPES, "affected_problem_types"),
         normalize_choice_vector(affected_benchmark_names, BENCHMARK_NAMES, "affected_benchmark_names"),
         normalize_choice_vector(affected_objective_functions, OBJECTIVE_FUNCTIONS, "affected_objective_functions"),
+        change_counts isa ChangeCounts ? change_counts : change_counts_from_dict(change_counts),
     )
 end
 
@@ -1166,7 +1325,7 @@ function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot,
 end
 
 
-function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, breadcrumbs, summary, counts, benchmark_index_path, history_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[])
+function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, breadcrumbs, summary, counts, benchmark_index_path, history_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[], change_log)
     return HistoryDetailPayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1182,6 +1341,7 @@ function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snap
         normalize_choice_vector(affected_problem_types, PROBLEM_TYPES, "affected_problem_types"),
         normalize_choice_vector(affected_benchmark_names, BENCHMARK_NAMES, "affected_benchmark_names"),
         normalize_choice_vector(affected_objective_functions, OBJECTIVE_FUNCTIONS, "affected_objective_functions"),
+        change_log isa SnapshotChangeLog ? change_log : snapshot_change_log_from_dict(change_log),
     )
 end
 
@@ -2493,8 +2653,99 @@ function site_snapshot_manifest_from_dict(payload::AbstractDict)
 end
 
 
+function bks_value_from_dict(payload::AbstractDict)
+    allowed = Set(["cost", "num_routes", "authors", "method"])
+    ensure_allowed_keys(payload, allowed, "BksValue")
+    return BksValue(
+        cost=get(payload, "cost", nothing),
+        num_routes=get(payload, "num_routes", nothing),
+        authors=get(payload, "authors", nothing),
+        method=get(payload, "method", nothing),
+    )
+end
+
+
+function family_change_from_dict(payload::AbstractDict)
+    allowed = Set(["problem_type", "benchmark_name", "kind"])
+    ensure_allowed_keys(payload, allowed, "FamilyChange")
+    return FamilyChange(
+        problem_type=require_field(payload, "problem_type"),
+        benchmark_name=require_field(payload, "benchmark_name"),
+        kind=require_field(payload, "kind"),
+    )
+end
+
+
+function instance_change_from_dict(payload::AbstractDict)
+    allowed = Set(["instance_id", "problem_type", "benchmark_name", "metric_variant", "place_slug", "num_customers", "instance_name", "kind"])
+    ensure_allowed_keys(payload, allowed, "InstanceChange")
+    return InstanceChange(
+        instance_id=require_field(payload, "instance_id"),
+        problem_type=require_field(payload, "problem_type"),
+        benchmark_name=require_field(payload, "benchmark_name"),
+        metric_variant=get(payload, "metric_variant", nothing),
+        place_slug=get(payload, "place_slug", nothing),
+        num_customers=require_field(payload, "num_customers"),
+        instance_name=require_field(payload, "instance_name"),
+        kind=require_field(payload, "kind"),
+    )
+end
+
+
+function bks_change_from_dict(payload::AbstractDict)
+    allowed = Set(["instance_id", "problem_type", "benchmark_name", "metric_variant", "place_slug", "num_customers", "instance_name", "objective_function", "kind", "prev", "new", "cost_delta", "cost_pct", "routes_delta", "routes_pct"])
+    ensure_allowed_keys(payload, allowed, "BksChange")
+    return BksChange(
+        instance_id=require_field(payload, "instance_id"),
+        problem_type=require_field(payload, "problem_type"),
+        benchmark_name=require_field(payload, "benchmark_name"),
+        metric_variant=get(payload, "metric_variant", nothing),
+        place_slug=get(payload, "place_slug", nothing),
+        num_customers=require_field(payload, "num_customers"),
+        instance_name=require_field(payload, "instance_name"),
+        objective_function=require_field(payload, "objective_function"),
+        kind=require_field(payload, "kind"),
+        prev=get(payload, "prev", nothing),
+        new=get(payload, "new", nothing),
+        cost_delta=get(payload, "cost_delta", nothing),
+        cost_pct=get(payload, "cost_pct", nothing),
+        routes_delta=get(payload, "routes_delta", nothing),
+        routes_pct=get(payload, "routes_pct", nothing),
+    )
+end
+
+
+function change_counts_from_dict(payload::AbstractDict)
+    allowed = Set(["families_added", "families_removed", "instances_added", "instances_removed", "bks_added", "bks_removed", "bks_improved", "bks_regressed"])
+    ensure_allowed_keys(payload, allowed, "ChangeCounts")
+    return ChangeCounts(
+        families_added=get(payload, "families_added", 0),
+        families_removed=get(payload, "families_removed", 0),
+        instances_added=get(payload, "instances_added", 0),
+        instances_removed=get(payload, "instances_removed", 0),
+        bks_added=get(payload, "bks_added", 0),
+        bks_removed=get(payload, "bks_removed", 0),
+        bks_improved=get(payload, "bks_improved", 0),
+        bks_regressed=get(payload, "bks_regressed", 0),
+    )
+end
+
+
+function snapshot_change_log_from_dict(payload::AbstractDict)
+    allowed = Set(["is_initial", "counts", "family_changes", "instance_changes", "bks_changes"])
+    ensure_allowed_keys(payload, allowed, "SnapshotChangeLog")
+    return SnapshotChangeLog(
+        is_initial=require_field(payload, "is_initial"),
+        counts=require_field(payload, "counts"),
+        family_changes=get(payload, "family_changes", Any[]),
+        instance_changes=get(payload, "instance_changes", Any[]),
+        bks_changes=get(payload, "bks_changes", Any[]),
+    )
+end
+
+
 function site_history_entry_from_dict(payload::AbstractDict)
-    allowed = Set(["snapshot", "summary", "detail_route_path", "affected_problem_types", "affected_benchmark_names", "affected_objective_functions"])
+    allowed = Set(["snapshot", "summary", "detail_route_path", "affected_problem_types", "affected_benchmark_names", "affected_objective_functions", "change_counts"])
     ensure_allowed_keys(payload, allowed, "SiteHistoryEntry")
     return SiteHistoryEntry(
         snapshot=require_field(payload, "snapshot"),
@@ -2503,6 +2754,7 @@ function site_history_entry_from_dict(payload::AbstractDict)
         affected_problem_types=get(payload, "affected_problem_types", String[]),
         affected_benchmark_names=get(payload, "affected_benchmark_names", String[]),
         affected_objective_functions=get(payload, "affected_objective_functions", String[]),
+        change_counts=require_field(payload, "change_counts"),
     )
 end
 
@@ -2545,7 +2797,7 @@ end
 
 
 function history_detail_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "breadcrumbs", "summary", "counts", "benchmark_index_path", "history_path", "affected_problem_types", "affected_benchmark_names", "affected_objective_functions"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "breadcrumbs", "summary", "counts", "benchmark_index_path", "history_path", "affected_problem_types", "affected_benchmark_names", "affected_objective_functions", "change_log"])
     ensure_allowed_keys(payload, allowed, "HistoryDetailPayload")
     return HistoryDetailPayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -2562,6 +2814,7 @@ function history_detail_payload_from_dict(payload::AbstractDict)
         affected_problem_types=get(payload, "affected_problem_types", String[]),
         affected_benchmark_names=get(payload, "affected_benchmark_names", String[]),
         affected_objective_functions=get(payload, "affected_objective_functions", String[]),
+        change_log=require_field(payload, "change_log"),
     )
 end
 
