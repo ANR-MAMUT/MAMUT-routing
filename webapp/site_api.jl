@@ -207,6 +207,7 @@ function site_public_content_type(filepath::AbstractString)
     extension == ".html" && return "text/html; charset=utf-8"
     extension == ".css" && return "text/css; charset=utf-8"
     extension == ".js" && return "text/javascript; charset=utf-8"
+    extension == ".svg" && return "image/svg+xml"
     extension == ".json" && return "application/json; charset=utf-8"
     extension == ".vrp" && return "text/plain; charset=utf-8"
     extension == ".txt" && return "text/plain; charset=utf-8"
