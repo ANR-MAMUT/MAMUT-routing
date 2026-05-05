@@ -4,13 +4,7 @@ using OpenStreetMapX
 using OSMToolset
 using Hygese
 
-const OSM_CVRPGEN_ROUTE_API_PATH = normpath(joinpath(
-    @__DIR__, "..", "..", "..", "..", "external", "osm-cvrpgen", "webapp", "route_api.jl"
-))
-
-if isfile(OSM_CVRPGEN_ROUTE_API_PATH) && !isdefined(@__MODULE__, :generate_single_instance)
-    include(OSM_CVRPGEN_ROUTE_API_PATH)
-end
+@isdefined(MAMUT_OSM_GENERATION_HELPERS_LOADED) || include(joinpath(@__DIR__, "osm_generation.jl"))
 
 
 const DEFAULT_SITE_API_PREFIX = "/api/site-payload"
@@ -462,10 +456,6 @@ function workbench_route_demand(route::AbstractVector, meta)
 end
 
 
-workbench_route_api_root(repo_root::AbstractString=default_site_repo_root()) =
-    normpath(joinpath(canonical_site_repo_root(repo_root), "..", "..", "..", "external", "osm-cvrpgen"))
-
-
 function workbench_cache_key(osm_path::AbstractString, only_intersections::Bool, trim_to_connected_graph::Bool)
     return "$(String(osm_path))|oi=$(only_intersections)|trim=$(trim_to_connected_graph)"
 end
@@ -601,7 +591,6 @@ function workbench_resolve_source_osm_path(repo_root::AbstractString, meta, meta
     candidate_paths = String[
         normpath(joinpath(dirname(meta_file_path), source_osm_path)),
         normpath(joinpath(canonical_site_repo_root(repo_root), source_osm_path)),
-        normpath(joinpath(workbench_route_api_root(repo_root), source_osm_path)),
     ]
     unique!(candidate_paths)
 
@@ -1181,17 +1170,12 @@ end
 
 
 function default_workbench_sample_root(repo_root::AbstractString=default_site_repo_root())
-    return normpath(joinpath(canonical_site_repo_root(repo_root), "..", "..", "..", "external", "osm-cvrpgen", "instances_v2", "osm"))
+    return normpath(joinpath(canonical_site_repo_root(repo_root), "instances_v2", "osm"))
 end
 
 
 function default_workbench_osmdata_root(repo_root::AbstractString=default_site_repo_root())
     return normpath(joinpath(canonical_site_repo_root(repo_root), "osmdata"))
-end
-
-
-function external_workbench_osmdata_root(repo_root::AbstractString=default_site_repo_root())
-    return normpath(joinpath(canonical_site_repo_root(repo_root), "..", "..", "..", "external", "osm-cvrpgen", "osmdata"))
 end
 
 
@@ -1381,8 +1365,6 @@ end
 
 
 function workbench_generation_preview_payload(repo_root::AbstractString, payload; sample_root::AbstractString=default_workbench_sample_root(repo_root))
-    isdir(sample_root) || throw(ArgumentError("Bundled workbench sample root is missing at '$(sample_root)'"))
-
     city_slug = lowercase(strip(String(site_api_payload_get(payload, "city", ""))))
     isempty(city_slug) && throw(ArgumentError("Missing required preview field 'city'"))
     requested_method = String(site_api_payload_get(payload, "method", "poi_categories"))
@@ -1390,8 +1372,14 @@ function workbench_generation_preview_payload(repo_root::AbstractString, payload
     requested_customers_raw === nothing && throw(ArgumentError("Missing required preview field 'nCustomers'"))
     requested_customers = Int(requested_customers_raw)
 
+    if !isdir(sample_root)
+        return workbench_generation_full_preview_payload(payload; repo_root=repo_root)
+    end
+
     city_dir = joinpath(sample_root, city_slug)
-    isdir(city_dir) || throw(ArgumentError("No bundled sample city matches '$(city_slug)'"))
+    if !isdir(city_dir)
+        return workbench_generation_full_preview_payload(payload; repo_root=repo_root)
+    end
 
     selected_size_dir, manifest_path, manifest_payload = select_workbench_sample_manifest(city_dir, requested_customers, requested_method)
     files_payload = site_api_payload_get(manifest_payload, "files", nothing)
@@ -1664,22 +1652,7 @@ function workbench_ensure_local_osm_for_city!(repo_root::AbstractString, city::A
 
     local_osmdata_root = default_workbench_osmdata_root(repo_root)
     mkpath(local_osmdata_root)
-    target_slug = workbench_osm_city_slug(city)
-    source_roots = unique(String[
-        external_workbench_osmdata_root(repo_root),
-        normpath(joinpath(workbench_route_api_root(repo_root), "osmdata")),
-    ])
-    for source_root in source_roots
-        isdir(source_root) || continue
-        for source_file in workbench_osm_city_files(source_root)
-            workbench_osm_city_slug(source_file) == target_slug || continue
-            destination = joinpath(local_osmdata_root, basename(source_file))
-            cp(source_file, destination; force=true)
-            return destination
-        end
-    end
-
-    throw(ArgumentError("No OSM data for city '$(city)' was found in local or bundled osmdata folders"))
+    throw(ArgumentError("No OSM data for city '$(city)' was found in local osmdata folder '$(local_osmdata_root)'"))
 end
 
 
@@ -1833,7 +1806,7 @@ end
 
 function workbench_generation_full_preview_payload(payload; repo_root::AbstractString=default_site_repo_root())
     isdefined(@__MODULE__, :build_generation_selection) || throw(ArgumentError(
-        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+        "MAMUT OSM generation helpers are not available; ensure webapp/osm_generation.jl is present"
     ))
 
     normalized = workbench_normalize_generation_payload(payload, repo_root)
@@ -1860,7 +1833,7 @@ end
 
 function workbench_generation_fetch_osm_city_payload(payload; repo_root::AbstractString=default_site_repo_root())
     isdefined(@__MODULE__, :fetch_and_store_city_osm) || throw(ArgumentError(
-        "OSM-CVRPGen fetch helpers are not available; ensure external/osm-cvrpgen is checked out"
+        "MAMUT OSM fetch helpers are not available; ensure webapp/osm_generation.jl is present"
     ))
 
     mutable = Dict{Symbol,Any}()
@@ -1883,6 +1856,549 @@ function workbench_generation_fetch_osm_city_payload(payload; repo_root::Abstrac
     result["local_osmdata_dir"] = workbench_local_osmdata_label(repo_root, osmdata_root)
     result["cities"] = [entry["slug"] for entry in workbench_generation_cities_payload(repo_root; osmdata_root=osmdata_root)["cities"]]
     return result
+end
+
+
+const VRPTW_HORIZON_START = 0
+const VRPTW_HORIZON_END = 86400
+const VRPTW_EUCLIDEAN_SPEED_MPS = 14
+const VRPTW_PROBLEM_TYPES = ("CVRP", "VRPTW")
+const VRPTW_TW_METHODS = ("route_centered", "reachable_interval")
+const VRPTW_DEFAULT_TW_METHOD = "route_centered"
+
+
+function workbench_clamp_float(value::Real, lo::Real, hi::Real)
+    return value < lo ? lo : (value > hi ? hi : value)
+end
+
+
+function workbench_convert_meters_to_seconds(matrix::AbstractMatrix; speed_mps::Real=VRPTW_EUCLIDEAN_SPEED_MPS)
+    rows = size(matrix, 1)
+    cols = size(matrix, 2)
+    converted = Matrix{Int}(undef, rows, cols)
+    speed = Float64(speed_mps)
+    for r in 1:rows, c in 1:cols
+        converted[r, c] = ceil(Int, Float64(matrix[r, c]) / speed)
+    end
+    return converted
+end
+
+
+function workbench_nearest_neighbour_route(travel_times::AbstractMatrix; depot::Int=1)
+    n = size(travel_times, 1)
+    n >= 1 || throw(ArgumentError("Travel-time matrix is empty"))
+    visited = falses(n)
+    visited[depot] = true
+    route = Int[depot]
+    current = depot
+    while length(route) < n
+        best = 0
+        best_cost = typemax(Int)
+        for j in 1:n
+            visited[j] && continue
+            j == current && continue
+            cost = Int(travel_times[current, j])
+            if cost < best_cost
+                best_cost = cost
+                best = j
+            end
+        end
+        best == 0 && break
+        push!(route, best)
+        visited[best] = true
+        current = best
+    end
+    return route
+end
+
+
+function workbench_simulate_arrival_times(
+    route::AbstractVector{<:Integer},
+    travel_times::AbstractMatrix,
+    service_times::AbstractVector{<:Integer};
+    horizon_start::Integer=VRPTW_HORIZON_START,
+)
+    n = size(travel_times, 1)
+    arrivals = fill(Int(horizon_start), n)
+    isempty(route) && return arrivals
+    t = Int(horizon_start)
+    prev = Int(route[1])
+    arrivals[prev] = t
+    for k in 2:length(route)
+        cur = Int(route[k])
+        t += Int(travel_times[prev, cur])
+        arrivals[cur] = t
+        t += Int(service_times[cur])
+        prev = cur
+    end
+    return arrivals
+end
+
+
+function workbench_repair_time_window(
+    tw_start::Integer,
+    tw_end::Integer,
+    travel_to::Integer,
+    travel_back::Integer,
+    service::Integer,
+    horizon_start::Integer,
+    horizon_end::Integer,
+)
+    earliest_feasible = Int(horizon_start) + Int(travel_to)
+    latest_feasible = Int(horizon_end) - Int(service) - Int(travel_back)
+
+    if latest_feasible < earliest_feasible
+        clamped = clamp(div(earliest_feasible + latest_feasible, 2), Int(horizon_start), Int(horizon_end))
+        return clamped, clamped
+    end
+
+    e = max(Int(tw_start), earliest_feasible)
+    l = min(Int(tw_end), latest_feasible)
+    if e > l
+        e = earliest_feasible
+        l = latest_feasible
+    end
+    return e, l
+end
+
+
+function workbench_generate_service_times(
+    rng::AbstractRNG,
+    n_total::Integer,
+    horizon_start::Integer,
+    horizon_end::Integer;
+    mean_ratio_target::Float64=0.01,
+    mean_ratio_std::Float64=0.005,
+    depot::Integer=1,
+)
+    horizon = Float64(horizon_end - horizon_start)
+    mean_ratio = workbench_clamp_float(randn(rng) * mean_ratio_std + mean_ratio_target, 0.001, 0.2)
+    mean_service = horizon * mean_ratio
+    upper = max(1, Int(floor(mean_service * 2)))
+    service_times = zeros(Int, Int(n_total))
+    for i in 1:Int(n_total)
+        i == Int(depot) && continue
+        sampled = randn(rng) * (mean_service / 2.0) + mean_service
+        service_times[i] = clamp(round(Int, sampled), 1, upper)
+    end
+    return service_times, mean_ratio
+end
+
+
+function workbench_generate_tw_route_centered(
+    rng::AbstractRNG,
+    travel_times::AbstractMatrix,
+    service_times::AbstractVector{<:Integer},
+    horizon_start::Integer,
+    horizon_end::Integer;
+    depot::Integer=1,
+    width_ratio_mean::Float64=0.2,
+    width_ratio_std::Float64=0.08,
+)
+    n = size(travel_times, 1)
+    horizon = Float64(horizon_end - horizon_start)
+    route = workbench_nearest_neighbour_route(travel_times; depot=Int(depot))
+    arrivals = workbench_simulate_arrival_times(route, travel_times, service_times; horizon_start=horizon_start)
+
+    time_windows = Vector{Tuple{Int,Int}}(undef, n)
+    time_windows[Int(depot)] = (Int(horizon_start), Int(horizon_end))
+    for i in 1:n
+        i == Int(depot) && continue
+        center = arrivals[i]
+        width_ratio = workbench_clamp_float(randn(rng) * width_ratio_std + width_ratio_mean, 0.01, 1.0)
+        width = max(1, round(Int, horizon * width_ratio))
+        e = round(Int, center - width / 2)
+        l = round(Int, center + width / 2)
+        e, l = workbench_repair_time_window(
+            e, l,
+            Int(travel_times[Int(depot), i]),
+            Int(travel_times[i, Int(depot)]),
+            Int(service_times[i]),
+            Int(horizon_start), Int(horizon_end),
+        )
+        time_windows[i] = (e, l)
+    end
+    return time_windows, route, width_ratio_mean
+end
+
+
+function workbench_generate_tw_reachable_interval(
+    rng::AbstractRNG,
+    travel_times::AbstractMatrix,
+    service_times::AbstractVector{<:Integer},
+    horizon_start::Integer,
+    horizon_end::Integer;
+    depot::Integer=1,
+    width_ratio_mean::Float64=0.5,
+    width_ratio_std::Float64=0.2,
+)
+    n = size(travel_times, 1)
+    horizon = Float64(horizon_end - horizon_start)
+    time_windows = Vector{Tuple{Int,Int}}(undef, n)
+    time_windows[Int(depot)] = (Int(horizon_start), Int(horizon_end))
+    for i in 1:n
+        i == Int(depot) && continue
+        travel_to = Int(travel_times[Int(depot), i])
+        travel_back = Int(travel_times[i, Int(depot)])
+        service_i = Int(service_times[i])
+        earliest = Int(horizon_start) + travel_to
+        latest = Int(horizon_end) - service_i - travel_back
+
+        width_ratio = workbench_clamp_float(randn(rng) * width_ratio_std + width_ratio_mean, 0.01, 1.0)
+        width = max(1, round(Int, horizon * width_ratio))
+
+        if latest < earliest
+            clamped = clamp(earliest, Int(horizon_start), Int(horizon_end))
+            time_windows[i] = (clamped, clamped)
+            continue
+        end
+
+        center_low = earliest + div(width, 2)
+        center_high = latest - div(width, 2)
+        center = if center_low > center_high
+            div(earliest + latest, 2)
+        else
+            rand(rng, center_low:center_high)
+        end
+        e = center - div(width, 2)
+        l = e + width
+        e, l = workbench_repair_time_window(
+            e, l, travel_to, travel_back, service_i, Int(horizon_start), Int(horizon_end),
+        )
+        time_windows[i] = (e, l)
+    end
+    return time_windows, width_ratio_mean
+end
+
+
+function workbench_generate_vrptw_fields(
+    seed_parts::Tuple,
+    travel_times::AbstractMatrix,
+    horizon_start::Integer,
+    horizon_end::Integer,
+    tw_method::AbstractString;
+    depot::Integer=1,
+)
+    seed_value = Int(abs(hash(seed_parts) % UInt(typemax(Int64))))
+    rng = MersenneTwister(seed_value)
+    n = size(travel_times, 1)
+    service_times, mean_service_ratio = workbench_generate_service_times(
+        rng, n, horizon_start, horizon_end; depot=depot,
+    )
+
+    tw_method_lower = lowercase(strip(String(tw_method)))
+    tw_method_lower in VRPTW_TW_METHODS || throw(ArgumentError(
+        "Unsupported TW method '$(tw_method)'. Use one of: $(join(VRPTW_TW_METHODS, ", "))."
+    ))
+
+    if tw_method_lower == "route_centered"
+        time_windows, _route, width_ratio_mean = workbench_generate_tw_route_centered(
+            rng, travel_times, service_times, horizon_start, horizon_end; depot=depot,
+        )
+    else
+        time_windows, width_ratio_mean = workbench_generate_tw_reachable_interval(
+            rng, travel_times, service_times, horizon_start, horizon_end; depot=depot,
+        )
+    end
+
+    repaired_count = 0
+    for i in 1:n
+        i == Int(depot) && continue
+        e_in, l_in = time_windows[i]
+        e_out, l_out = workbench_repair_time_window(
+            e_in, l_in,
+            Int(travel_times[Int(depot), i]),
+            Int(travel_times[i, Int(depot)]),
+            Int(service_times[i]),
+            Int(horizon_start), Int(horizon_end),
+        )
+        (e_out == e_in && l_out == l_in) || (repaired_count += 1)
+        time_windows[i] = (e_out, l_out)
+    end
+
+    stochastic_params = Dict{String,Any}(
+        "tw_method" => tw_method_lower,
+        "horizon_start" => Int(horizon_start),
+        "horizon_end" => Int(horizon_end),
+        "mean_service_time_horizon_ratio" => mean_service_ratio,
+        "time_window_ratio" => width_ratio_mean,
+        "euclidean_speed_m_per_s" => VRPTW_EUCLIDEAN_SPEED_MPS,
+        "tw_repaired_count" => repaired_count,
+    )
+    return service_times, time_windows, stochastic_params
+end
+
+
+function workbench_write_cvrptw_vrp(
+    filepath::AbstractString,
+    parsed::WorkbenchParsedCvrpInstance,
+    instance_name::AbstractString,
+    comment::AbstractString,
+    service_times::AbstractVector{<:Integer},
+    time_windows::AbstractVector{<:Tuple{<:Integer,<:Integer}},
+)
+    mkpath(dirname(filepath))
+    open(filepath, "w") do io
+        println(io, "NAME : $(instance_name)")
+        println(io, "TYPE : CVRPTW")
+        isempty(comment) || println(io, "COMMENT : $(comment)")
+        println(io, "DIMENSION : $(parsed.dimension)")
+        println(io, "CAPACITY : $(parsed.capacity)")
+        println(io, "EDGE_WEIGHT_TYPE : EXPLICIT")
+        println(io, "EDGE_WEIGHT_FORMAT : FULL_MATRIX")
+        println(io, "EDGE_WEIGHT_SECTION")
+        for row in 1:size(parsed.arc_costs, 1)
+            println(io, join((parsed.arc_costs[row, col] for col in 1:size(parsed.arc_costs, 2)), ' '))
+        end
+        println(io, "NODE_COORD_SECTION")
+        for (index, (x, y)) in enumerate(parsed.coordinates)
+            println(io, index, " ", x, " ", y)
+        end
+        println(io, "DEMAND_SECTION")
+        for (index, demand) in enumerate(parsed.demands)
+            println(io, index, " ", demand)
+        end
+        println(io, "TIME_WINDOW_SECTION")
+        for (index, (ready, due)) in enumerate(time_windows)
+            println(io, index, " ", ready, " ", due)
+        end
+        println(io, "SERVICE_TIME_SECTION")
+        for (index, service) in enumerate(service_times)
+            println(io, index, " ", service)
+        end
+        println(io, "DEPOT_SECTION")
+        println(io, parsed.depot_node_index)
+        println(io, -1)
+        println(io, "EOF")
+    end
+    return nothing
+end
+
+
+function workbench_build_vrptw_json_payload(
+    parsed::WorkbenchParsedCvrpInstance,
+    instance_name::AbstractString,
+    metric_variant::AbstractString,
+    place_slug::AbstractString,
+    source_base_name::AbstractString,
+    source_city::AbstractString,
+    source_seed::Integer,
+    source_folder::AbstractString,
+    num_vehicles_lb::Union{Nothing,Integer},
+    artifact_paths::AbstractDict,
+    sibling_variant_paths::AbstractDict,
+    source_problem_paths::AbstractDict,
+    reference_lla::Union{Nothing,AbstractDict},
+    service_times::AbstractVector{<:Integer},
+    time_windows::AbstractVector{<:Tuple{<:Integer,<:Integer}},
+    stochastic_params::AbstractDict,
+    generated_at::AbstractString,
+)
+    payload = workbench_build_vrp_json_payload(
+        parsed, instance_name, metric_variant, place_slug, source_base_name, source_city,
+        source_seed, source_folder, num_vehicles_lb, artifact_paths, sibling_variant_paths,
+        reference_lla, generated_at,
+    )
+    payload["service_times"] = [Int(value) for value in service_times]
+    payload["time_windows"] = [Int[Int(tw[1]), Int(tw[2])] for tw in time_windows]
+    metadata = payload["metadata"]
+    metadata["problem_type"] = "VRPTW"
+    metadata["source_problem_paths"] = source_problem_paths
+    metadata["vrptw_derivation"] = stochastic_params
+    return payload
+end
+
+
+function workbench_relative_vrptw_dirs(place_slug::AbstractString, num_customers::Integer, vrptw_id::AbstractString)
+    return (
+        fastest_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "fastest", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
+        euclidean_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "euclidean", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
+        sidecar_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "sidecars", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
+    )
+end
+
+
+function workbench_postprocess_vrptw_instance(
+    repo_root::AbstractString,
+    cvrp_folder::AbstractString,
+    cvrp_base::AbstractString,
+    cvrp_metric_to_filename::AbstractDict,
+    cvrp_meta_filename::AbstractString,
+    cvrp_manifest_filename::AbstractString,
+    cvrp_summary,
+    cvrp_reference_lla,
+    place_slug::AbstractString,
+    source_seed::Integer,
+    cvrp_folder_relative::AbstractString,
+    cvrp_vrp_json_paths_relative::AbstractDict,
+    tw_method::AbstractString,
+    horizon_start::Integer,
+    horizon_end::Integer,
+)
+    fastest_filename = String(get(cvrp_metric_to_filename, "fastest", ""))
+    euclidean_filename = String(get(cvrp_metric_to_filename, "euclidean", ""))
+    isempty(fastest_filename) && throw(ArgumentError("CVRP fastest .vrp filename missing for VRPTW derivation"))
+    isempty(euclidean_filename) && throw(ArgumentError("CVRP euclidean .vrp filename missing for VRPTW derivation"))
+
+    fastest_path = joinpath(cvrp_folder, fastest_filename)
+    euclidean_path = joinpath(cvrp_folder, euclidean_filename)
+    isfile(fastest_path) || throw(ArgumentError("CVRP fastest .vrp not found at $(fastest_path)"))
+    isfile(euclidean_path) || throw(ArgumentError("CVRP euclidean .vrp not found at $(euclidean_path)"))
+
+    fastest_parsed = workbench_parse_cvrp_vrp(fastest_path)
+    euclidean_parsed = workbench_parse_cvrp_vrp(euclidean_path)
+
+    travel_times_fastest = copy(fastest_parsed.arc_costs)
+    travel_times_euclidean = workbench_convert_meters_to_seconds(euclidean_parsed.arc_costs)
+
+    seed_parts = (cvrp_base, place_slug, source_seed, tw_method, horizon_start, horizon_end, "vrptw_workbench_v1")
+    service_times, time_windows, stochastic_params = workbench_generate_vrptw_fields(
+        seed_parts, travel_times_fastest, horizon_start, horizon_end, tw_method;
+        depot=fastest_parsed.depot_node_index,
+    )
+
+    digest = bytes2hex(sha1(string(seed_parts)))
+    short_hash = digest[1:min(7, length(digest))]
+    num_customers = fastest_parsed.dimension - 1
+    vrptw_id = "mamut-n$(num_customers)-$(short_hash)"
+
+    layout = workbench_relative_vrptw_dirs(place_slug, num_customers, vrptw_id)
+    repo_root_abs = canonical_site_repo_root(repo_root)
+    fastest_dir_abs = joinpath(repo_root_abs, layout.fastest_dir)
+    euclidean_dir_abs = joinpath(repo_root_abs, layout.euclidean_dir)
+    sidecar_dir_abs = joinpath(repo_root_abs, layout.sidecar_dir)
+    mkpath(fastest_dir_abs)
+    mkpath(euclidean_dir_abs)
+    mkpath(sidecar_dir_abs)
+
+    fastest_vrp_filename = "$(vrptw_id).vrp"
+    euclidean_vrp_filename = "$(vrptw_id).vrp"
+    fastest_vrp_json_filename = "$(vrptw_id).vrp.json"
+    euclidean_vrp_json_filename = "$(vrptw_id).vrp.json"
+    meta_filename = "$(vrptw_id).meta.json"
+    manifest_filename = "$(vrptw_id).manifest.json"
+
+    parsed_by_metric = Dict(
+        "fastest" => WorkbenchParsedCvrpInstance(
+            vrptw_id, fastest_parsed.comment, fastest_parsed.dimension, fastest_parsed.capacity,
+            travel_times_fastest, fastest_parsed.coordinates, fastest_parsed.demands, fastest_parsed.depot_node_index,
+        ),
+        "euclidean" => WorkbenchParsedCvrpInstance(
+            vrptw_id,
+            "Converted from euclidean meter distances to integer travel times using $(VRPTW_EUCLIDEAN_SPEED_MPS) m/s",
+            euclidean_parsed.dimension, euclidean_parsed.capacity, travel_times_euclidean,
+            euclidean_parsed.coordinates, euclidean_parsed.demands, euclidean_parsed.depot_node_index,
+        ),
+    )
+
+    workbench_write_cvrptw_vrp(
+        joinpath(fastest_dir_abs, fastest_vrp_filename), parsed_by_metric["fastest"],
+        vrptw_id, parsed_by_metric["fastest"].comment, service_times, time_windows,
+    )
+    workbench_write_cvrptw_vrp(
+        joinpath(euclidean_dir_abs, euclidean_vrp_filename), parsed_by_metric["euclidean"],
+        vrptw_id, parsed_by_metric["euclidean"].comment, service_times, time_windows,
+    )
+
+    route_count_value = (cvrp_summary isa AbstractDict && haskey(cvrp_summary, "route_count")) ?
+        Int(site_api_payload_get(cvrp_summary, "route_count", 0)) : nothing
+    generated_at = string(now())
+
+    artifact_paths_fastest = Dict{String,String}(
+        "vrp_json" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
+        "vrp" => joinpath(layout.fastest_dir, fastest_vrp_filename),
+        "meta" => joinpath(layout.sidecar_dir, meta_filename),
+        "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
+    )
+    artifact_paths_euclidean = Dict{String,String}(
+        "vrp_json" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
+        "vrp" => joinpath(layout.euclidean_dir, euclidean_vrp_filename),
+        "meta" => joinpath(layout.sidecar_dir, meta_filename),
+        "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
+    )
+    sibling_variant_paths_fastest = Dict{String,String}(
+        "euclidean" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
+    )
+    sibling_variant_paths_euclidean = Dict{String,String}(
+        "fastest" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
+    )
+
+    cvrp_fastest_json_relative = String(get(cvrp_vrp_json_paths_relative, "fastest", ""))
+    cvrp_euclidean_json_relative = String(get(cvrp_vrp_json_paths_relative, "euclidean", ""))
+    source_problem_paths_fastest = Dict{String,String}(
+        "cvrp_vrp_json" => cvrp_fastest_json_relative,
+        "cvrp_vrp" => joinpath(cvrp_folder_relative, fastest_filename),
+    )
+    source_problem_paths_euclidean = Dict{String,String}(
+        "cvrp_vrp_json" => cvrp_euclidean_json_relative,
+        "cvrp_vrp" => joinpath(cvrp_folder_relative, euclidean_filename),
+    )
+
+    fastest_payload = workbench_build_vrptw_json_payload(
+        parsed_by_metric["fastest"], vrptw_id, "fastest", place_slug, cvrp_base, place_slug,
+        source_seed, layout.fastest_dir, route_count_value,
+        artifact_paths_fastest, sibling_variant_paths_fastest, source_problem_paths_fastest,
+        cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
+    )
+    euclidean_payload = workbench_build_vrptw_json_payload(
+        parsed_by_metric["euclidean"], vrptw_id, "euclidean", place_slug, cvrp_base, place_slug,
+        source_seed, layout.euclidean_dir, route_count_value,
+        artifact_paths_euclidean, sibling_variant_paths_euclidean, source_problem_paths_euclidean,
+        cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
+    )
+
+    save_json_to_file(fastest_payload, joinpath(fastest_dir_abs, fastest_vrp_json_filename); indent=4, sort_keys=false)
+    save_json_to_file(euclidean_payload, joinpath(euclidean_dir_abs, euclidean_vrp_json_filename); indent=4, sort_keys=false)
+
+    cvrp_meta_path_abs = isempty(cvrp_meta_filename) ? "" : joinpath(cvrp_folder, cvrp_meta_filename)
+    if !isempty(cvrp_meta_path_abs) && isfile(cvrp_meta_path_abs)
+        meta_payload = load_json_from_file(cvrp_meta_path_abs)
+        meta_payload_dict = if meta_payload isa AbstractDict
+            Dict{String,Any}(String(k) => v for (k, v) in pairs(meta_payload))
+        else
+            Dict{String,Any}()
+        end
+        meta_payload_dict["instance_id"] = vrptw_id
+        meta_payload_dict["problem_type"] = "VRPTW"
+        save_json_to_file(meta_payload_dict, joinpath(sidecar_dir_abs, meta_filename); indent=4, sort_keys=false)
+    end
+
+    cvrp_manifest_path_abs = isempty(cvrp_manifest_filename) ? "" : joinpath(cvrp_folder, cvrp_manifest_filename)
+    if !isempty(cvrp_manifest_path_abs) && isfile(cvrp_manifest_path_abs)
+        manifest_payload = load_json_from_file(cvrp_manifest_path_abs)
+        manifest_dict = if manifest_payload isa AbstractDict
+            Dict{String,Any}(String(k) => v for (k, v) in pairs(manifest_payload))
+        else
+            Dict{String,Any}()
+        end
+        manifest_dict["instance_id"] = vrptw_id
+        manifest_dict["problem_type"] = "VRPTW"
+        manifest_params_raw = get(manifest_dict, "params", Dict{String,Any}())
+        manifest_params = manifest_params_raw isa AbstractDict ?
+            Dict{String,Any}(String(k) => v for (k, v) in pairs(manifest_params_raw)) :
+            Dict{String,Any}()
+        manifest_params["vrptw_derivation"] = stochastic_params
+        manifest_dict["params"] = manifest_params
+        save_json_to_file(manifest_dict, joinpath(sidecar_dir_abs, manifest_filename); indent=4, sort_keys=false)
+    end
+
+    return (
+        vrptw_instance_id = vrptw_id,
+        folder_fastest_relative = layout.fastest_dir,
+        folder_euclidean_relative = layout.euclidean_dir,
+        sidecar_relative = layout.sidecar_dir,
+        files = Dict{String,Any}(
+            "fastest_vrp" => joinpath(layout.fastest_dir, fastest_vrp_filename),
+            "fastest_vrp_json" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
+            "euclidean_vrp" => joinpath(layout.euclidean_dir, euclidean_vrp_filename),
+            "euclidean_vrp_json" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
+            "meta" => joinpath(layout.sidecar_dir, meta_filename),
+            "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
+        ),
+        service_times = service_times,
+        time_windows = time_windows,
+        stochastic_params = stochastic_params,
+    )
 end
 
 
@@ -1989,7 +2505,7 @@ end
 
 function workbench_generation_single_payload(payload; repo_root::AbstractString=default_site_repo_root())
     isdefined(@__MODULE__, :generate_single_instance) || throw(ArgumentError(
-        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+        "MAMUT OSM generation helpers are not available; ensure webapp/osm_generation.jl is present"
     ))
 
     normalized = workbench_normalize_generation_payload(payload, repo_root)
@@ -2112,7 +2628,7 @@ end
 
 function workbench_generation_bulk_payload(payload; repo_root::AbstractString=default_site_repo_root())
     isdefined(@__MODULE__, :generate_bulk_instances) || throw(ArgumentError(
-        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+        "MAMUT OSM generation helpers are not available; ensure webapp/osm_generation.jl is present"
     ))
 
     normalized = workbench_normalize_generation_payload(payload, repo_root)

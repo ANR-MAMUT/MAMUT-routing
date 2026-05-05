@@ -1279,7 +1279,7 @@ function SnapshotChangeLog(; is_initial, counts, family_changes=Any[], instance_
 end
 
 
-function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[], change_counts)
+function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_problem_types=String[], affected_benchmark_names=String[], affected_objective_functions=String[], change_counts=Dict{String,Any}())
     return SiteHistoryEntry(
         snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
         coerce_string(summary, "summary"),
@@ -2754,7 +2754,7 @@ function site_history_entry_from_dict(payload::AbstractDict)
         affected_problem_types=get(payload, "affected_problem_types", String[]),
         affected_benchmark_names=get(payload, "affected_benchmark_names", String[]),
         affected_objective_functions=get(payload, "affected_objective_functions", String[]),
-        change_counts=require_field(payload, "change_counts"),
+        change_counts=get(payload, "change_counts", Dict{String,Any}()),
     )
 end
 
