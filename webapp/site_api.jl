@@ -4,6 +4,14 @@ using OpenStreetMapX
 using OSMToolset
 using Hygese
 
+const OSM_CVRPGEN_ROUTE_API_PATH = normpath(joinpath(
+    @__DIR__, "..", "..", "..", "..", "external", "osm-cvrpgen", "webapp", "route_api.jl"
+))
+
+if isfile(OSM_CVRPGEN_ROUTE_API_PATH) && !isdefined(@__MODULE__, :generate_single_instance)
+    include(OSM_CVRPGEN_ROUTE_API_PATH)
+end
+
 
 const DEFAULT_SITE_API_PREFIX = "/api/site-payload"
 const DEFAULT_SITE_OUTPUT_ROOT = "dist"
@@ -16,6 +24,7 @@ const REPO_ARTIFACT_ROOT_ENTRIES = Set([
     "LICENSE",
     "benchmarks",
 ])
+
 
 
 default_site_repo_root() = normpath(joinpath(@__DIR__, ".."))
@@ -1177,18 +1186,74 @@ end
 
 
 function default_workbench_osmdata_root(repo_root::AbstractString=default_site_repo_root())
+    return normpath(joinpath(canonical_site_repo_root(repo_root), "osmdata"))
+end
+
+
+function external_workbench_osmdata_root(repo_root::AbstractString=default_site_repo_root())
     return normpath(joinpath(canonical_site_repo_root(repo_root), "..", "..", "..", "external", "osm-cvrpgen", "osmdata"))
+end
+
+
+function workbench_local_osmdata_label(repo_root::AbstractString, osmdata_root::AbstractString)
+    resolved_repo_root = canonical_site_repo_root(repo_root)
+    resolved_osmdata_root = normpath(abspath(String(osmdata_root)))
+    repo_root_with_sep = resolved_repo_root * Base.Filesystem.path_separator
+    if resolved_osmdata_root == resolved_repo_root || startswith(resolved_osmdata_root, repo_root_with_sep)
+        return relpath(resolved_osmdata_root, resolved_repo_root)
+    end
+    return resolved_osmdata_root
 end
 
 
 function workbench_preview_available(repo_root::AbstractString=default_site_repo_root())
     osmdata_root = default_workbench_osmdata_root(repo_root)
-    return isdir(osmdata_root) && any(entry -> endswith(lowercase(entry), ".osm"), readdir(osmdata_root))
+    return !isempty(workbench_osm_city_files(osmdata_root))
 end
 
 
 function workbench_city_label(slug::AbstractString)
     return titlecase(replace(String(slug), '-' => ' ', '_' => ' '))
+end
+
+
+function workbench_osm_city_slug(value::AbstractString)
+    base = splitext(basename(String(value)))[1]
+    normalized = lowercase(strip(base))
+    normalized = replace(normalized, r"[^a-z0-9]+" => "_")
+    normalized = replace(normalized, r"_+" => "_")
+    normalized = strip(normalized, '_')
+    return isempty(normalized) ? "x" : normalized
+end
+
+
+function workbench_osm_city_files(osmdata_root::AbstractString)
+    isdir(osmdata_root) || return String[]
+    files = String[]
+    for entry in readdir(osmdata_root; join=true)
+        isfile(entry) || continue
+        endswith(lowercase(basename(entry)), ".osm") || continue
+        push!(files, entry)
+    end
+    return sort(files; by=path -> workbench_osm_city_slug(path))
+end
+
+
+function workbench_sample_customer_counts(sample_root::AbstractString)
+    counts_by_city = Dict{String,Vector{Int}}()
+    isdir(sample_root) || return counts_by_city
+
+    for city_dir in sort(filter(isdir, readdir(sample_root; join=true)); by=basename)
+        counts = Int[]
+        for size_dir in sort(filter(isdir, readdir(city_dir; join=true)); by=basename)
+            count = workbench_size_dir_customer_count(size_dir)
+            count === nothing || push!(counts, count)
+        end
+        unique!(counts)
+        sort!(counts)
+        counts_by_city[workbench_osm_city_slug(basename(city_dir))] = counts
+    end
+    return counts_by_city
 end
 
 
@@ -1216,28 +1281,30 @@ function workbench_size_dir_customer_count(size_dir::AbstractString)
 end
 
 
-function workbench_generation_cities_payload(repo_root::AbstractString=default_site_repo_root(); sample_root::AbstractString=default_workbench_sample_root(repo_root))
-    isdir(sample_root) || throw(ArgumentError("Bundled workbench sample root is missing at '$(sample_root)'"))
-
+function workbench_generation_cities_payload(
+    repo_root::AbstractString=default_site_repo_root();
+    sample_root::AbstractString=default_workbench_sample_root(repo_root),
+    osmdata_root::AbstractString=default_workbench_osmdata_root(repo_root),
+)
+    resolved_osmdata_root = normpath(abspath(String(osmdata_root)))
+    sample_counts = workbench_sample_customer_counts(sample_root)
     cities = Any[]
-    for city_dir in sort(filter(isdir, readdir(sample_root; join=true)); by=basename)
-        counts = Int[]
-        for size_dir in sort(filter(isdir, readdir(city_dir; join=true)); by=basename)
-            count = workbench_size_dir_customer_count(size_dir)
-            count === nothing || push!(counts, count)
-        end
-        unique!(counts)
-        sort!(counts)
+    for osm_file in workbench_osm_city_files(resolved_osmdata_root)
+        base_name = splitext(basename(osm_file))[1]
+        slug = workbench_osm_city_slug(base_name)
         push!(cities, Dict(
-            "slug" => basename(city_dir),
-            "label" => workbench_city_label(basename(city_dir)),
-            "customer_counts" => counts,
+            "slug" => slug,
+            "label" => workbench_city_label(base_name),
+            "customer_counts" => get(sample_counts, slug, Int[]),
+            "osm_filename" => basename(osm_file),
+            "osm_path" => workbench_to_repo_relative(repo_root, osm_file),
         ))
     end
 
     return Dict(
         "ok" => true,
-        "preview_available" => workbench_preview_available(repo_root),
+        "preview_available" => !isempty(cities),
+        "local_osmdata_dir" => workbench_local_osmdata_label(repo_root, resolved_osmdata_root),
         "cities" => cities,
     )
 end
@@ -1483,6 +1550,619 @@ function workbench_solve_hgs_payload(payload)
 end
 
 
+struct WorkbenchParsedCvrpInstance
+    name::String
+    comment::String
+    dimension::Int
+    capacity::Int
+    arc_costs::Matrix{Int}
+    coordinates::Vector{Tuple{Float64,Float64}}
+    demands::Vector{Int}
+    depot_node_index::Int
+end
+
+
+function workbench_parse_cvrp_vrp(filepath::AbstractString)
+    headers = Dict{String,String}()
+    edge_tokens = String[]
+    coordinates = Tuple{Float64,Float64}[]
+    demands_list = Int[]
+    depot_indices = Int[]
+    section = ""
+    section_headers = Set([
+        "EDGE_WEIGHT_SECTION", "NODE_COORD_SECTION", "DEMAND_SECTION", "DEPOT_SECTION", "EOF",
+    ])
+
+    for raw_line in eachline(filepath)
+        line = strip(raw_line)
+        isempty(line) && continue
+        if line in section_headers
+            section = line == "EOF" ? "" : line
+            continue
+        end
+        if isempty(section)
+            occursin(":", line) || continue
+            key, value = strip.(split(line, ":"; limit=2))
+            headers[String(key)] = String(value)
+            continue
+        end
+        if section == "EDGE_WEIGHT_SECTION"
+            append!(edge_tokens, split(line))
+        elseif section == "NODE_COORD_SECTION"
+            parts = split(line)
+            length(parts) >= 3 || continue
+            push!(coordinates, (parse(Float64, parts[2]), parse(Float64, parts[3])))
+        elseif section == "DEMAND_SECTION"
+            parts = split(line)
+            length(parts) >= 2 || continue
+            push!(demands_list, parse(Int, parts[2]))
+        elseif section == "DEPOT_SECTION"
+            line == "-1" && (section = ""; continue)
+            push!(depot_indices, parse(Int, line))
+        end
+    end
+
+    haskey(headers, "DIMENSION") || throw(ArgumentError("Missing DIMENSION header in $(filepath)"))
+    haskey(headers, "CAPACITY") || throw(ArgumentError("Missing CAPACITY header in $(filepath)"))
+    dimension = parse(Int, headers["DIMENSION"])
+    capacity = parse(Int, headers["CAPACITY"])
+
+    expected_count = dimension * dimension
+    length(edge_tokens) == expected_count || throw(ArgumentError(
+        "EDGE_WEIGHT_SECTION has $(length(edge_tokens)) tokens, expected $(expected_count) for DIMENSION=$(dimension) in $(filepath)"
+    ))
+    arc_costs = Matrix{Int}(undef, dimension, dimension)
+    for row in 1:dimension
+        offset = (row - 1) * dimension
+        for col in 1:dimension
+            arc_costs[row, col] = parse(Int, edge_tokens[offset + col])
+        end
+    end
+
+    length(coordinates) == dimension || throw(ArgumentError(
+        "NODE_COORD_SECTION has $(length(coordinates)) rows, expected $(dimension) in $(filepath)"
+    ))
+    length(demands_list) == dimension || throw(ArgumentError(
+        "DEMAND_SECTION has $(length(demands_list)) rows, expected $(dimension) in $(filepath)"
+    ))
+
+    return WorkbenchParsedCvrpInstance(
+        get(headers, "NAME", ""),
+        get(headers, "COMMENT", ""),
+        dimension,
+        capacity,
+        arc_costs,
+        coordinates,
+        demands_list,
+        isempty(depot_indices) ? 1 : depot_indices[1],
+    )
+end
+
+
+function workbench_resolve_osm_path(repo_root::AbstractString, city::AbstractString)
+    isempty(city) && return ""
+    osmdata_root = default_workbench_osmdata_root(repo_root)
+    isdir(osmdata_root) || return ""
+    target_slug = workbench_osm_city_slug(city)
+    for entry in workbench_osm_city_files(osmdata_root)
+        workbench_osm_city_slug(entry) == target_slug && return entry
+    end
+    return ""
+end
+
+
+function workbench_resolved_osm_city_name(repo_root::AbstractString, city::AbstractString)
+    resolved = workbench_resolve_osm_path(repo_root, city)
+    isempty(resolved) && return String(city)
+    return splitext(basename(resolved))[1]
+end
+
+
+function workbench_ensure_local_osm_for_city!(repo_root::AbstractString, city::AbstractString)
+    existing_path = workbench_resolve_osm_path(repo_root, city)
+    !isempty(existing_path) && return existing_path
+
+    local_osmdata_root = default_workbench_osmdata_root(repo_root)
+    mkpath(local_osmdata_root)
+    target_slug = workbench_osm_city_slug(city)
+    source_roots = unique(String[
+        external_workbench_osmdata_root(repo_root),
+        normpath(joinpath(workbench_route_api_root(repo_root), "osmdata")),
+    ])
+    for source_root in source_roots
+        isdir(source_root) || continue
+        for source_file in workbench_osm_city_files(source_root)
+            workbench_osm_city_slug(source_file) == target_slug || continue
+            destination = joinpath(local_osmdata_root, basename(source_file))
+            cp(source_file, destination; force=true)
+            return destination
+        end
+    end
+
+    throw(ArgumentError("No OSM data for city '$(city)' was found in local or bundled osmdata folders"))
+end
+
+
+function workbench_normalize_bulk_instances(raw_instances, repo_root::AbstractString)
+    raw_instances isa AbstractVector || return raw_instances
+
+    normalized_instances = Any[]
+    for raw in raw_instances
+        instance = Dict{Symbol,Any}()
+        for (key, value) in pairs(raw)
+            instance[Symbol(key)] = value
+        end
+
+        city_value = get(instance, :city, "")
+        if city_value isa AbstractString && !isempty(strip(String(city_value)))
+            resolved_path = workbench_resolve_osm_path(repo_root, city_value)
+            if !isempty(resolved_path)
+                instance[:city] = splitext(basename(resolved_path))[1]
+                instance[:osmPath] = resolved_path
+            end
+        end
+        push!(normalized_instances, instance)
+    end
+    return normalized_instances
+end
+
+
+function workbench_normalize_generation_payload(payload, repo_root::AbstractString)
+    mutable = Dict{Symbol,Any}()
+    for (key, value) in pairs(payload)
+        mutable[Symbol(key)] = value
+    end
+
+    if haskey(mutable, :instances)
+        mutable[:instances] = workbench_normalize_bulk_instances(mutable[:instances], repo_root)
+    end
+
+    if haskey(mutable, :cities)
+        cities_value = mutable[:cities]
+        if cities_value isa AbstractVector
+            mutable[:cities] = [workbench_resolved_osm_city_name(repo_root, String(city)) for city in cities_value]
+        elseif cities_value isa AbstractString
+            mutable[:cities] = join(
+                [workbench_resolved_osm_city_name(repo_root, strip(city)) for city in split(String(cities_value), ',') if !isempty(strip(city))],
+                ",",
+            )
+        end
+    end
+
+    osm_path_value = get(mutable, :osmPath, "")
+    if !(osm_path_value isa AbstractString) || isempty(strip(String(osm_path_value)))
+        city = String(get(mutable, :city, ""))
+        resolved = workbench_resolve_osm_path(repo_root, city)
+        if !isempty(resolved)
+            mutable[:osmPath] = resolved
+            mutable[:city] = splitext(basename(resolved))[1]
+        end
+    end
+
+    output_root_value = get(mutable, :outputRoot, "")
+    if !(output_root_value isa AbstractString) || isempty(strip(String(output_root_value)))
+        mutable[:outputRoot] = joinpath(canonical_site_repo_root(repo_root), "instances_v2")
+    elseif !isabspath(String(output_root_value))
+        mutable[:outputRoot] = joinpath(canonical_site_repo_root(repo_root), String(output_root_value))
+    end
+
+    return JSON3.read(JSON3.write(mutable))
+end
+
+
+function workbench_extract_reference_lla(meta_payload)
+    ref = site_api_payload_get(meta_payload, "reference_lla", nothing)
+    if ref isa AbstractDict
+        return Dict(
+            "lat" => Float64(site_api_payload_get(ref, "lat", 0.0)),
+            "lon" => Float64(site_api_payload_get(ref, "lon", 0.0)),
+            "alt" => Float64(site_api_payload_get(ref, "alt", 0.0)),
+        )
+    end
+    return nothing
+end
+
+
+function workbench_to_repo_relative(repo_root::AbstractString, absolute_path::AbstractString)
+    repo_root_resolved = rstrip(canonical_site_repo_root(repo_root), '/')
+    absolute_resolved = rstrip(normpath(abspath(String(absolute_path))), '/')
+    if absolute_resolved == repo_root_resolved || startswith(absolute_resolved, repo_root_resolved * "/")
+        rel = relpath(absolute_resolved, repo_root_resolved)
+        return startswith(rel, "..") ? absolute_resolved : rel
+    end
+    return absolute_resolved
+end
+
+
+function workbench_build_vrp_json_payload(
+    parsed::WorkbenchParsedCvrpInstance,
+    instance_name::AbstractString,
+    metric_variant::AbstractString,
+    place_slug::AbstractString,
+    source_base_name::AbstractString,
+    source_city::AbstractString,
+    source_seed::Integer,
+    source_folder::AbstractString,
+    num_vehicles_lb::Union{Nothing,Integer},
+    artifact_paths::AbstractDict,
+    sibling_variant_paths::AbstractDict,
+    reference_lla::Union{Nothing,AbstractDict},
+    generated_at::AbstractString,
+)
+    coordinates_payload = [Float64[Float64(p[1]), Float64(p[2])] for p in parsed.coordinates]
+    arc_costs_payload = [Int[parsed.arc_costs[row, col] for col in 1:size(parsed.arc_costs, 2)] for row in 1:size(parsed.arc_costs, 1)]
+
+    metadata = Dict{String,Any}(
+        "authors" => "OSM CVRP Workbench",
+        "generated_at" => String(generated_at),
+        "problem_type" => "CVRP",
+        "metric_variant" => String(metric_variant),
+        "place_slug" => String(place_slug),
+        "source_base_name" => String(source_base_name),
+        "source_city" => String(source_city),
+        "source_seed" => Int(source_seed),
+        "source_folder" => String(source_folder),
+        "generator_version" => "mamut-routing-lib.workbench-v1",
+        "artifact_paths" => artifact_paths,
+        "sibling_variant_paths" => sibling_variant_paths,
+        "derived_problem_paths" => Dict{String,String}(),
+        "source_problem_paths" => Dict{String,String}(),
+    )
+    if num_vehicles_lb !== nothing
+        metadata["num_vehicles_lb"] = Int(num_vehicles_lb)
+    end
+
+    payload = Dict{String,Any}(
+        "instance_name" => String(instance_name),
+        "instance_origin" => "OsmCvrpGen",
+        "benchmark_name" => "Mamut2026",
+        "num_customers" => parsed.dimension - 1,
+        "vehicle_capacity" => parsed.capacity,
+        "coordinates" => coordinates_payload,
+        "demands" => parsed.demands,
+        "depot" => parsed.depot_node_index - 1,
+        "arc_costs" => arc_costs_payload,
+        "metadata" => metadata,
+    )
+    if reference_lla !== nothing
+        payload["reference_lla"] = reference_lla
+    end
+    return payload
+end
+
+
+function workbench_generation_full_preview_payload(payload; repo_root::AbstractString=default_site_repo_root())
+    isdefined(@__MODULE__, :build_generation_selection) || throw(ArgumentError(
+        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+    ))
+
+    normalized = workbench_normalize_generation_payload(payload, repo_root)
+    sel = build_generation_selection(normalized)
+    geo = preview_geojson(sel)
+    source_tags = sel["source_tags"]
+    poi_count = count(t -> t == "poi", source_tags[2:end])
+    param_count = length(source_tags) - 1 - poi_count
+
+    return Dict(
+        "ok" => true,
+        "geojson" => geo,
+        "summary" => Dict(
+            "preview_mode" => "osm",
+            "city" => sel["params"]["city"],
+            "method" => sel["params"]["method"],
+            "customers" => Int(sel["params"]["n_customers"]),
+            "poi_customers" => poi_count,
+            "parametric_customers" => param_count,
+        ),
+    )
+end
+
+
+function workbench_generation_fetch_osm_city_payload(payload; repo_root::AbstractString=default_site_repo_root())
+    isdefined(@__MODULE__, :fetch_and_store_city_osm) || throw(ArgumentError(
+        "OSM-CVRPGen fetch helpers are not available; ensure external/osm-cvrpgen is checked out"
+    ))
+
+    mutable = Dict{Symbol,Any}()
+    for (key, value) in pairs(payload)
+        mutable[Symbol(key)] = value
+    end
+
+    osm_dir_value = get(mutable, :osmDir, "")
+    osmdata_root = if !(osm_dir_value isa AbstractString) || isempty(strip(String(osm_dir_value)))
+        default_workbench_osmdata_root(repo_root)
+    elseif isabspath(String(osm_dir_value))
+        normpath(String(osm_dir_value))
+    else
+        normpath(joinpath(canonical_site_repo_root(repo_root), String(osm_dir_value)))
+    end
+    mkpath(osmdata_root)
+    mutable[:osmDir] = osmdata_root
+
+    result = fetch_and_store_city_osm(mutable)
+    result["local_osmdata_dir"] = workbench_local_osmdata_label(repo_root, osmdata_root)
+    result["cities"] = [entry["slug"] for entry in workbench_generation_cities_payload(repo_root; osmdata_root=osmdata_root)["cities"]]
+    return result
+end
+
+
+function workbench_postprocess_generated_instance(
+    repo_root::AbstractString,
+    folder::AbstractString,
+    base::AbstractString,
+    files_payload,
+    manifest_filename::AbstractString,
+    summary_payload,
+)
+    metric_to_filename = Dict{String,String}()
+    for metric in ("shortest", "fastest", "euclidean")
+        value = nothing
+        if files_payload isa AbstractDict
+            value = haskey(files_payload, metric) ? files_payload[metric] : get(files_payload, Symbol(metric), nothing)
+        end
+        if value !== nothing
+            metric_to_filename[metric] = String(value)
+        end
+    end
+
+    meta_filename = ""
+    if files_payload isa AbstractDict
+        meta_filename = String(get(files_payload, "meta", get(files_payload, :meta, "")))
+    end
+    meta_path = isempty(meta_filename) ? "" : joinpath(folder, meta_filename)
+    reference_lla_payload = nothing
+    if !isempty(meta_path) && isfile(meta_path)
+        try
+            reference_lla_payload = workbench_extract_reference_lla(load_json_from_file(meta_path))
+        catch error
+            @warn "Failed to read reference_lla from generated meta" path=meta_path error=error
+        end
+    end
+
+    manifest_path = joinpath(folder, manifest_filename)
+    manifest_payload = isfile(manifest_path) ? load_json_from_file(manifest_path) : Dict{String,Any}()
+    manifest_params = site_api_payload_get(manifest_payload, "params", Dict{String,Any}())
+    place_slug = String(site_api_payload_get(manifest_params, "city", ""))
+    source_seed = Int(site_api_payload_get(manifest_params, "seed", 0))
+    route_count = (summary_payload isa AbstractDict && haskey(summary_payload, "route_count")) ?
+        Int(site_api_payload_get(summary_payload, "route_count", 0)) : nothing
+
+    folder_relative = workbench_to_repo_relative(repo_root, folder)
+    generated_at = string(now())
+
+    vrp_json_paths_relative = Dict{String,String}()
+    vrp_json_filenames = Dict{String,String}()
+    for (metric, vrp_filename) in metric_to_filename
+        vrp_json_filenames[metric] = replace(vrp_filename, r"\.vrp$" => ".vrp.json")
+    end
+
+    for (metric, vrp_filename) in metric_to_filename
+        vrp_path = joinpath(folder, vrp_filename)
+        parsed = workbench_parse_cvrp_vrp(vrp_path)
+
+        vrp_json_filename = vrp_json_filenames[metric]
+        vrp_json_relative = joinpath(folder_relative, vrp_json_filename)
+
+        artifact_paths = Dict{String,String}(
+            "vrp_json" => vrp_json_relative,
+            "vrp" => joinpath(folder_relative, vrp_filename),
+            "meta" => isempty(meta_filename) ? "" : joinpath(folder_relative, meta_filename),
+            "manifest" => joinpath(folder_relative, manifest_filename),
+        )
+        sibling_variant_paths = Dict{String,String}()
+        for (other_metric, _) in metric_to_filename
+            other_metric == metric && continue
+            sibling_variant_paths[other_metric] = joinpath(folder_relative, vrp_json_filenames[other_metric])
+        end
+
+        instance_id = base * "_" * metric
+        json_payload = workbench_build_vrp_json_payload(
+            parsed,
+            instance_id,
+            metric,
+            place_slug,
+            base,
+            place_slug,
+            source_seed,
+            folder_relative,
+            route_count,
+            artifact_paths,
+            sibling_variant_paths,
+            reference_lla_payload,
+            generated_at,
+        )
+
+        vrp_json_disk_path = joinpath(folder, vrp_json_filename)
+        save_json_to_file(json_payload, vrp_json_disk_path; indent=4, sort_keys=false)
+        vrp_json_paths_relative[metric] = vrp_json_relative
+    end
+
+    return (
+        folder_relative=folder_relative,
+        metric_to_filename=metric_to_filename,
+        meta_filename=meta_filename,
+        vrp_json_paths=vrp_json_paths_relative,
+        reference_lla=reference_lla_payload,
+    )
+end
+
+
+function workbench_generation_single_payload(payload; repo_root::AbstractString=default_site_repo_root())
+    isdefined(@__MODULE__, :generate_single_instance) || throw(ArgumentError(
+        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+    ))
+
+    normalized = workbench_normalize_generation_payload(payload, repo_root)
+    raw_result = generate_single_instance(normalized)
+
+    folder = String(raw_result["folder"])
+    base = String(raw_result["base_name"])
+    files_payload = raw_result["files"]
+    summary_payload = raw_result["summary"]
+    manifest_filename = String(raw_result["manifest"])
+
+    artefact = workbench_postprocess_generated_instance(
+        repo_root, folder, base, files_payload, manifest_filename, summary_payload,
+    )
+
+    response_files = Dict{String,Any}(
+        "shortest" => get(artefact.metric_to_filename, "shortest", ""),
+        "fastest" => get(artefact.metric_to_filename, "fastest", ""),
+        "euclidean" => get(artefact.metric_to_filename, "euclidean", ""),
+        "meta" => artefact.meta_filename,
+        "manifest" => manifest_filename,
+    )
+
+    return Dict(
+        "ok" => true,
+        "base_name" => base,
+        "folder" => folder,
+        "folder_relative" => artefact.folder_relative,
+        "files" => response_files,
+        "vrp_json_paths" => artefact.vrp_json_paths,
+        "manifest" => manifest_filename,
+        "summary" => summary_payload,
+        "reference_lla" => artefact.reference_lla,
+    )
+end
+
+
+function workbench_bulk_tuning_value(instance, normalized_payload, key::AbstractString, default)
+    value = site_api_payload_get(instance, key, nothing)
+    value === nothing && return site_api_payload_get(normalized_payload, key, default)
+    return value
+end
+
+
+function workbench_bulk_tuning_key(instance, normalized_payload)
+    parts = String[
+        String(site_api_payload_get(instance, "city", "")),
+        lowercase(String(workbench_bulk_tuning_value(instance, normalized_payload, "method", "poi_categories"))),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "seed", 0)),
+        String(workbench_bulk_tuning_value(instance, normalized_payload, "depotMode", "center")),
+        String(workbench_bulk_tuning_value(instance, normalized_payload, "customerMode", "random_clustered")),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "onlyIntersections", true)),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "clusterSeeds", 4)),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "clusterDecayMeters", 800.0)),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "hybridPoiShare", 0.5)),
+        string(workbench_bulk_tuning_value(instance, normalized_payload, "categories", "")),
+    ]
+    return join(parts, '\u241f')
+end
+
+
+function workbench_bulk_subpayload(normalized_payload, instances::AbstractVector)
+    first_instance = first(instances)
+    mutable = Dict{Symbol,Any}()
+    for (key, value) in pairs(normalized_payload)
+        Symbol(key) == :instances && continue
+        mutable[Symbol(key)] = value
+    end
+
+    mutable[:instances] = instances
+    mutable[:method] = lowercase(String(workbench_bulk_tuning_value(first_instance, normalized_payload, "method", "poi_categories")))
+    mutable[:seed] = Int(workbench_bulk_tuning_value(first_instance, normalized_payload, "seed", 0))
+    mutable[:depotMode] = String(workbench_bulk_tuning_value(first_instance, normalized_payload, "depotMode", "center"))
+    mutable[:customerMode] = String(workbench_bulk_tuning_value(first_instance, normalized_payload, "customerMode", "random_clustered"))
+    mutable[:onlyIntersections] = Bool(workbench_bulk_tuning_value(first_instance, normalized_payload, "onlyIntersections", true))
+    mutable[:clusterSeeds] = Int(workbench_bulk_tuning_value(first_instance, normalized_payload, "clusterSeeds", 4))
+    mutable[:clusterDecayMeters] = Float64(workbench_bulk_tuning_value(first_instance, normalized_payload, "clusterDecayMeters", 800.0))
+    mutable[:hybridPoiShare] = Float64(workbench_bulk_tuning_value(first_instance, normalized_payload, "hybridPoiShare", 0.5))
+    mutable[:categories] = workbench_bulk_tuning_value(first_instance, normalized_payload, "categories", site_api_payload_get(normalized_payload, "categories", String[]))
+    return JSON3.read(JSON3.write(mutable))
+end
+
+
+function workbench_generate_bulk_instances_grouped(normalized_payload)
+    raw_instances = site_api_payload_get(normalized_payload, "instances", nothing)
+    raw_instances isa AbstractVector || return generate_bulk_instances(normalized_payload)
+
+    grouped_instances = Dict{String,Vector{Any}}()
+    group_order = String[]
+    for instance in raw_instances
+        key = workbench_bulk_tuning_key(instance, normalized_payload)
+        if !haskey(grouped_instances, key)
+            grouped_instances[key] = Any[]
+            push!(group_order, key)
+        end
+        push!(grouped_instances[key], instance)
+    end
+
+    if length(group_order) <= 1
+        return generate_bulk_instances(workbench_bulk_subpayload(normalized_payload, raw_instances))
+    end
+
+    results = Any[]
+    city_reports = Any[]
+    for key in group_order
+        subpayload = workbench_bulk_subpayload(normalized_payload, grouped_instances[key])
+        raw_result = generate_bulk_instances(subpayload)
+        append!(results, collect(site_api_payload_get(raw_result, "results", Any[])))
+        append!(city_reports, collect(site_api_payload_get(raw_result, "city_reports", Any[])))
+    end
+
+    return Dict(
+        "ok" => true,
+        "count" => length(results),
+        "results" => results,
+        "city_reports" => city_reports,
+    )
+end
+
+
+function workbench_generation_bulk_payload(payload; repo_root::AbstractString=default_site_repo_root())
+    isdefined(@__MODULE__, :generate_bulk_instances) || throw(ArgumentError(
+        "OSM-CVRPGen helpers are not available; ensure external/osm-cvrpgen is checked out"
+    ))
+
+    normalized = workbench_normalize_generation_payload(payload, repo_root)
+    generation_root = canonical_site_repo_root(repo_root)
+    raw_result = cd(generation_root) do
+        workbench_generate_bulk_instances_grouped(normalized)
+    end
+    raw_results = site_api_payload_get(raw_result, "results", nothing)
+    raw_results isa AbstractVector || throw(ArgumentError("Bulk generation returned no results array"))
+
+    enriched_results = Any[]
+    for entry in raw_results
+        folder = String(site_api_payload_get(entry, "folder", ""))
+        base = String(site_api_payload_get(entry, "base_name", ""))
+        files_payload = site_api_payload_get(entry, "files", nothing)
+        manifest_filename = String(site_api_payload_get(entry, "manifest", ""))
+        summary_payload = site_api_payload_get(entry, "summary", Dict{String,Any}())
+
+        artefact = workbench_postprocess_generated_instance(
+            repo_root, folder, base, files_payload, manifest_filename, summary_payload,
+        )
+
+        push!(enriched_results, Dict(
+            "ok" => true,
+            "base_name" => base,
+            "folder" => folder,
+            "folder_relative" => artefact.folder_relative,
+            "files" => Dict{String,Any}(
+                "shortest" => get(artefact.metric_to_filename, "shortest", ""),
+                "fastest" => get(artefact.metric_to_filename, "fastest", ""),
+                "euclidean" => get(artefact.metric_to_filename, "euclidean", ""),
+                "meta" => artefact.meta_filename,
+                "manifest" => manifest_filename,
+            ),
+            "vrp_json_paths" => artefact.vrp_json_paths,
+            "manifest" => manifest_filename,
+            "summary" => summary_payload,
+            "reference_lla" => artefact.reference_lla,
+        ))
+    end
+
+    return Dict(
+        "ok" => true,
+        "count" => length(enriched_results),
+        "results" => enriched_results,
+        "city_reports" => site_api_payload_get(raw_result, "city_reports", Any[]),
+    )
+end
+
+
 function build_site_api_handler(; repo_root::AbstractString=default_site_repo_root(), api_prefix::AbstractString=DEFAULT_SITE_API_PREFIX, indent::Int=2, sort_keys::Bool=false)
     http = load_http_module()
     resolved_repo_root = canonical_site_repo_root(repo_root)
@@ -1508,10 +2188,46 @@ function build_site_api_handler(; repo_root::AbstractString=default_site_repo_ro
             end
         end
 
+        if method == "POST" && path == "/api/workbench/generation/fetch-osm-city"
+            try
+                payload = JSON3.read(String(request.body))
+                return site_api_json_response(200, workbench_generation_fetch_osm_city_payload(payload; repo_root=resolved_repo_root))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
         if method == "POST" && path == "/api/workbench/generation/preview"
             try
                 payload = materialize_json(JSON3.read(String(request.body)))
                 return site_api_json_response(200, workbench_generation_preview_payload(resolved_repo_root, payload))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/generation/generate"
+            try
+                payload = JSON3.read(String(request.body))
+                return site_api_json_response(200, workbench_generation_full_preview_payload(payload; repo_root=resolved_repo_root))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/generation/single"
+            try
+                payload = JSON3.read(String(request.body))
+                return site_api_json_response(200, workbench_generation_single_payload(payload; repo_root=resolved_repo_root))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/generation/bulk"
+            try
+                payload = JSON3.read(String(request.body))
+                return site_api_json_response(200, workbench_generation_bulk_payload(payload; repo_root=resolved_repo_root))
             catch error
                 return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
             end

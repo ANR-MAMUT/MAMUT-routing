@@ -1,0 +1,3 @@
+# Workbench-fetched OSM extracts. Keep the directory but ignore its contents.
+*
+!.gitignore
