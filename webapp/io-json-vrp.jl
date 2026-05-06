@@ -471,6 +471,7 @@ struct BenchmarksIndexPayload
     generated_at::String
     snapshot::SnapshotRef
     route_path::String
+    breadcrumbs::Vector{BreadcrumbItem}
     problems::Vector{ProblemSummaryCard}
 end
 
@@ -1421,13 +1422,14 @@ function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snap
 end
 
 
-function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, problems)
+function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, breadcrumbs=BreadcrumbItem[BreadcrumbItem("Benchmarks", "/benchmarks/")], problems)
     return BenchmarksIndexPayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
         coerce_string(generated_at, "generated_at"),
         snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+        breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
         problems isa AbstractVector ? [problem isa ProblemSummaryCard ? problem : problem_summary_card_from_dict(problem) for problem in problems] : error("problems must be a list"),
     )
 end
@@ -1968,6 +1970,7 @@ benchmarks_index_payload(value::BenchmarksIndexPayload) = Pair{String,Any}[
     "generated_at" => value.generated_at,
     "snapshot" => snapshot_ref_payload(value.snapshot),
     "route_path" => value.route_path,
+    "breadcrumbs" => [breadcrumb_item_payload(item) for item in value.breadcrumbs],
     "problems" => [problem_summary_card_payload(problem) for problem in value.problems],
 ]
 
@@ -2986,7 +2989,7 @@ end
 
 
 function benchmarks_index_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "problems"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "breadcrumbs", "problems"])
     ensure_allowed_keys(payload, allowed, "BenchmarksIndexPayload")
     return BenchmarksIndexPayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -2994,6 +2997,7 @@ function benchmarks_index_payload_from_dict(payload::AbstractDict)
         generated_at=require_field(payload, "generated_at"),
         snapshot=require_field(payload, "snapshot"),
         route_path=require_field(payload, "route_path"),
+        breadcrumbs=get(payload, "breadcrumbs", BreadcrumbItem[BreadcrumbItem("Benchmarks", "/benchmarks/")]),
         problems=require_field(payload, "problems"),
     )
 end
