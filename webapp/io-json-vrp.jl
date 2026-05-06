@@ -13,6 +13,7 @@ const SITE_PAYLOAD_KINDS = Set([
     "site_snapshot",
     "site_history",
     "history_detail",
+    "project_page",
     "benchmarks_index",
     "problem_index",
     "family_index",
@@ -405,9 +406,43 @@ struct HomePagePayload
     counts::SiteCounts
     problems::Vector{ProblemSummaryCard}
     benchmarks_route_path::String
+    project_route_path::String
     objectives_route_path::String
     history_route_path::String
     workbench_route_path::String
+end
+
+
+struct ProjectFact
+    label::String
+    value::String
+    href::Union{Nothing,String}
+end
+
+
+struct ProjectNarrativeBlock
+    title::String
+    body::String
+    tags::Vector{String}
+end
+
+
+struct ProjectPagePayload
+    payload_kind::String
+    schema_version::String
+    generated_at::String
+    snapshot::SnapshotRef
+    route_path::String
+    title::String
+    subtitle::String
+    breadcrumbs::Vector{BreadcrumbItem}
+    anr_project_code::String
+    anr_project_url::String
+    anr_project_title::String
+    anr_context::String
+    facts::Vector{ProjectFact}
+    research_threads::Vector{ProjectNarrativeBlock}
+    collaboration_note::String
 end
 
 
@@ -1304,7 +1339,7 @@ function SiteHistoryLedger(; payload_kind, schema_version, generated_at, snapsho
 end
 
 
-function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/", title, subtitle, hero_summary, latest_publication_summary, counts, problems, benchmarks_route_path="/benchmarks/", objectives_route_path="/objectives/", history_route_path="/history/", workbench_route_path="/workbench/")
+function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/", title, subtitle, hero_summary, latest_publication_summary, counts, problems, benchmarks_route_path="/benchmarks/", project_route_path="/project/", objectives_route_path="/objectives/", history_route_path="/history/", workbench_route_path="/workbench/")
     return HomePagePayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1318,9 +1353,49 @@ function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot,
         counts isa SiteCounts ? counts : site_counts_from_dict(counts),
         problems isa AbstractVector ? [problem isa ProblemSummaryCard ? problem : problem_summary_card_from_dict(problem) for problem in problems] : error("problems must be a list"),
         validate_site_path(coerce_string(benchmarks_route_path, "benchmarks_route_path"), "benchmarks_route_path"),
+        validate_site_path(coerce_string(project_route_path, "project_route_path"), "project_route_path"),
         validate_site_path(coerce_string(objectives_route_path, "objectives_route_path"), "objectives_route_path"),
         validate_site_path(coerce_string(history_route_path, "history_route_path"), "history_route_path"),
         validate_site_path(coerce_string(workbench_route_path, "workbench_route_path"), "workbench_route_path"),
+    )
+end
+
+
+function ProjectFact(; label, value, href=nothing)
+    return ProjectFact(
+        coerce_string(label, "label"),
+        coerce_string(value, "value"),
+        coerce_optional_string(href, "href"),
+    )
+end
+
+
+function ProjectNarrativeBlock(; title, body, tags=String[])
+    return ProjectNarrativeBlock(
+        coerce_string(title, "title"),
+        coerce_string(body, "body"),
+        normalize_string_vector(tags, "tags"),
+    )
+end
+
+
+function ProjectPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/project/", title, subtitle, breadcrumbs, anr_project_code, anr_project_url, anr_project_title, anr_context, facts, research_threads, collaboration_note)
+    return ProjectPagePayload(
+        require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
+        coerce_string(schema_version, "schema_version"),
+        coerce_string(generated_at, "generated_at"),
+        snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
+        validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+        coerce_string(title, "title"),
+        coerce_string(subtitle, "subtitle"),
+        breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
+        coerce_string(anr_project_code, "anr_project_code"),
+        coerce_string(anr_project_url, "anr_project_url"),
+        coerce_string(anr_project_title, "anr_project_title"),
+        coerce_string(anr_context, "anr_context"),
+        facts isa AbstractVector ? [fact isa ProjectFact ? fact : project_fact_from_dict(fact) for fact in facts] : error("facts must be a list"),
+        research_threads isa AbstractVector ? [thread isa ProjectNarrativeBlock ? thread : project_narrative_block_from_dict(thread) for thread in research_threads] : error("research_threads must be a list"),
+        coerce_string(collaboration_note, "collaboration_note"),
     )
 end
 
@@ -1826,9 +1901,46 @@ home_page_payload(value::HomePagePayload) = Pair{String,Any}[
     "counts" => site_counts_payload(value.counts),
     "problems" => [problem_summary_card_payload(problem) for problem in value.problems],
     "benchmarks_route_path" => value.benchmarks_route_path,
+    "project_route_path" => value.project_route_path,
     "objectives_route_path" => value.objectives_route_path,
     "history_route_path" => value.history_route_path,
     "workbench_route_path" => value.workbench_route_path,
+]
+
+
+project_fact_payload(value::ProjectFact) = begin
+    result = Pair{String,Any}[
+        "label" => value.label,
+        "value" => value.value,
+    ]
+    push_if_not_nothing!(result, "href", value.href)
+    result
+end
+
+
+project_narrative_block_payload(value::ProjectNarrativeBlock) = Pair{String,Any}[
+    "title" => value.title,
+    "body" => value.body,
+    "tags" => value.tags,
+]
+
+
+project_page_payload(value::ProjectPagePayload) = Pair{String,Any}[
+    "payload_kind" => value.payload_kind,
+    "schema_version" => value.schema_version,
+    "generated_at" => value.generated_at,
+    "snapshot" => snapshot_ref_payload(value.snapshot),
+    "route_path" => value.route_path,
+    "title" => value.title,
+    "subtitle" => value.subtitle,
+    "breadcrumbs" => [breadcrumb_item_payload(item) for item in value.breadcrumbs],
+    "anr_project_code" => value.anr_project_code,
+    "anr_project_url" => value.anr_project_url,
+    "anr_project_title" => value.anr_project_title,
+    "anr_context" => value.anr_context,
+    "facts" => [project_fact_payload(fact) for fact in value.facts],
+    "research_threads" => [project_narrative_block_payload(thread) for thread in value.research_threads],
+    "collaboration_note" => value.collaboration_note,
 ]
 
 
@@ -1948,6 +2060,8 @@ payload(value::ProblemSummaryCard) = problem_summary_card_payload(value)
 payload(value::FamilySummaryCard) = family_summary_card_payload(value)
 payload(value::SubrouteEntry) = subroute_entry_payload(value)
 payload(value::ObjectiveExplainer) = objective_explainer_payload(value)
+payload(value::ProjectFact) = project_fact_payload(value)
+payload(value::ProjectNarrativeBlock) = project_narrative_block_payload(value)
 payload(value::CatalogSummary) = catalog_summary_payload(value)
 payload(value::InstanceListItem) = instance_list_item_payload(value)
 payload(value::SiteArtifactLinks) = site_artifact_links_payload(value)
@@ -1957,6 +2071,7 @@ payload(value::SiteSnapshotManifest) = site_snapshot_manifest_payload(value)
 payload(value::SiteHistoryEntry) = site_history_entry_payload(value)
 payload(value::SiteHistoryLedger) = site_history_ledger_payload(value)
 payload(value::HomePagePayload) = home_page_payload(value)
+payload(value::ProjectPagePayload) = project_page_payload(value)
 payload(value::HistoryDetailPayload) = history_detail_payload(value)
 payload(value::BenchmarksIndexPayload) = benchmarks_index_payload(value)
 payload(value::ProblemIndexPayload) = problem_index_payload(value)
@@ -2100,6 +2215,11 @@ end
 
 
 function custom_json_encode(value::HomePagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
+    return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
+end
+
+
+function custom_json_encode(value::ProjectPagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
     return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
 end
 
@@ -2774,7 +2894,7 @@ end
 
 
 function home_page_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "hero_summary", "latest_publication_summary", "counts", "problems", "benchmarks_route_path", "objectives_route_path", "history_route_path", "workbench_route_path"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "hero_summary", "latest_publication_summary", "counts", "problems", "benchmarks_route_path", "project_route_path", "objectives_route_path", "history_route_path", "workbench_route_path"])
     ensure_allowed_keys(payload, allowed, "HomePagePayload")
     return HomePagePayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -2789,9 +2909,55 @@ function home_page_payload_from_dict(payload::AbstractDict)
         counts=require_field(payload, "counts"),
         problems=require_field(payload, "problems"),
         benchmarks_route_path=get(payload, "benchmarks_route_path", "/benchmarks/"),
+        project_route_path=get(payload, "project_route_path", "/project/"),
         objectives_route_path=get(payload, "objectives_route_path", "/objectives/"),
         history_route_path=get(payload, "history_route_path", "/history/"),
         workbench_route_path=get(payload, "workbench_route_path", "/workbench/"),
+    )
+end
+
+
+function project_fact_from_dict(payload::AbstractDict)
+    allowed = Set(["label", "value", "href"])
+    ensure_allowed_keys(payload, allowed, "ProjectFact")
+    return ProjectFact(
+        label=require_field(payload, "label"),
+        value=require_field(payload, "value"),
+        href=get(payload, "href", nothing),
+    )
+end
+
+
+function project_narrative_block_from_dict(payload::AbstractDict)
+    allowed = Set(["title", "body", "tags"])
+    ensure_allowed_keys(payload, allowed, "ProjectNarrativeBlock")
+    return ProjectNarrativeBlock(
+        title=require_field(payload, "title"),
+        body=require_field(payload, "body"),
+        tags=get(payload, "tags", String[]),
+    )
+end
+
+
+function project_page_payload_from_dict(payload::AbstractDict)
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "breadcrumbs", "anr_project_code", "anr_project_url", "anr_project_title", "anr_context", "facts", "research_threads", "collaboration_note"])
+    ensure_allowed_keys(payload, allowed, "ProjectPagePayload")
+    return ProjectPagePayload(
+        payload_kind=require_field(payload, "payload_kind"),
+        schema_version=require_field(payload, "schema_version"),
+        generated_at=require_field(payload, "generated_at"),
+        snapshot=require_field(payload, "snapshot"),
+        route_path=get(payload, "route_path", "/project/"),
+        title=require_field(payload, "title"),
+        subtitle=require_field(payload, "subtitle"),
+        breadcrumbs=require_field(payload, "breadcrumbs"),
+        anr_project_code=require_field(payload, "anr_project_code"),
+        anr_project_url=require_field(payload, "anr_project_url"),
+        anr_project_title=require_field(payload, "anr_project_title"),
+        anr_context=require_field(payload, "anr_context"),
+        facts=require_field(payload, "facts"),
+        research_threads=require_field(payload, "research_threads"),
+        collaboration_note=require_field(payload, "collaboration_note"),
     )
 end
 
@@ -2931,6 +3097,9 @@ function site_payload_from_dict(payload::AbstractDict)
     if payload_kind == "history_detail"
         return history_detail_payload_from_dict(payload)
     end
+    if payload_kind == "project_page"
+        return project_page_payload_from_dict(payload)
+    end
     if payload_kind == "benchmarks_index"
         return benchmarks_index_payload_from_dict(payload)
     end
@@ -2996,6 +3165,7 @@ function is_site_payload_model(model)
     return model isa SiteSnapshotManifest ||
            model isa SiteHistoryLedger ||
            model isa HomePagePayload ||
+           model isa ProjectPagePayload ||
            model isa HistoryDetailPayload ||
            model isa BenchmarksIndexPayload ||
            model isa ProblemIndexPayload ||
