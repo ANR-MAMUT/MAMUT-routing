@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mamut-routing-publish"
+version = "0.0.1"
+description = "Snapshot, site, and release-archive generation toolkit for the MAMUT-routing benchmark repository."
+readme = "README.md"
+authors = [
+    { name = "Florian Rascoussier", email = "onyr.maintainer@gmail.com" },
+    { name = "Adrien Pichon" },
+]
+maintainers = [
+    { name = "Florian Rascoussier", email = "onyr.maintainer@gmail.com" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "mamut-routing-lib[pyvrp]",
+    "pydantic>=2.0.0",
+    "typer>=0.12",
+    "tqdm>=4.66",
+]
+keywords = [
+    "combinatorial optimization",
+    "vehicle routing problem",
+    "VRP",
+    "CVRP",
+    "VRPTW",
+    "benchmarking",
+    "BKS",
+    "operations research",
+    "logistics",
+    "transportation",
+    "static site generation",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.scripts]
+mamut-routing-publish = "mamut_routing_publish.cli:app"
+
+[project.urls]
+ANR-MAMUT = "https://anr.fr/Project-ANR-22-CE22-0016"
+Organization = "https://github.com/ANR-MAMUT"
+Source = "https://github.com/ANR-MAMUT/MAMUT-routing"
+Issues = "https://github.com/ANR-MAMUT/MAMUT-routing/issues"
+MAMUT-routing-lib = "https://github.com/ANR-MAMUT/MAMUT-routing-lib"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mamut_routing_publish"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/mamut_routing_publish/site_assets" = "mamut_routing_publish/site_assets"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".git",
+    ".gitignore",
+    ".pytest_cache",
+    "**/__pycache__",
+    "dist",
+    "dist-release",
+    "build",
+    "benchmarks",
+    "osmdata",
+    "webapp",
+]
+
+[tool.uv.sources]
+mamut-routing-lib = { path = "MAMUT-routing-lib", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+]

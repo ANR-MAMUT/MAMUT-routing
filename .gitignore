@@ -1,2 +1,14 @@
+# Python tooling outputs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+build/
+.venv/
+.python-version
+
+# Site + release outputs (generated, never tracked)
 /dist/
+/dist-release/
 /site-payloads/

@@ -1,0 +1,3 @@
+[submodule "MAMUT-routing-lib"]
+	path = MAMUT-routing-lib
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-lib.git
