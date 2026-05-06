@@ -2129,7 +2129,6 @@ function workbench_generate_vrptw_fields(
         "horizon_end" => Int(horizon_end),
         "mean_service_time_horizon_ratio" => mean_service_ratio,
         "time_window_ratio" => width_ratio_mean,
-        "euclidean_speed_m_per_s" => VRPTW_EUCLIDEAN_SPEED_MPS,
         "tw_repaired_count" => repaired_count,
     )
     return service_times, time_windows, stochastic_params
@@ -2234,11 +2233,9 @@ function workbench_postprocess_vrptw_instance(
     horizon_end::Integer,
 )
     fastest_filename = String(get(cvrp_metric_to_filename, "fastest", ""))
-    euclidean_filename = String(get(cvrp_metric_to_filename, "euclidean", ""))
     isempty(fastest_filename) && throw(ArgumentError("CVRP fastest .vrp filename missing for VRPTW derivation"))
-    isempty(euclidean_filename) && throw(ArgumentError("CVRP euclidean .vrp filename missing for VRPTW derivation"))
 
-    metric_order = ("shortest", "fastest", "euclidean")
+    metric_order = ("fastest",)
     metric_to_filename = Dict{String,String}()
     original_parsed_by_metric = Dict{String,WorkbenchParsedCvrpInstance}()
     for metric in metric_order
@@ -2274,18 +2271,12 @@ function workbench_postprocess_vrptw_instance(
         haskey(metric_to_filename, metric) || continue
         original = original_parsed_by_metric[metric]
         metric_instance_id = "$(cvrp_base)_$(metric)"
-        arc_costs = metric == "euclidean" ?
-            workbench_convert_meters_to_seconds(original.arc_costs) :
-            copy(original.arc_costs)
-        comment = metric == "euclidean" ?
-            "Converted from euclidean meter distances to integer travel times using $(VRPTW_EUCLIDEAN_SPEED_MPS) m/s" :
-            original.comment
         parsed = WorkbenchParsedCvrpInstance(
             metric_instance_id,
-            comment,
+            original.comment,
             original.dimension,
             original.capacity,
-            arc_costs,
+            copy(original.arc_costs),
             original.coordinates,
             original.demands,
             original.depot_node_index,
@@ -2314,7 +2305,11 @@ function workbench_postprocess_vrptw_instance(
         json_payload = workbench_build_vrptw_json_payload(
             parsed, metric_instance_id, metric, place_slug, cvrp_base, place_slug,
             source_seed, cvrp_folder_relative, route_count_value,
-            artifact_paths, sibling_variant_paths, Dict{String,String}(),
+            artifact_paths, sibling_variant_paths,
+            Dict{String,String}(
+                "cvrp_vrp_json" => get(cvrp_vrp_json_paths_relative, metric, ""),
+                "cvrp_vrp" => vrp_relative,
+            ),
             cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
         )
         save_json_to_file(json_payload, joinpath(cvrp_folder, vrp_json_filename); indent=4, sort_keys=false)
@@ -2364,7 +2359,6 @@ function workbench_postprocess_vrptw_instance(
         vrptw_instance_id = vrptw_id,
         folder_relative = cvrp_folder_relative,
         folder_fastest_relative = cvrp_folder_relative,
-        folder_euclidean_relative = cvrp_folder_relative,
         sidecar_relative = cvrp_folder_relative,
         files = files,
         service_times = service_times,
@@ -2547,7 +2541,6 @@ function workbench_run_vrptw_post(
 )
     isempty(cvrp_artefact.metric_to_filename) && return nothing
     haskey(cvrp_artefact.metric_to_filename, "fastest") || return nothing
-    haskey(cvrp_artefact.metric_to_filename, "euclidean") || return nothing
 
     vrptw = workbench_postprocess_vrptw_instance(
         repo_root,
@@ -2573,7 +2566,6 @@ function workbench_run_vrptw_post(
         "instance_id" => vrptw.vrptw_instance_id,
         "folder_relative" => vrptw.folder_relative,
         "folder_fastest_relative" => vrptw.folder_fastest_relative,
-        "folder_euclidean_relative" => vrptw.folder_euclidean_relative,
         "sidecar_relative" => vrptw.sidecar_relative,
         "files" => vrptw.files,
         "stochastic_params" => vrptw.stochastic_params,
@@ -2629,7 +2621,7 @@ function workbench_generation_single_payload(payload; repo_root::AbstractString=
     if tw_options !== nothing
         vrptw_summary = workbench_run_vrptw_post(repo_root, artefact, summary_payload, tw_options)
         vrptw_summary === nothing && throw(ArgumentError(
-            "Cannot derive VRPTW: CVRP fastest/euclidean variants are missing for $(base)"
+            "Cannot derive VRPTW: CVRP fastest variant is missing for $(base)"
         ))
         response["vrptw"] = vrptw_summary
     end
@@ -2835,7 +2827,7 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
                 result["vrptw"] = vrptw_summary
                 vrptw_count += 1
             else
-                result["vrptw_error"] = "Cannot derive VRPTW: CVRP fastest/euclidean variants are missing for $(base)"
+                result["vrptw_error"] = "Cannot derive VRPTW: CVRP fastest variant is missing for $(base)"
             end
         end
 
