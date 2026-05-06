@@ -1923,9 +1923,10 @@ function workbench_simulate_arrival_times(
     arrivals = fill(Int(horizon_start), n)
     isempty(route) && return arrivals
     t = Int(horizon_start)
-    prev = Int(route[1])
+    indices = collect(eachindex(route))
+    prev = Int(route[first(indices)])
     arrivals[prev] = t
-    for k in 2:length(route)
+    for k in indices[2:end]
         cur = Int(route[k])
         t += Int(travel_times[prev, cur])
         arrivals[cur] = t
@@ -2093,9 +2094,11 @@ function workbench_generate_vrptw_fields(
     ))
 
     if tw_method_lower == "route_centered"
-        time_windows, _route, width_ratio_mean = workbench_generate_tw_route_centered(
+        result_tuple = workbench_generate_tw_route_centered(
             rng, travel_times, service_times, horizon_start, horizon_end; depot=depot,
         )
+        time_windows = result_tuple[1]
+        width_ratio_mean = result_tuple[3]
     else
         time_windows, width_ratio_mean = workbench_generate_tw_reachable_interval(
             rng, travel_times, service_times, horizon_start, horizon_end; depot=depot,
@@ -2210,15 +2213,6 @@ function workbench_build_vrptw_json_payload(
 end
 
 
-function workbench_relative_vrptw_dirs(place_slug::AbstractString, num_customers::Integer, vrptw_id::AbstractString)
-    return (
-        fastest_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "fastest", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
-        euclidean_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "euclidean", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
-        sidecar_dir = joinpath("benchmarks", "VRPTW", "Mamut2026", "sidecars", String(place_slug), "n=$(num_customers)", String(vrptw_id)),
-    )
-end
-
-
 function workbench_postprocess_vrptw_instance(
     repo_root::AbstractString,
     cvrp_folder::AbstractString,
@@ -2241,16 +2235,20 @@ function workbench_postprocess_vrptw_instance(
     isempty(fastest_filename) && throw(ArgumentError("CVRP fastest .vrp filename missing for VRPTW derivation"))
     isempty(euclidean_filename) && throw(ArgumentError("CVRP euclidean .vrp filename missing for VRPTW derivation"))
 
-    fastest_path = joinpath(cvrp_folder, fastest_filename)
-    euclidean_path = joinpath(cvrp_folder, euclidean_filename)
-    isfile(fastest_path) || throw(ArgumentError("CVRP fastest .vrp not found at $(fastest_path)"))
-    isfile(euclidean_path) || throw(ArgumentError("CVRP euclidean .vrp not found at $(euclidean_path)"))
+    metric_order = ("shortest", "fastest", "euclidean")
+    metric_to_filename = Dict{String,String}()
+    original_parsed_by_metric = Dict{String,WorkbenchParsedCvrpInstance}()
+    for metric in metric_order
+        filename = String(get(cvrp_metric_to_filename, metric, ""))
+        isempty(filename) && continue
+        vrp_path = joinpath(cvrp_folder, filename)
+        isfile(vrp_path) || throw(ArgumentError("CVRP $(metric) .vrp not found at $(vrp_path)"))
+        metric_to_filename[metric] = filename
+        original_parsed_by_metric[metric] = workbench_parse_cvrp_vrp(vrp_path)
+    end
 
-    fastest_parsed = workbench_parse_cvrp_vrp(fastest_path)
-    euclidean_parsed = workbench_parse_cvrp_vrp(euclidean_path)
-
+    fastest_parsed = original_parsed_by_metric["fastest"]
     travel_times_fastest = copy(fastest_parsed.arc_costs)
-    travel_times_euclidean = workbench_convert_meters_to_seconds(euclidean_parsed.arc_costs)
 
     seed_parts = (cvrp_base, place_slug, source_seed, tw_method, horizon_start, horizon_end, "vrptw_workbench_v1")
     service_times, time_windows, stochastic_params = workbench_generate_vrptw_fields(
@@ -2258,98 +2256,73 @@ function workbench_postprocess_vrptw_instance(
         depot=fastest_parsed.depot_node_index,
     )
 
-    digest = bytes2hex(sha1(string(seed_parts)))
-    short_hash = digest[1:min(7, length(digest))]
-    num_customers = fastest_parsed.dimension - 1
-    vrptw_id = "mamut-n$(num_customers)-$(short_hash)"
-
-    layout = workbench_relative_vrptw_dirs(place_slug, num_customers, vrptw_id)
-    repo_root_abs = canonical_site_repo_root(repo_root)
-    fastest_dir_abs = joinpath(repo_root_abs, layout.fastest_dir)
-    euclidean_dir_abs = joinpath(repo_root_abs, layout.euclidean_dir)
-    sidecar_dir_abs = joinpath(repo_root_abs, layout.sidecar_dir)
-    mkpath(fastest_dir_abs)
-    mkpath(euclidean_dir_abs)
-    mkpath(sidecar_dir_abs)
-
-    fastest_vrp_filename = "$(vrptw_id).vrp"
-    euclidean_vrp_filename = "$(vrptw_id).vrp"
-    fastest_vrp_json_filename = "$(vrptw_id).vrp.json"
-    euclidean_vrp_json_filename = "$(vrptw_id).vrp.json"
-    meta_filename = "$(vrptw_id).meta.json"
-    manifest_filename = "$(vrptw_id).manifest.json"
-
-    parsed_by_metric = Dict(
-        "fastest" => WorkbenchParsedCvrpInstance(
-            vrptw_id, fastest_parsed.comment, fastest_parsed.dimension, fastest_parsed.capacity,
-            travel_times_fastest, fastest_parsed.coordinates, fastest_parsed.demands, fastest_parsed.depot_node_index,
-        ),
-        "euclidean" => WorkbenchParsedCvrpInstance(
-            vrptw_id,
-            "Converted from euclidean meter distances to integer travel times using $(VRPTW_EUCLIDEAN_SPEED_MPS) m/s",
-            euclidean_parsed.dimension, euclidean_parsed.capacity, travel_times_euclidean,
-            euclidean_parsed.coordinates, euclidean_parsed.demands, euclidean_parsed.depot_node_index,
-        ),
-    )
-
-    workbench_write_cvrptw_vrp(
-        joinpath(fastest_dir_abs, fastest_vrp_filename), parsed_by_metric["fastest"],
-        vrptw_id, parsed_by_metric["fastest"].comment, service_times, time_windows,
-    )
-    workbench_write_cvrptw_vrp(
-        joinpath(euclidean_dir_abs, euclidean_vrp_filename), parsed_by_metric["euclidean"],
-        vrptw_id, parsed_by_metric["euclidean"].comment, service_times, time_windows,
-    )
+    vrptw_id = String(cvrp_base)
 
     route_count_value = (cvrp_summary isa AbstractDict && haskey(cvrp_summary, "route_count")) ?
         Int(site_api_payload_get(cvrp_summary, "route_count", 0)) : nothing
     generated_at = string(now())
 
-    artifact_paths_fastest = Dict{String,String}(
-        "vrp_json" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
-        "vrp" => joinpath(layout.fastest_dir, fastest_vrp_filename),
-        "meta" => joinpath(layout.sidecar_dir, meta_filename),
-        "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
+    metric_to_vrp_json_filename = Dict(
+        metric => replace(filename, r"\.vrp$" => ".vrp.json")
+        for (metric, filename) in metric_to_filename
     )
-    artifact_paths_euclidean = Dict{String,String}(
-        "vrp_json" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
-        "vrp" => joinpath(layout.euclidean_dir, euclidean_vrp_filename),
-        "meta" => joinpath(layout.sidecar_dir, meta_filename),
-        "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
-    )
-    sibling_variant_paths_fastest = Dict{String,String}(
-        "euclidean" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
-    )
-    sibling_variant_paths_euclidean = Dict{String,String}(
-        "fastest" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
-    )
+    files = Dict{String,Any}()
+    for metric in metric_order
+        haskey(metric_to_filename, metric) || continue
+        original = original_parsed_by_metric[metric]
+        metric_instance_id = "$(cvrp_base)_$(metric)"
+        arc_costs = metric == "euclidean" ?
+            workbench_convert_meters_to_seconds(original.arc_costs) :
+            copy(original.arc_costs)
+        comment = metric == "euclidean" ?
+            "Converted from euclidean meter distances to integer travel times using $(VRPTW_EUCLIDEAN_SPEED_MPS) m/s" :
+            original.comment
+        parsed = WorkbenchParsedCvrpInstance(
+            metric_instance_id,
+            comment,
+            original.dimension,
+            original.capacity,
+            arc_costs,
+            original.coordinates,
+            original.demands,
+            original.depot_node_index,
+        )
 
-    cvrp_fastest_json_relative = String(get(cvrp_vrp_json_paths_relative, "fastest", ""))
-    cvrp_euclidean_json_relative = String(get(cvrp_vrp_json_paths_relative, "euclidean", ""))
-    source_problem_paths_fastest = Dict{String,String}(
-        "cvrp_vrp_json" => cvrp_fastest_json_relative,
-        "cvrp_vrp" => joinpath(cvrp_folder_relative, fastest_filename),
-    )
-    source_problem_paths_euclidean = Dict{String,String}(
-        "cvrp_vrp_json" => cvrp_euclidean_json_relative,
-        "cvrp_vrp" => joinpath(cvrp_folder_relative, euclidean_filename),
-    )
+        vrp_filename = metric_to_filename[metric]
+        vrp_json_filename = metric_to_vrp_json_filename[metric]
+        vrp_relative = joinpath(cvrp_folder_relative, vrp_filename)
+        vrp_json_relative = joinpath(cvrp_folder_relative, vrp_json_filename)
+        artifact_paths = Dict{String,String}(
+            "vrp_json" => vrp_json_relative,
+            "vrp" => vrp_relative,
+            "meta" => isempty(cvrp_meta_filename) ? "" : joinpath(cvrp_folder_relative, cvrp_meta_filename),
+            "manifest" => joinpath(cvrp_folder_relative, cvrp_manifest_filename),
+        )
+        sibling_variant_paths = Dict{String,String}()
+        for (other_metric, other_json_filename) in metric_to_vrp_json_filename
+            other_metric == metric && continue
+            sibling_variant_paths[other_metric] = joinpath(cvrp_folder_relative, other_json_filename)
+        end
 
-    fastest_payload = workbench_build_vrptw_json_payload(
-        parsed_by_metric["fastest"], vrptw_id, "fastest", place_slug, cvrp_base, place_slug,
-        source_seed, layout.fastest_dir, route_count_value,
-        artifact_paths_fastest, sibling_variant_paths_fastest, source_problem_paths_fastest,
-        cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
-    )
-    euclidean_payload = workbench_build_vrptw_json_payload(
-        parsed_by_metric["euclidean"], vrptw_id, "euclidean", place_slug, cvrp_base, place_slug,
-        source_seed, layout.euclidean_dir, route_count_value,
-        artifact_paths_euclidean, sibling_variant_paths_euclidean, source_problem_paths_euclidean,
-        cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
-    )
+        workbench_write_cvrptw_vrp(
+            joinpath(cvrp_folder, vrp_filename), parsed,
+            metric_instance_id, parsed.comment, service_times, time_windows,
+        )
+        json_payload = workbench_build_vrptw_json_payload(
+            parsed, metric_instance_id, metric, place_slug, cvrp_base, place_slug,
+            source_seed, cvrp_folder_relative, route_count_value,
+            artifact_paths, sibling_variant_paths, Dict{String,String}(),
+            cvrp_reference_lla, service_times, time_windows, stochastic_params, generated_at,
+        )
+        save_json_to_file(json_payload, joinpath(cvrp_folder, vrp_json_filename); indent=4, sort_keys=false)
 
-    save_json_to_file(fastest_payload, joinpath(fastest_dir_abs, fastest_vrp_json_filename); indent=4, sort_keys=false)
-    save_json_to_file(euclidean_payload, joinpath(euclidean_dir_abs, euclidean_vrp_json_filename); indent=4, sort_keys=false)
+        files["$(metric)_vrp"] = vrp_relative
+        files["$(metric)_vrp_json"] = vrp_json_relative
+    end
+    if !isempty(cvrp_meta_filename)
+        files["meta"] = joinpath(cvrp_folder_relative, cvrp_meta_filename)
+    end
+    files["manifest"] = joinpath(cvrp_folder_relative, cvrp_manifest_filename)
 
     cvrp_meta_path_abs = isempty(cvrp_meta_filename) ? "" : joinpath(cvrp_folder, cvrp_meta_filename)
     if !isempty(cvrp_meta_path_abs) && isfile(cvrp_meta_path_abs)
@@ -2361,7 +2334,8 @@ function workbench_postprocess_vrptw_instance(
         end
         meta_payload_dict["instance_id"] = vrptw_id
         meta_payload_dict["problem_type"] = "VRPTW"
-        save_json_to_file(meta_payload_dict, joinpath(sidecar_dir_abs, meta_filename); indent=4, sort_keys=false)
+        meta_payload_dict["vrptw_derivation"] = stochastic_params
+        save_json_to_file(meta_payload_dict, cvrp_meta_path_abs; indent=4, sort_keys=false)
     end
 
     cvrp_manifest_path_abs = isempty(cvrp_manifest_filename) ? "" : joinpath(cvrp_folder, cvrp_manifest_filename)
@@ -2380,22 +2354,16 @@ function workbench_postprocess_vrptw_instance(
             Dict{String,Any}()
         manifest_params["vrptw_derivation"] = stochastic_params
         manifest_dict["params"] = manifest_params
-        save_json_to_file(manifest_dict, joinpath(sidecar_dir_abs, manifest_filename); indent=4, sort_keys=false)
+        save_json_to_file(manifest_dict, cvrp_manifest_path_abs; indent=4, sort_keys=false)
     end
 
     return (
         vrptw_instance_id = vrptw_id,
-        folder_fastest_relative = layout.fastest_dir,
-        folder_euclidean_relative = layout.euclidean_dir,
-        sidecar_relative = layout.sidecar_dir,
-        files = Dict{String,Any}(
-            "fastest_vrp" => joinpath(layout.fastest_dir, fastest_vrp_filename),
-            "fastest_vrp_json" => joinpath(layout.fastest_dir, fastest_vrp_json_filename),
-            "euclidean_vrp" => joinpath(layout.euclidean_dir, euclidean_vrp_filename),
-            "euclidean_vrp_json" => joinpath(layout.euclidean_dir, euclidean_vrp_json_filename),
-            "meta" => joinpath(layout.sidecar_dir, meta_filename),
-            "manifest" => joinpath(layout.sidecar_dir, manifest_filename),
-        ),
+        folder_relative = cvrp_folder_relative,
+        folder_fastest_relative = cvrp_folder_relative,
+        folder_euclidean_relative = cvrp_folder_relative,
+        sidecar_relative = cvrp_folder_relative,
+        files = files,
         service_times = service_times,
         time_windows = time_windows,
         stochastic_params = stochastic_params,
@@ -2495,11 +2463,120 @@ function workbench_postprocess_generated_instance(
     end
 
     return (
+        folder=folder,
         folder_relative=folder_relative,
         metric_to_filename=metric_to_filename,
         meta_filename=meta_filename,
+        manifest_filename=manifest_filename,
         vrp_json_paths=vrp_json_paths_relative,
         reference_lla=reference_lla_payload,
+        place_slug=place_slug,
+        source_seed=source_seed,
+    )
+end
+
+
+function workbench_normalize_problem_type(value, default::AbstractString="CVRP")
+    raw = String(value === nothing ? default : value)
+    cleaned = uppercase(strip(raw))
+    isempty(cleaned) && (cleaned = uppercase(default))
+    cleaned in VRPTW_PROBLEM_TYPES || throw(ArgumentError(
+        "Unsupported problemType '$(raw)'. Use one of: $(join(VRPTW_PROBLEM_TYPES, ", "))."
+    ))
+    return cleaned
+end
+
+
+function workbench_normalize_tw_method(value, default::AbstractString=VRPTW_DEFAULT_TW_METHOD)
+    raw = String(value === nothing ? default : value)
+    cleaned = lowercase(strip(raw))
+    isempty(cleaned) && (cleaned = default)
+    cleaned in VRPTW_TW_METHODS || throw(ArgumentError(
+        "Unsupported twMethod '$(raw)'. Use one of: $(join(VRPTW_TW_METHODS, ", "))."
+    ))
+    return cleaned
+end
+
+
+function workbench_first_payload_value(payload, keys::Tuple, default=nothing)
+    for key in keys
+        value = site_api_payload_get(payload, String(key), nothing)
+        value === nothing || return value
+    end
+    return default
+end
+
+
+function workbench_extract_horizon(payload, key::AbstractString, default::Integer)
+    raw = site_api_payload_get(payload, key, nothing)
+    return workbench_normalize_horizon_value(raw, default)
+end
+
+
+function workbench_normalize_horizon_value(raw, default::Integer)
+    raw === nothing && return Int(default)
+    if raw isa AbstractString
+        stripped = strip(raw)
+        isempty(stripped) && return Int(default)
+        return parse(Int, stripped)
+    end
+    return Int(raw)
+end
+
+
+function workbench_collect_tw_options(payload)
+    method_value = workbench_first_payload_value(payload, ("twMethod", "tw_method"), VRPTW_DEFAULT_TW_METHOD)
+    horizon_start_value = workbench_first_payload_value(payload, ("twHorizonStart", "tw_horizon_start"), nothing)
+    horizon_end_value = workbench_first_payload_value(payload, ("twHorizonEnd", "tw_horizon_end"), nothing)
+    method = workbench_normalize_tw_method(method_value)
+    horizon_start = workbench_normalize_horizon_value(horizon_start_value, VRPTW_HORIZON_START)
+    horizon_end = workbench_normalize_horizon_value(horizon_end_value, VRPTW_HORIZON_END)
+    horizon_end > horizon_start || throw(ArgumentError("twHorizonEnd must be greater than twHorizonStart"))
+    return (tw_method=method, horizon_start=horizon_start, horizon_end=horizon_end)
+end
+
+
+function workbench_run_vrptw_post(
+    repo_root::AbstractString,
+    cvrp_artefact,
+    cvrp_summary,
+    tw_options;
+)
+    isempty(cvrp_artefact.metric_to_filename) && return nothing
+    haskey(cvrp_artefact.metric_to_filename, "fastest") || return nothing
+    haskey(cvrp_artefact.metric_to_filename, "euclidean") || return nothing
+
+    vrptw = workbench_postprocess_vrptw_instance(
+        repo_root,
+        cvrp_artefact.folder,
+        # base_name == cvrp_artefact.metric_to_filename "fastest" minus "_fastest.vrp"
+        replace(String(cvrp_artefact.metric_to_filename["fastest"]), r"_fastest\.vrp$" => ""),
+        cvrp_artefact.metric_to_filename,
+        cvrp_artefact.meta_filename,
+        cvrp_artefact.manifest_filename,
+        cvrp_summary,
+        cvrp_artefact.reference_lla,
+        cvrp_artefact.place_slug,
+        cvrp_artefact.source_seed,
+        cvrp_artefact.folder_relative,
+        cvrp_artefact.vrp_json_paths,
+        tw_options.tw_method,
+        tw_options.horizon_start,
+        tw_options.horizon_end,
+    )
+
+    return Dict{String,Any}(
+        "ok" => true,
+        "instance_id" => vrptw.vrptw_instance_id,
+        "folder_relative" => vrptw.folder_relative,
+        "folder_fastest_relative" => vrptw.folder_fastest_relative,
+        "folder_euclidean_relative" => vrptw.folder_euclidean_relative,
+        "sidecar_relative" => vrptw.sidecar_relative,
+        "files" => vrptw.files,
+        "stochastic_params" => vrptw.stochastic_params,
+        "horizon_start" => tw_options.horizon_start,
+        "horizon_end" => tw_options.horizon_end,
+        "tw_method" => tw_options.tw_method,
     )
 end
 
@@ -2508,6 +2585,9 @@ function workbench_generation_single_payload(payload; repo_root::AbstractString=
     isdefined(@__MODULE__, :generate_single_instance) || throw(ArgumentError(
         "MAMUT OSM generation helpers are not available; ensure webapp/osm_generation.jl is present"
     ))
+
+    problem_type = workbench_normalize_problem_type(workbench_first_payload_value(payload, ("problemType", "problem_type"), "CVRP"))
+    tw_options = problem_type == "VRPTW" ? workbench_collect_tw_options(payload) : nothing
 
     normalized = workbench_normalize_generation_payload(payload, repo_root)
     raw_result = generate_single_instance(normalized)
@@ -2530,8 +2610,9 @@ function workbench_generation_single_payload(payload; repo_root::AbstractString=
         "manifest" => manifest_filename,
     )
 
-    return Dict(
+    response = Dict{String,Any}(
         "ok" => true,
+        "problem_type" => problem_type,
         "base_name" => base,
         "folder" => folder,
         "folder_relative" => artefact.folder_relative,
@@ -2541,6 +2622,16 @@ function workbench_generation_single_payload(payload; repo_root::AbstractString=
         "summary" => summary_payload,
         "reference_lla" => artefact.reference_lla,
     )
+
+    if tw_options !== nothing
+        vrptw_summary = workbench_run_vrptw_post(repo_root, artefact, summary_payload, tw_options)
+        vrptw_summary === nothing && throw(ArgumentError(
+            "Cannot derive VRPTW: CVRP fastest/euclidean variants are missing for $(base)"
+        ))
+        response["vrptw"] = vrptw_summary
+    end
+
+    return response
 end
 
 
@@ -2548,6 +2639,19 @@ function workbench_bulk_tuning_value(instance, normalized_payload, key::Abstract
     value = site_api_payload_get(instance, key, nothing)
     value === nothing && return site_api_payload_get(normalized_payload, key, default)
     return value
+end
+
+
+function workbench_bulk_tuning_value_first(instance, normalized_payload, keys::Tuple, default)
+    for key in keys
+        value = site_api_payload_get(instance, String(key), nothing)
+        value === nothing || return value
+    end
+    for key in keys
+        value = site_api_payload_get(normalized_payload, String(key), nothing)
+        value === nothing || return value
+    end
+    return default
 end
 
 
@@ -2565,6 +2669,48 @@ function workbench_bulk_tuning_key(instance, normalized_payload)
         string(workbench_bulk_tuning_value(instance, normalized_payload, "categories", "")),
     ]
     return join(parts, '\u241f')
+end
+
+
+function workbench_bulk_problem_type(instance, normalized_payload)
+    value = workbench_bulk_tuning_value_first(instance, normalized_payload, ("problemType", "problem_type"), "CVRP")
+    return workbench_normalize_problem_type(value)
+end
+
+
+function workbench_bulk_tw_options(instance, normalized_payload)
+    method_raw = workbench_bulk_tuning_value_first(instance, normalized_payload, ("twMethod", "tw_method"), VRPTW_DEFAULT_TW_METHOD)
+    horizon_start_raw = workbench_bulk_tuning_value_first(instance, normalized_payload, ("twHorizonStart", "tw_horizon_start"), VRPTW_HORIZON_START)
+    horizon_end_raw = workbench_bulk_tuning_value_first(instance, normalized_payload, ("twHorizonEnd", "tw_horizon_end"), VRPTW_HORIZON_END)
+    method = workbench_normalize_tw_method(method_raw)
+    horizon_start = workbench_normalize_horizon_value(horizon_start_raw, VRPTW_HORIZON_START)
+    horizon_end = workbench_normalize_horizon_value(horizon_end_raw, VRPTW_HORIZON_END)
+    horizon_end > horizon_start || throw(ArgumentError("twHorizonEnd must be greater than twHorizonStart"))
+    return (tw_method=method, horizon_start=horizon_start, horizon_end=horizon_end)
+end
+
+
+function workbench_bulk_match_instance(entry, raw_instances::AbstractVector)
+    folder = String(site_api_payload_get(entry, "folder", ""))
+    isempty(folder) && return nothing
+    summary = site_api_payload_get(entry, "summary", Dict{String,Any}())
+    n_customers = Int(site_api_payload_get(summary, "customers", 0))
+    base = String(site_api_payload_get(entry, "base_name", ""))
+    folder_lower = lowercase(folder)
+    for instance in raw_instances
+        city_value = site_api_payload_get(instance, "city", "")
+        city = lowercase(String(city_value))
+        if !isempty(city) && !occursin("/$(city)/", folder_lower)
+            continue
+        end
+        instance_n = Int(site_api_payload_get(instance, "nCustomers", 0))
+        if n_customers > 0 && instance_n > 0 && instance_n != n_customers
+            continue
+        end
+        return instance
+    end
+    isempty(raw_instances) && return nothing
+    return first(raw_instances)
 end
 
 
@@ -2633,6 +2779,9 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
     ))
 
     normalized = workbench_normalize_generation_payload(payload, repo_root)
+    raw_instances = site_api_payload_get(normalized, "instances", nothing)
+    instance_list = raw_instances isa AbstractVector ? collect(raw_instances) : Any[]
+
     generation_root = canonical_site_repo_root(repo_root)
     raw_result = cd(generation_root) do
         workbench_generate_bulk_instances_grouped(normalized)
@@ -2641,6 +2790,7 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
     raw_results isa AbstractVector || throw(ArgumentError("Bulk generation returned no results array"))
 
     enriched_results = Any[]
+    vrptw_count = 0
     for entry in raw_results
         folder = String(site_api_payload_get(entry, "folder", ""))
         base = String(site_api_payload_get(entry, "base_name", ""))
@@ -2652,8 +2802,13 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
             repo_root, folder, base, files_payload, manifest_filename, summary_payload,
         )
 
-        push!(enriched_results, Dict(
+        matched_instance = workbench_bulk_match_instance(entry, instance_list)
+        problem_type = matched_instance === nothing ? "CVRP" :
+            workbench_bulk_problem_type(matched_instance, normalized)
+
+        result = Dict{String,Any}(
             "ok" => true,
+            "problem_type" => problem_type,
             "base_name" => base,
             "folder" => folder,
             "folder_relative" => artefact.folder_relative,
@@ -2668,12 +2823,26 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
             "manifest" => manifest_filename,
             "summary" => summary_payload,
             "reference_lla" => artefact.reference_lla,
-        ))
+        )
+
+        if problem_type == "VRPTW"
+            tw_options = workbench_bulk_tw_options(matched_instance, normalized)
+            vrptw_summary = workbench_run_vrptw_post(repo_root, artefact, summary_payload, tw_options)
+            if vrptw_summary !== nothing
+                result["vrptw"] = vrptw_summary
+                vrptw_count += 1
+            else
+                result["vrptw_error"] = "Cannot derive VRPTW: CVRP fastest/euclidean variants are missing for $(base)"
+            end
+        end
+
+        push!(enriched_results, result)
     end
 
     return Dict(
         "ok" => true,
         "count" => length(enriched_results),
+        "vrptw_count" => vrptw_count,
         "results" => enriched_results,
         "city_reports" => site_api_payload_get(raw_result, "city_reports", Any[]),
     )
