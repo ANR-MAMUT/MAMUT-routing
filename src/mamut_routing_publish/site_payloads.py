@@ -80,6 +80,7 @@ class ObjectiveAvailability(BaseModel):
     objective_function: ObjectiveFunction
     cost: int | float | None = None
     num_routes: int | None = None
+    artifact_path: str
 
 
 class BreadcrumbItem(BaseModel):
@@ -954,6 +955,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
                 objective_function=objective,
                 cost=entry.cost,
                 num_routes=num_routes,
+                artifact_path=entry.artifact_path,
             )
         )
     return availability

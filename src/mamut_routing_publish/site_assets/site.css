@@ -390,6 +390,57 @@ body[data-route-path="/"] .theme-toggle {
   transform: translateY(-1px);
 }
 
+.bks-link-chip-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+a.bks-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--ink);
+  padding: 0.3rem 0.6rem;
+  font-weight: 600;
+  font-size: 0.9em;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+a.bks-link-chip .bks-link-chip-glyph {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+a.bks-link-chip:hover,
+a.bks-link-chip:focus-visible {
+  background: var(--accent-light);
+  border-color: transparent;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+a.bks-link-chip:hover .bks-link-chip-glyph,
+a.bks-link-chip:focus-visible .bks-link-chip-glyph {
+  opacity: 1;
+}
+
+a.vrp-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted color-mix(in srgb, currentColor 40%, transparent);
+}
+
+a.vrp-link:hover,
+a.vrp-link:focus-visible {
+  border-bottom-style: solid;
+  color: var(--highlight);
+}
+
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;

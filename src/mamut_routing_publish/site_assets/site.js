@@ -290,6 +290,15 @@ function routesStatValue(entry) {
   return String(entry.num_routes);
 }
 
+function bksLinkChip(formatted, artifactPath, objective) {
+  if (!artifactPath) {
+    return badgeWithTitleHtml(formatted.labelHtml, formatted.title);
+  }
+  const href = artifactHref(artifactPath);
+  const title = `Open BKS JSON · ${objective}`;
+  return `<a class="bks-link-chip" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${formatted.labelHtml}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span></a>`;
+}
+
 function formatObjectiveBadge(entry) {
   const costHtml = costSpan(entry.cost);
   const costPlain = formatCost(entry.cost);
@@ -561,14 +570,19 @@ function renderInstanceRows(items) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return badgeWithTitleHtml(formatted.labelHtml, formatted.title);
+          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function);
         })
         .join("");
+      const objectiveCell = objectiveBadges
+        ? `<div class="bks-link-chip-row">${objectiveBadges}</div>`
+        : '<span class="meta-line">No BKS</span>';
       const workbenchLink = supportsWorkbenchInstance(item)
         ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
         : "";
       const rowTitle = `${item.instance_id}\n${item.artifact_vrp_json_path}`;
-      return `<tr title="${escapeHtml(rowTitle)}"><td class="table-cell-mono">${escapeHtml(item.display_name)}</td><td class="table-cell-num">${escapeHtml(item.num_customers)}</td><td>${escapeHtml(contextParts.join(" · ")) || '<span class="meta-line">—</span>'}</td><td>${objectiveBadges || '<span class="meta-line">No BKS</span>'}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
+      const vrpHref = artifactHref(item.artifact_vrp_json_path);
+      const nameCell = `<a class="vrp-link" href="${vrpHref}" target="_blank" rel="noopener" title="Open ${escapeHtml(item.display_name)}.vrp.json">${escapeHtml(item.display_name)}</a>`;
+      return `<tr title="${escapeHtml(rowTitle)}"><td class="table-cell-mono">${nameCell}</td><td class="table-cell-num">${escapeHtml(item.num_customers)}</td><td>${escapeHtml(contextParts.join(" · ")) || '<span class="meta-line">—</span>'}</td><td>${objectiveCell}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
@@ -609,14 +623,22 @@ function renderInstanceGroups(items) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return badgeWithTitleHtml(formatted.labelHtml, formatted.title);
+          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function);
         })
         .join("");
+      const objectiveCell = objectiveBadges
+        ? `<div class="bks-link-chip-row">${objectiveBadges}</div>`
+        : '<span class="meta-line">No BKS</span>';
       const workbenchLink = supportsWorkbenchInstance(item)
         ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
         : "";
       const rowTitle = `${item.instance_id}\n${item.artifact_vrp_json_path}`;
-      return `<tr class="group-sub" title="${escapeHtml(rowTitle)}"><td class="indent" aria-hidden="true">↳</td><td class="table-cell-mono">${escapeHtml(item.locator.metric_variant ?? "")}</td><td>${objectiveBadges || '<span class="meta-line">No BKS</span>'}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
+      const variantLabel = item.locator.metric_variant ?? "";
+      const vrpHref = artifactHref(item.artifact_vrp_json_path);
+      const variantCell = variantLabel
+        ? `<a class="vrp-link" href="${vrpHref}" target="_blank" rel="noopener" title="Open ${escapeHtml(item.display_name)} (${escapeHtml(variantLabel)}) .vrp.json">${escapeHtml(variantLabel)}</a>`
+        : "";
+      return `<tr class="group-sub" title="${escapeHtml(rowTitle)}"><td class="indent" aria-hidden="true">↳</td><td class="table-cell-mono">${variantCell}</td><td>${objectiveCell}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
     }).join("");
     return `<tbody class="group"><tr class="group-header">${headerCell}</tr>${subRows}</tbody>`;
   });

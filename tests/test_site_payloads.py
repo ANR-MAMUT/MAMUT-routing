@@ -1001,7 +1001,12 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
     assert historical_item["num_customers"] == 2
     assert historical_item["instance_id"] == "vrptw-sintef2008-n2-C101"
     assert historical_item["objective_availability"] == [
-        {"objective_function": "HierarchicalVehicleCost", "cost": 12, "num_routes": 1},
+        {
+            "objective_function": "HierarchicalVehicleCost",
+            "cost": 12,
+            "num_routes": 1,
+            "artifact_path": "benchmarks/VRPTW/Sintef2008/n=2/C101.bks.HierarchicalVehicleCost.json",
+        },
     ]
 
     vrptw_size_index = json.loads(
@@ -1020,9 +1025,20 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
     mamut_item = vrptw_size_index["items"][0]
     assert mamut_item["num_customers"] == 2
     assert mamut_item["instance_id"] == f"vrptw-mamut2026-fastest-brest-n2-{generated_vrptw.instance_name}"
+    mamut_dir = f"benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/{generated_vrptw.instance_name}"
     assert mamut_item["objective_availability"] == [
-        {"objective_function": "HierarchicalVehicleCost", "cost": 12, "num_routes": 1},
-        {"objective_function": "MonoCost", "cost": 12, "num_routes": None},
+        {
+            "objective_function": "HierarchicalVehicleCost",
+            "cost": 12,
+            "num_routes": 1,
+            "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.HierarchicalVehicleCost.json",
+        },
+        {
+            "objective_function": "MonoCost",
+            "cost": 12,
+            "num_routes": None,
+            "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.MonoCost.json",
+        },
     ]
 
 

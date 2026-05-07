@@ -147,6 +147,7 @@ struct ObjectiveAvailability
     objective_function::String
     cost::Union{Nothing,Int,Float64}
     num_routes::Union{Nothing,Int}
+    artifact_path::String
 end
 
 
@@ -1022,13 +1023,14 @@ function SiteCounts(; problem_count, family_count, variant_count, place_count, s
 end
 
 
-function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=nothing)
+function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=nothing, artifact_path)
     num_routes_int = coerce_optional_int(num_routes, "num_routes")
     num_routes_int === nothing || require_nonnegative(num_routes_int, "num_routes")
     return ObjectiveAvailability(
         require_choice(coerce_string(objective_function, "objective_function"), OBJECTIVE_FUNCTIONS, "objective_function"),
         coerce_cost(cost, "cost"),
         num_routes_int,
+        coerce_string(artifact_path, "artifact_path"),
     )
 end
 
@@ -1700,7 +1702,9 @@ site_counts_payload(value::SiteCounts) = Pair{String,Any}[
 
 objective_availability_payload(value::ObjectiveAvailability) = Pair{String,Any}[
     "objective_function" => value.objective_function,
-    "count" => value.count,
+    "cost" => value.cost,
+    "num_routes" => value.num_routes,
+    "artifact_path" => value.artifact_path,
 ]
 
 
@@ -2555,12 +2559,13 @@ end
 
 
 function objective_availability_from_dict(payload::AbstractDict)
-    allowed = Set(["objective_function", "cost", "num_routes"])
+    allowed = Set(["objective_function", "cost", "num_routes", "artifact_path"])
     ensure_allowed_keys(payload, allowed, "ObjectiveAvailability")
     return ObjectiveAvailability(
         objective_function=require_field(payload, "objective_function"),
         cost=get(payload, "cost", nothing),
         num_routes=get(payload, "num_routes", nothing),
+        artifact_path=require_field(payload, "artifact_path"),
     )
 end
 
