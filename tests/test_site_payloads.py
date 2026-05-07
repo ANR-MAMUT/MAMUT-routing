@@ -373,7 +373,7 @@ def probe_julia_site_static_routes(output_repo_dir: Path, instance_id: str) -> d
         ("root_html", "/", 'data-payload-mode="static"'),
         ("problem_html", "/benchmarks/vrptw/", "<title>MAMUT-routing</title>"),
         ("site_js", "/webapp/site.js", "payloadUrlForRoute"),
-        ("favicon", "/webapp/icons/favicon.svg", "MAMUT-routing favicon"),
+        ("favicon", "/webapp/icons/favicon.svg", 'sodipodi:docname="favicon.svg"'),
         ("home_json", "/site-payloads/index.json", '"payload_kind": "home_page"'),
         (
             "artifact_json",
@@ -1241,6 +1241,48 @@ def test_compute_change_log_tiny_cost_diff_is_an_improvement() -> None:
     log = _compute_change_log(prev, new)
     assert log.counts.bks_improved == 1
     assert log.bks_changes[0].kind == "improved"
+
+
+def test_road_cache_enforcement_plan_targets_bks_route_edges(tmp_path: Path) -> None:
+    from mamut_routing_publish.road_cache import build_road_cache_plan
+
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    _, generated_vrptw = build_fixture_site_inputs(output_repo_dir)
+    meta_path = (
+        output_repo_dir
+        / "benchmarks"
+        / "VRPTW"
+        / "Mamut2026"
+        / "sidecars"
+        / "brest"
+        / "n=2"
+        / generated_vrptw.instance_name
+        / f"{generated_vrptw.instance_name}.meta.json"
+    )
+    write_json(
+        meta_path,
+        {
+            "instance_id": generated_vrptw.instance_name,
+            "source_osm_file": "osmdata/Brest.osm",
+            "depot_instance_node_id": 1,
+            "nodes": [
+                {"instance_node_id": 1, "poi_lon": 0.0, "poi_lat": 0.0},
+                {"instance_node_id": 2, "poi_lon": 1.0, "poi_lat": 1.0},
+                {"instance_node_id": 3, "poi_lon": 2.0, "poi_lat": 2.0},
+            ],
+        },
+    )
+
+    plan = build_road_cache_plan(output_repo_dir)
+
+    assert plan["entries"] == [
+        {
+            "meta_path": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.meta.json",
+            "routes_by_metric": {
+                "fastest": [[2, 3]],
+            },
+        },
+    ]
 
 
 def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tmp_path: Path) -> None:

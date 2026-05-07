@@ -17,6 +17,8 @@ from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunct
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib import has_structured_metadata
 
+from .road_cache import enforce_full_road_cache
+
 
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
 DEFAULT_SITE_OUTPUT_DIR = Path("dist")
@@ -620,7 +622,7 @@ def _metric_name_sort_key(value: str) -> tuple[int, str]:
     return (order.get(value, 99), value)
 
 
-def _expected_bks_route_edge_count(meta_payload: dict | None, bks_paths: list[Path] | None) -> int | None:
+def _expected_bks_route_edges(meta_payload: dict | None, bks_paths: list[Path] | None) -> set[tuple[int, int]] | None:
     if not isinstance(meta_payload, dict) or not bks_paths:
         return None
 
@@ -649,7 +651,25 @@ def _expected_bks_route_edge_count(meta_payload: dict | None, bks_paths: list[Pa
             full_route = [depot_node_id, *[int(stop) + node_offset for stop in route], depot_node_id]
             route_edges.update(zip(full_route, full_route[1:]))
 
-    return len(route_edges) or None
+    return route_edges or None
+
+
+def _expected_bks_route_edge_count(meta_payload: dict | None, bks_paths: list[Path] | None) -> int | None:
+    route_edges = _expected_bks_route_edges(meta_payload, bks_paths)
+    return len(route_edges) if route_edges is not None else None
+
+
+def _metric_cache_covers_bks_edges(metric_cache: object, route_edges: set[tuple[int, int]] | None) -> bool | None:
+    if route_edges is None:
+        return None
+    if not isinstance(metric_cache, dict):
+        return False
+    for from_node, to_node in route_edges:
+        direct_key = f"node:{from_node}_{to_node}"
+        reverse_key = f"node:{to_node}_{from_node}"
+        if direct_key not in metric_cache and reverse_key not in metric_cache:
+            return False
+    return True
 
 
 def _expected_road_cache_entry_count(
@@ -729,9 +749,13 @@ def _build_geometry_summary(
     metric_name = metric_variant.value if metric_variant is not None else ""
     metric_cache = road_cache.get(metric_name) if isinstance(road_cache, dict) else None
     entry_count = len(metric_cache) if isinstance(metric_cache, dict) else 0
+    expected_route_edges = _expected_bks_route_edges(meta_payload, bks_paths)
     expected_entry_count = _expected_road_cache_entry_count(instance, meta_payload, bks_paths)
+    covers_expected_edges = _metric_cache_covers_bks_edges(metric_cache, expected_route_edges)
 
-    if expected_entry_count is not None and entry_count >= expected_entry_count > 0:
+    if covers_expected_edges is True or (
+        covers_expected_edges is None and expected_entry_count is not None and entry_count >= expected_entry_count > 0
+    ):
         status: RoadCacheStatus = "complete"
     elif entry_count > 0:
         status = "partial"
@@ -1864,6 +1888,7 @@ def generate_site_payloads(
     schema_version: str = SITE_PAYLOAD_SCHEMA_VERSION,
     payload_root_dir: str | Path = DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     site_output_dir: str | Path | None = None,
+    enforce_road_cache: bool = True,
 ) -> SitePayloadGenerationSummary:
     output_repo = Path(output_repo_dir)
     site_output = _resolve_site_output_dir(output_repo, site_output_dir)
@@ -1873,6 +1898,9 @@ def generate_site_payloads(
     benchmarks_root = output_repo / "benchmarks"
     if not benchmarks_root.exists():
         raise FileNotFoundError(f"Benchmark root does not exist: {benchmarks_root}")
+
+    if enforce_road_cache:
+        enforce_full_road_cache(output_repo)
 
     generated_at = _now_utc_iso()
     published_at_value = published_at or generated_at
