@@ -27,6 +27,7 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 
 ### Setup
 
+#### Python
 ```bash
 # clone with the nested mamut-routing-lib submodule
 git clone --recurse-submodules git@github.com:ANR-MAMUT/MAMUT-routing.git
@@ -35,6 +36,16 @@ cd MAMUT-routing
 # install (uses the local editable submodule for mamut-routing-lib)
 uv sync
 ```
+
+#### Julia
+
+From the repo root, run:
+```bash
+julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+```
+
+This installs and precompiles the Julia dependencies declared in `webapp/Project.toml` and `webapp/Manifest.toml`.
+
 
 ### CLI
 
@@ -68,6 +79,13 @@ uv run pytest
 
 See [`webapp/README.md`](webapp/README.md) for the site API server and
 geometry-cache filling instructions.
+
+To run Julia webapp locally:
+```bash
+julia --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+```
+
+This command starts the server, serving the static site and the route-payload API from the local `dist/` directory. 
 
 ## License
 
