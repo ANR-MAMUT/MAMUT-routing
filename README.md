@@ -82,7 +82,7 @@ geometry-cache filling instructions.
 
 To run Julia webapp locally:
 ```bash
-julia --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
 ```
 
 This command starts the server, serving the static site and the route-payload API from the local `dist/` directory. 
