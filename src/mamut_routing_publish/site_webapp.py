@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from mamut_routing_lib.json_utils import load_json_from_file
+from mamut_routing_publish.progress import ProgressReporter
 from mamut_routing_publish.site_payloads import DEFAULT_SITE_OUTPUT_DIR, DEFAULT_SITE_PAYLOAD_ROOT_DIR
 
 
@@ -19,6 +20,19 @@ class SiteWebappGenerationSummary(BaseModel):
     html_files_written: int
     asset_files_written: int
     placeholder_pages_written: int
+    html_paths: list[str] | None = None
+    asset_paths: list[str] | None = None
+    removed_paths: list[str] | None = None
+
+
+def _paths_for_summary(site_output: Path, paths: list[Path]) -> list[str]:
+    values: list[str] = []
+    for path in paths:
+        try:
+            values.append(path.relative_to(site_output).as_posix())
+        except ValueError:
+            values.append(path.as_posix())
+    return sorted(values)
 
 
 def _route_directory(output_repo_dir: Path, route_path: str) -> Path:
@@ -602,6 +616,8 @@ def generate_site_webapp(
     payload_api_prefix: str = "/api/site-payload",
     payload_root_dir: str | Path = DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     site_output_dir: str | Path | None = None,
+    reporter: ProgressReporter | None = None,
+    list_files: bool = False,
 ) -> SiteWebappGenerationSummary:
     output_repo = Path(output_repo_dir)
     site_output = _resolve_site_output_dir(output_repo, site_output_dir)
@@ -621,29 +637,35 @@ def generate_site_webapp(
         (source_assets_dir / "workbench.css", site_output / "webapp" / "workbench.css"),
         (source_assets_dir / "workbench.js", site_output / "webapp" / "workbench.js"),
     ]
-    asset_files_written = 0
-    for source_path, target_path in asset_targets:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(source_path.read_bytes())
-        asset_files_written += 1
+    asset_paths: list[Path] = []
+    if reporter is not None:
+        reporter.phase("copying web assets")
+    with (reporter.task("copy web assets", len(asset_targets)) if reporter else _NullProgressTask()) as task:
+        for source_path, target_path in asset_targets:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(source_path.read_bytes())
+            asset_paths.append(target_path)
+            task.update(detail=target_path.name)
     icon_source_dir = source_assets_dir / "icons"
     if icon_source_dir.exists():
         icon_target_dir = site_output / "webapp" / "icons"
         if icon_target_dir.exists():
             shutil.rmtree(icon_target_dir)
         shutil.copytree(icon_source_dir, icon_target_dir)
-        asset_files_written += sum(1 for path in icon_source_dir.iterdir() if path.is_file())
+        asset_paths.extend(path for path in icon_target_dir.iterdir() if path.is_file())
     logo_source_dir = source_assets_dir / "logos"
     if logo_source_dir.exists():
         logo_target_dir = site_output / "webapp" / "logos"
         if logo_target_dir.exists():
             shutil.rmtree(logo_target_dir)
         shutil.copytree(logo_source_dir, logo_target_dir)
-        asset_files_written += sum(1 for path in logo_source_dir.iterdir() if path.is_file())
+        asset_paths.extend(path for path in logo_target_dir.iterdir() if path.is_file())
 
-    html_files_written = 0
+    html_paths: list[Path] = []
     route_payloads: dict[str, Path] = {}
     payload_search_root = site_output / payload_root
+    if reporter is not None:
+        reporter.phase("discovering route payloads", root=payload_search_root)
     payload_paths = sorted(payload_search_root.rglob("index.json")) if payload_search_root.exists() else []
     for payload_path in payload_paths:
         payload = load_json_from_file(payload_path)
@@ -654,22 +676,24 @@ def generate_site_webapp(
             continue
         route_payloads[route_path] = payload_path
 
-    for route_path, payload_path in route_payloads.items():
-        html_path = _route_html_path(site_output, route_path)
-        html_path.parent.mkdir(parents=True, exist_ok=True)
-        html_path.write_text(
-            _render_shell_html(
-                site_output,
-                route_path,
-                payload_source_path=payload_path,
-                page_kind="payload",
-                payload_mode=payload_mode,
-                payload_api_prefix=payload_api_prefix,
-                payload_static_root=payload_static_root,
-            ),
-            encoding="utf-8",
-        )
-        html_files_written += 1
+    with (reporter.task("write HTML shells", len(route_payloads)) if reporter else _NullProgressTask()) as task:
+        for route_path, payload_path in route_payloads.items():
+            html_path = _route_html_path(site_output, route_path)
+            html_path.parent.mkdir(parents=True, exist_ok=True)
+            html_path.write_text(
+                _render_shell_html(
+                    site_output,
+                    route_path,
+                    payload_source_path=payload_path,
+                    page_kind="payload",
+                    payload_mode=payload_mode,
+                    payload_api_prefix=payload_api_prefix,
+                    payload_static_root=payload_static_root,
+                ),
+                encoding="utf-8",
+            )
+            html_paths.append(html_path)
+            task.update(detail=route_path)
 
     history_html_path = _route_html_path(site_output, "/history/")
     history_html_path.parent.mkdir(parents=True, exist_ok=True)
@@ -685,7 +709,7 @@ def generate_site_webapp(
         ),
         encoding="utf-8",
     )
-    html_files_written += 1
+    html_paths.append(history_html_path)
 
     placeholder_pages_written = 0
     for route_path, workbench_mode in [
@@ -707,21 +731,38 @@ def generate_site_webapp(
             ),
             encoding="utf-8",
         )
-        html_files_written += 1
+        html_paths.append(html_path)
         placeholder_pages_written += 1
 
+    removed_paths: list[Path] = []
     derive_html_path = _route_html_path(site_output, "/workbench/derive/")
     if derive_html_path.exists():
         derive_html_path.unlink()
+        removed_paths.append(derive_html_path)
     derive_dir = derive_html_path.parent
     if derive_dir.exists():
         try:
             derive_dir.rmdir()
+            removed_paths.append(derive_dir)
         except OSError:
             pass
 
     return SiteWebappGenerationSummary(
-        html_files_written=html_files_written,
-        asset_files_written=asset_files_written,
+        html_files_written=len(html_paths),
+        asset_files_written=len(asset_paths),
         placeholder_pages_written=placeholder_pages_written,
+        html_paths=_paths_for_summary(site_output, html_paths) if list_files else None,
+        asset_paths=_paths_for_summary(site_output, asset_paths) if list_files else None,
+        removed_paths=_paths_for_summary(site_output, removed_paths) if list_files and removed_paths else None,
     )
+
+
+class _NullProgressTask:
+    def __enter__(self) -> "_NullProgressTask":
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def update(self, *args, **kwargs) -> None:
+        return None

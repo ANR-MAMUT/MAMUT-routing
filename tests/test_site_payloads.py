@@ -6,10 +6,12 @@ import shutil
 import subprocess
 
 import pytest
+from typer.testing import CliRunner
 
 from mamut_routing_lib.enums import ObjectiveFunction
-from mamut_routing_lib.json_utils import save_json_to_file
+from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
+from mamut_routing_publish.cli import app
 from mamut_routing_publish.site_payloads import derive_historical_taxonomy, generate_site_payloads
 from mamut_routing_publish.site_webapp import generate_site_webapp
 
@@ -1391,3 +1393,138 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
     assert ledger["entries"][0]["snapshot"]["snapshot_id"] == "2026-04-30-secondc"
     assert ledger["entries"][0]["change_counts"]["bks_improved"] == 1
     assert ledger["entries"][1]["change_counts"]["bks_added"] == 4  # initial entry preserved
+
+
+def test_site_build_reports_progress_on_stderr_and_keeps_stdout_json(tmp_path: Path) -> None:
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "site",
+            "build",
+            "--output-repo-dir",
+            str(output_repo_dir),
+            "--source-commit",
+            "abcdef123456",
+            "--published-at",
+            "2026-04-23T12:00:00",
+            "--snapshot-id",
+            "fixture-progress",
+            "--jobs",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["payload_summary"]["snapshot_id"] == "fixture-progress"
+    assert payload["build_summary"]["generated_files_written"] == (
+        payload["payload_summary"]["payload_files_written"]
+        + payload["webapp_summary"]["html_files_written"]
+        + payload["webapp_summary"]["asset_files_written"]
+    )
+    assert payload["build_summary"]["wall_time_seconds"] >= 0
+    assert payload["build_summary"]["max_memory_gib"] is None or payload["build_summary"]["max_memory_gib"] > 0
+    assert "payload_paths" not in payload["payload_summary"]
+    assert "[site build]" in result.stderr
+    assert "resolving instances" in result.stderr
+    assert "build summary" in result.stderr
+
+
+def test_site_build_quiet_suppresses_progress(tmp_path: Path) -> None:
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "site",
+            "build",
+            "--output-repo-dir",
+            str(output_repo_dir),
+            "--source-commit",
+            "abcdef123456",
+            "--published-at",
+            "2026-04-23T12:00:00",
+            "--snapshot-id",
+            "fixture-quiet",
+            "--jobs",
+            "1",
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["payload_summary"]["snapshot_id"] == "fixture-quiet"
+    assert payload["build_summary"]["generated_files_written"] > 0
+    assert result.stderr == ""
+
+
+def test_site_build_json_progress_and_file_listing(tmp_path: Path) -> None:
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "site",
+            "build",
+            "--output-repo-dir",
+            str(output_repo_dir),
+            "--source-commit",
+            "abcdef123456",
+            "--published-at",
+            "2026-04-23T12:00:00",
+            "--snapshot-id",
+            "fixture-json-progress",
+            "--jobs",
+            "1",
+            "--progress-format",
+            "json",
+            "--list-files",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    stderr_events = [json.loads(line) for line in result.stderr.splitlines() if line.strip()]
+    assert any(event["event"] == "phase" and event["message"] == "resolved repository" for event in stderr_events)
+    assert any(event["event"] == "progress" and event["message"] == "resolve instances" for event in stderr_events)
+    assert any(event["event"] == "phase" and event["message"] == "build summary" for event in stderr_events)
+    payload = json.loads(result.stdout)
+    assert payload["build_summary"]["jobs_resolved"] == 1
+    assert "site-payloads/index.json" in payload["payload_summary"]["payload_paths"]
+    assert "index.html" in payload["webapp_summary"]["html_paths"]
+    assert "webapp/site.css" in payload["webapp_summary"]["asset_paths"]
+
+
+def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path) -> None:
+    serial_repo_dir = tmp_path / "serial" / "MAMUT-routing"
+    parallel_repo_dir = tmp_path / "parallel" / "MAMUT-routing"
+    build_fixture_site_inputs(serial_repo_dir)
+    build_fixture_site_inputs(parallel_repo_dir)
+
+    serial_summary = generate_site_payloads(
+        output_repo_dir=serial_repo_dir,
+        source_commit="abcdef123456",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="fixture-parity",
+        jobs=1,
+    )
+    parallel_summary = generate_site_payloads(
+        output_repo_dir=parallel_repo_dir,
+        source_commit="abcdef123456",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="fixture-parity",
+        jobs=2,
+    )
+
+    assert serial_summary.model_dump() == parallel_summary.model_dump()
+    serial_payload = json.loads((serial_repo_dir / "dist" / "site-payloads" / "benchmarks" / "index.json").read_text())
+    parallel_payload = json.loads((parallel_repo_dir / "dist" / "site-payloads" / "benchmarks" / "index.json").read_text())
+    assert serial_payload == parallel_payload

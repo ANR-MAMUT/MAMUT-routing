@@ -55,6 +55,12 @@ uv run mamut-routing-publish --help
 # Build the site (payloads + static HTML shell) into ./dist/
 uv run mamut-routing-publish site build
 
+# Quiet build for scripts that do not want progress on stderr
+uv run mamut-routing-publish site build --quiet
+
+# Machine-readable progress events on stderr + generated file lists in stdout summary
+uv run mamut-routing-publish site build --progress-format json --list-files
+
 # Payloads only
 uv run mamut-routing-publish site payloads
 
@@ -65,9 +71,7 @@ uv run mamut-routing-publish site webapp
 uv run mamut-routing-publish release build
 ```
 
-By default the CLI resolves the MAMUT-routing repo root from the current working
-directory, or from the `MAMUT_ROUTING_ROOT` environment variable (shared with
-`mamut-routing-lib`). Override via `--output-repo-dir` / `--source-repo-dir`.
+By default, the CLI resolves the MAMUT-routing repo root from the current working directory, or from the `MAMUT_ROUTING_ROOT` environment variable (shared with `mamut-routing-lib`). Override via `--output-repo-dir` / `--source-repo-dir`. `site build` reports progress and a final human-readable duration/file/memory summary to stderr by default, then keeps the machine-readable JSON summary on stdout. Instance payload resolution runs in parallel by default with `--jobs auto`, defined as `max(1, os.cpu_count() - 2)` and capped by the number of discovered instances. Use `--jobs 1` for serial resolution.
 
 ### Tests
 

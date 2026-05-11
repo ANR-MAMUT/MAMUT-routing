@@ -86,7 +86,7 @@ def build_road_cache_plan(output_repo_dir: str | Path) -> dict[str, Any]:
     return {"entries": entries}
 
 
-def enforce_full_road_cache(output_repo_dir: str | Path) -> dict[str, Any]:
+def enforce_full_road_cache(output_repo_dir: str | Path, *, reporter: Any | None = None) -> dict[str, Any]:
     """Fill all route-edge road-cache entries required by published Mamut2026 BKS routes.
 
     The implementation delegates routing to the Julia webapp helper so cache generation uses
@@ -95,7 +95,17 @@ def enforce_full_road_cache(output_repo_dir: str | Path) -> dict[str, Any]:
     output_repo = Path(output_repo_dir).resolve()
     plan = build_road_cache_plan(output_repo)
     if not plan["entries"]:
+        if reporter is not None:
+            reporter.phase("road-cache skipped", entries=0)
         return {"ok": True, "entries": [], "skipped": True}
+    if reporter is not None:
+        reporter.phase("road-cache enforcement", entries=len(plan["entries"]))
+        for entry in plan["entries"]:
+            reporter.phase(
+                "road-cache planned sidecar",
+                meta_path=entry.get("meta_path"),
+                metrics=",".join(sorted(entry.get("routes_by_metric", {}).keys())),
+            )
 
     julia = shutil.which("julia")
     if julia is None:
@@ -140,4 +150,14 @@ end
             cwd=output_repo,
             text=True,
         )
-        return json.loads(result_path.read_text(encoding="utf-8"))
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if reporter is not None:
+            for entry in result.get("entries", []):
+                metrics = entry.get("metrics", {})
+                reporter.phase(
+                    "road-cache completed sidecar",
+                    meta_path=entry.get("meta_path"),
+                    metrics=",".join(sorted(metrics.keys())) if isinstance(metrics, dict) else None,
+                )
+            reporter.phase("road-cache complete", entries=len(result.get("entries", [])))
+        return result

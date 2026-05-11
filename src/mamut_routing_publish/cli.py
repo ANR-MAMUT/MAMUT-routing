@@ -20,23 +20,31 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
+import subprocess
+import time
 import tomllib
 from importlib import metadata
 from pathlib import Path
 from typing import Annotated, Optional
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - unavailable on non-Unix platforms
+    resource = None
+
 import typer
 
 from mamut_routing_lib.artifacts import DEFAULT_MAMUT_ROUTING_ROOT_ENV
 
+from mamut_routing_publish.progress import SUPPORTED_PROGRESS_FORMATS, make_progress_reporter
 from mamut_routing_publish.release_artifacts import generate_release_artifacts
 from mamut_routing_publish.site_payloads import (
     DEFAULT_SITE_OUTPUT_DIR,
     DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     SITE_PAYLOAD_SCHEMA_VERSION,
     generate_site_payloads,
+    resolve_site_build_jobs,
 )
 from mamut_routing_publish.site_webapp import generate_site_webapp
 
@@ -116,7 +124,48 @@ def _resolve_git_value(repo_dir: Path, *args: str) -> Optional[str]:
 
 
 def _emit_summary(summary_obj) -> None:
-    typer.echo(json.dumps(summary_obj.model_dump(mode="json"), indent=2))
+    typer.echo(json.dumps(summary_obj.model_dump(mode="json", exclude_none=True), indent=2))
+
+
+def _validate_progress_format(progress_format: str) -> None:
+    if progress_format not in SUPPORTED_PROGRESS_FORMATS:
+        allowed = ", ".join(sorted(SUPPORTED_PROGRESS_FORMATS))
+        typer.echo(f"--progress-format must be one of: {allowed}", err=True)
+        raise typer.Exit(code=1)
+
+
+def _validate_jobs(jobs: str) -> None:
+    try:
+        resolve_site_build_jobs(jobs)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _ru_maxrss_to_gib(ru_maxrss: int) -> float:
+    # Linux reports KiB; macOS reports bytes.
+    bytes_value = ru_maxrss if sys.platform == "darwin" else ru_maxrss * 1024
+    return bytes_value / (1024**3)
+
+
+def _max_memory_gib() -> float | None:
+    if resource is None:
+        return None
+    usages = [
+        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
+    ]
+    return round(max(_ru_maxrss_to_gib(value) for value in usages), 3)
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes, remaining = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {remaining:.1f}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{int(hours)}h {int(minutes)}m {remaining:.1f}s"
 
 
 # ---------------------------------------------------------------------------
@@ -326,17 +375,43 @@ def site_build_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    progress_format: Annotated[
+        str,
+        typer.Option(
+            "--progress-format",
+            help="Progress output format: auto, text, json, or off.",
+        ),
+    ] = "auto",
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", help="Disable progress and status reporting."),
+    ] = False,
+    list_files: Annotated[
+        bool,
+        typer.Option("--list-files", help="Include generated file paths in the final JSON summary."),
+    ] = False,
+    jobs: Annotated[
+        str,
+        typer.Option("--jobs", help="Parallel instance-resolution workers: 'auto' or an integer >= 1."),
+    ] = "auto",
 ) -> None:
     """Generate site payloads AND the static HTML shell in one step."""
     if payload_mode not in {"static", "api"}:
         typer.echo("--payload-mode must be one of: static, api", err=True)
         raise typer.Exit(code=1)
+    _validate_progress_format(progress_format)
+    _validate_jobs(jobs)
+    build_started_at = time.perf_counter()
+    reporter = make_progress_reporter(progress_format=progress_format, quiet=quiet)
     repo_dir = _resolve_repo_dir(output_repo_dir)
+    reporter.phase("resolved repository", repo=repo_dir)
+    reporter.phase("resolving source snapshot")
     resolved_commit = source_commit or _resolve_git_value(repo_dir, "rev-parse", "--short=12", "HEAD")
     if resolved_commit is None:
         typer.echo("Unable to determine a source commit. Pass --source-commit explicitly.", err=True)
         raise typer.Exit(code=1)
     resolved_branch = source_branch or _resolve_git_value(repo_dir, "rev-parse", "--abbrev-ref", "HEAD")
+    reporter.phase("resolved source snapshot", commit=resolved_commit, branch=resolved_branch)
 
     payload_summary = generate_site_payloads(
         output_repo_dir=repo_dir,
@@ -348,6 +423,9 @@ def site_build_cmd(
         schema_version=schema_version,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        reporter=reporter,
+        jobs=jobs,
+        list_files=list_files,
     )
     webapp_summary = generate_site_webapp(
         repo_dir,
@@ -355,12 +433,40 @@ def site_build_cmd(
         payload_api_prefix=payload_api_prefix,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        reporter=reporter,
+        list_files=list_files,
+    )
+    elapsed_seconds = time.perf_counter() - build_started_at
+    generated_files_written = (
+        payload_summary.payload_files_written
+        + webapp_summary.html_files_written
+        + webapp_summary.asset_files_written
+    )
+    build_summary = {
+        "wall_time_seconds": round(elapsed_seconds, 3),
+        "wall_time": _format_duration(elapsed_seconds),
+        "generated_files_written": generated_files_written,
+        "payload_files_written": payload_summary.payload_files_written,
+        "html_files_written": webapp_summary.html_files_written,
+        "asset_files_written": webapp_summary.asset_files_written,
+        "benchmark_pages_written": payload_summary.benchmark_pages_written,
+        "instance_pages_written": payload_summary.instance_pages_written,
+        "jobs_requested": jobs,
+        "jobs_resolved": resolve_site_build_jobs(jobs, payload_summary.instance_pages_written),
+        "max_memory_gib": _max_memory_gib(),
+    }
+    reporter.phase(
+        "build summary",
+        wall_time=build_summary["wall_time"],
+        generated_files=generated_files_written,
+        max_memory_gib=build_summary["max_memory_gib"],
     )
     typer.echo(
         json.dumps(
             {
-                "payload_summary": payload_summary.model_dump(mode="json"),
-                "webapp_summary": webapp_summary.model_dump(mode="json"),
+                "build_summary": build_summary,
+                "payload_summary": payload_summary.model_dump(mode="json", exclude_none=True),
+                "webapp_summary": webapp_summary.model_dump(mode="json", exclude_none=True),
             },
             indent=2,
         )

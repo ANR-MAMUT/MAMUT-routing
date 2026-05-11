@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +19,7 @@ from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunct
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib import has_structured_metadata
 
+from .progress import ProgressReporter
 from .road_cache import enforce_full_road_cache
 
 
@@ -479,6 +482,19 @@ class SitePayloadGenerationSummary(BaseModel):
     benchmark_pages_written: int
     instance_pages_written: int
     history_entries: int
+    payload_paths: list[str] | None = None
+
+
+class _ResolvedInstanceSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    num_customers: int
+    num_vehicles: int | None = None
+    vehicle_capacity: int | float | None = None
+    authors: str | None = None
+    generated_at: str | None = None
+    source_city: str | None = None
+    num_vehicles_lb: int | None = None
 
 
 class _ResolvedSiteInstance(BaseModel):
@@ -488,7 +504,7 @@ class _ResolvedSiteInstance(BaseModel):
     display_name: str
     instance_id: str
     route_path: str
-    instance: AnyBenchmarkInstance
+    instance_summary: _ResolvedInstanceSummary
     artifact_links: SiteArtifactLinks
     historical_topology_type: str | None = None
     historical_tw_type: str | None = None
@@ -888,7 +904,15 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     sibling_variant_routes: dict[str, str] = {}
     derived_problem_routes: dict[str, str] = {}
     source_problem_routes: dict[str, str] = {}
+    authors = None
+    generated_instance_at = None
+    source_city = None
+    num_vehicles_lb = None
     if has_structured_metadata(instance):
+        authors = instance.metadata.authors
+        generated_instance_at = instance.metadata.generated_at
+        source_city = instance.metadata.source_city
+        num_vehicles_lb = instance.metadata.num_vehicles_lb
         sibling_variant_routes = _build_related_routes(output_repo_dir, instance.metadata.sibling_variant_paths)
         derived_problem_routes = _build_related_routes(output_repo_dir, instance.metadata.derived_problem_paths)
         source_problem_routes = _build_related_routes(output_repo_dir, instance.metadata.source_problem_paths)
@@ -916,7 +940,15 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         display_name=instance_identifier,
         instance_id=discovered_item.instance_id,
         route_path=route_path,
-        instance=instance,
+        instance_summary=_ResolvedInstanceSummary(
+            num_customers=instance.num_customers,
+            num_vehicles=getattr(instance, "num_vehicles", None),
+            vehicle_capacity=getattr(instance, "vehicle_capacity", None),
+            authors=authors,
+            generated_at=generated_instance_at,
+            source_city=source_city,
+            num_vehicles_lb=num_vehicles_lb,
+        ),
         artifact_links=artifact_links,
         historical_topology_type=topology_type,
         historical_tw_type=tw_type,
@@ -966,7 +998,7 @@ def _build_instance_list_item(resolved: _ResolvedSiteInstance) -> InstanceListIt
         locator=resolved.locator,
         display_name=resolved.display_name,
         instance_id=resolved.instance_id,
-        num_customers=resolved.instance.num_customers,
+        num_customers=resolved.instance_summary.num_customers,
         route_path=resolved.route_path,
         artifact_vrp_json_path=resolved.artifact_links.vrp_json_path,
         place_slug=resolved.locator.place_slug,
@@ -1127,17 +1159,6 @@ def _build_instance_page_payload(
     generated_at: str,
     snapshot: SnapshotRef,
 ) -> InstancePagePayload:
-    instance = resolved.instance
-    authors = None
-    generated_instance_at = None
-    source_city = None
-    num_vehicles_lb = None
-    if has_structured_metadata(instance):
-        authors = instance.metadata.authors
-        generated_instance_at = instance.metadata.generated_at
-        source_city = instance.metadata.source_city
-        num_vehicles_lb = instance.metadata.num_vehicles_lb
-
     supported_objectives = [entry.objective_function for entry in resolved.bks_entries]
 
     breadcrumbs = _build_breadcrumbs(
@@ -1199,15 +1220,15 @@ def _build_instance_page_payload(
             metric_variant=resolved.locator.metric_variant,
             place_slug=resolved.locator.place_slug,
             size_bucket=resolved.locator.size_bucket,
-            num_customers=instance.num_customers,
+            num_customers=resolved.instance_summary.num_customers,
             historical_topology_type=resolved.historical_topology_type,
             historical_tw_type=resolved.historical_tw_type,
-            num_vehicles=instance.num_vehicles,
-            num_vehicles_lb=num_vehicles_lb,
-            vehicle_capacity=instance.vehicle_capacity,
-            authors=authors,
-            generated_at=generated_instance_at,
-            source_city=source_city,
+            num_vehicles=resolved.instance_summary.num_vehicles,
+            num_vehicles_lb=resolved.instance_summary.num_vehicles_lb,
+            vehicle_capacity=resolved.instance_summary.vehicle_capacity,
+            authors=resolved.instance_summary.authors,
+            generated_at=resolved.instance_summary.generated_at,
+            source_city=resolved.instance_summary.source_city,
             has_geometry_sidecar=resolved.has_geometry_sidecar,
             viewer_render_mode=resolved.viewer_render_mode,
             road_cache_status=resolved.road_cache_status,
@@ -1498,7 +1519,7 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
             "benchmark_name": item.locator.benchmark_name.value,
             "metric_variant": metric_variant,
             "place_slug": item.locator.place_slug,
-            "num_customers": item.instance.num_customers,
+            "num_customers": item.instance_summary.num_customers,
             "instance_name": item.display_name,
             "bks": bks,
         }
@@ -1874,9 +1895,84 @@ def _build_catalog_index(
         size_routes=size_routes,
         items=[
             _build_instance_list_item(item)
-            for item in sorted(items, key=lambda current: (current.instance.num_customers, current.display_name))
+            for item in sorted(items, key=lambda current: (current.instance_summary.num_customers, current.display_name))
         ],
     )
+
+
+def resolve_site_build_jobs(jobs: str | int, item_count: int | None = None) -> int:
+    if isinstance(jobs, str):
+        if jobs == "auto":
+            resolved = max(1, (os.cpu_count() or 1) - 2)
+        else:
+            try:
+                resolved = int(jobs)
+            except ValueError as exc:
+                raise ValueError("--jobs must be 'auto' or an integer >= 1") from exc
+    else:
+        resolved = int(jobs)
+    if resolved < 1:
+        raise ValueError("--jobs must be 'auto' or an integer >= 1")
+    if item_count is not None:
+        return min(resolved, max(1, item_count))
+    return resolved
+
+
+def _paths_for_summary(site_output: Path, paths: list[Path]) -> list[str]:
+    values: list[str] = []
+    for path in paths:
+        try:
+            values.append(path.relative_to(site_output).as_posix())
+        except ValueError:
+            values.append(path.as_posix())
+    return sorted(values)
+
+
+def _resolve_instances(
+    output_repo: Path,
+    discovered_instances,
+    *,
+    jobs: str | int,
+    reporter: ProgressReporter | None = None,
+) -> list[_ResolvedSiteInstance]:
+    resolved_jobs = resolve_site_build_jobs(jobs, len(discovered_instances))
+    if reporter is not None:
+        reporter.phase(
+            "resolving instances",
+            instances=len(discovered_instances),
+            jobs=resolved_jobs,
+        )
+    if not discovered_instances:
+        return []
+
+    resolved_items: list[_ResolvedSiteInstance | None] = [None] * len(discovered_instances)
+    with (reporter.task("resolve instances", len(discovered_instances)) if reporter else _NullProgressTask()) as task:
+        if resolved_jobs == 1:
+            for index, item in enumerate(discovered_instances):
+                resolved_items[index] = _resolve_instance(output_repo, item)
+                task.update(detail=getattr(item, "instance_name", None))
+        else:
+            with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
+                futures = {
+                    executor.submit(_resolve_instance, output_repo, item): (index, item)
+                    for index, item in enumerate(discovered_instances)
+                }
+                for future in as_completed(futures):
+                    index, item = futures[future]
+                    resolved_items[index] = future.result()
+                    task.update(detail=getattr(item, "instance_name", None))
+    return [item for item in resolved_items if item is not None]
+
+
+class _NullProgressTask:
+    def __enter__(self) -> "_NullProgressTask":
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def update(self, *args, **kwargs) -> None:
+        return None
 
 
 def generate_site_payloads(
@@ -1891,6 +1987,9 @@ def generate_site_payloads(
     payload_root_dir: str | Path = DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     site_output_dir: str | Path | None = None,
     enforce_road_cache: bool = True,
+    reporter: ProgressReporter | None = None,
+    jobs: str | int = 1,
+    list_files: bool = False,
 ) -> SitePayloadGenerationSummary:
     output_repo = Path(output_repo_dir)
     site_output = _resolve_site_output_dir(output_repo, site_output_dir)
@@ -1902,8 +2001,10 @@ def generate_site_payloads(
         raise FileNotFoundError(f"Benchmark root does not exist: {benchmarks_root}")
 
     if enforce_road_cache:
-        enforce_full_road_cache(output_repo)
+        enforce_full_road_cache(output_repo, reporter=reporter)
 
+    if reporter is not None:
+        reporter.phase("discovering benchmark instances", root=benchmarks_root)
     generated_at = _now_utc_iso()
     published_at_value = published_at or generated_at
     snapshot_id_value = snapshot_id or _infer_snapshot_id(published_at_value, source_commit)
@@ -1915,7 +2016,9 @@ def generate_site_payloads(
     )
 
     discovered_instances = discover_benchmark_instances(benchmarks_root=benchmarks_root)
-    resolved_items = [_resolve_instance(output_repo, item) for item in discovered_instances]
+    if reporter is not None:
+        reporter.phase("discovered benchmark instances", instances=len(discovered_instances))
+    resolved_items = _resolve_instances(output_repo, discovered_instances, jobs=jobs, reporter=reporter)
 
     site_counts = SiteCounts(
         problem_count=len({item.locator.problem_type for item in resolved_items}),
@@ -1929,6 +2032,8 @@ def generate_site_payloads(
 
     written_paths: list[Path] = []
 
+    if reporter is not None:
+        reporter.phase("building snapshot history")
     current_inventory = _build_inventory(resolved_items)
     history_path = site_output / "site" / "history.json"
     if history_path.exists():
@@ -1994,12 +2099,18 @@ def generate_site_payloads(
 
     root_payload = _build_root_benchmarks_index(resolved_items, generated_at, snapshot)
     home_payload = _build_home_page_payload(site_counts, root_payload, generated_at, snapshot, history_summary)
-    written_paths.append(_write_payload(site_output, home_payload.route_path, home_payload, payload_root))
+    static_payloads: list[tuple[str, BaseModel]] = []
+    static_payloads.append((home_payload.route_path, home_payload))
     project_payload = _build_project_page_payload(generated_at, snapshot)
-    written_paths.append(_write_payload(site_output, project_payload.route_path, project_payload, payload_root))
+    static_payloads.append((project_payload.route_path, project_payload))
     objectives_payload = _build_objectives_page_payload(resolved_items, generated_at, snapshot)
-    written_paths.append(_write_payload(site_output, objectives_payload.route_path, objectives_payload, payload_root))
-    written_paths.append(_write_payload(site_output, root_payload.route_path, root_payload, payload_root))
+    static_payloads.append((objectives_payload.route_path, objectives_payload))
+    static_payloads.append((root_payload.route_path, root_payload))
+
+    if reporter is not None:
+        reporter.phase("writing catalog payloads")
+    for route_path, payload in static_payloads:
+        written_paths.append(_write_payload(site_output, route_path, payload, payload_root))
 
     benchmark_pages_written = 1
     instance_pages_written = 0
@@ -2186,10 +2297,12 @@ def generate_site_payloads(
                         written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
                         benchmark_pages_written += 1
 
-    for resolved in resolved_items:
-        instance_payload = _build_instance_page_payload(resolved, generated_at, snapshot)
-        written_paths.append(_write_payload(site_output, resolved.route_path, instance_payload, payload_root))
-        instance_pages_written += 1
+    with (reporter.task("write instance payloads", len(resolved_items)) if reporter else _NullProgressTask()) as task:
+        for resolved in resolved_items:
+            instance_payload = _build_instance_page_payload(resolved, generated_at, snapshot)
+            written_paths.append(_write_payload(site_output, resolved.route_path, instance_payload, payload_root))
+            instance_pages_written += 1
+            task.update(detail=resolved.display_name)
 
     return SitePayloadGenerationSummary(
         snapshot_id=snapshot.snapshot_id,
@@ -2199,4 +2312,5 @@ def generate_site_payloads(
         benchmark_pages_written=benchmark_pages_written,
         instance_pages_written=instance_pages_written,
         history_entries=len(entries),
+        payload_paths=_paths_for_summary(site_output, written_paths) if list_files else None,
     )
