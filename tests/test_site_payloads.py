@@ -591,7 +591,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
 
     root_index = json.loads((payload_root / "benchmarks" / "index.json").read_text(encoding="utf-8"))
     assert root_index["payload_kind"] == "benchmarks_index"
-    assert root_index["breadcrumbs"] == [{"label": "Benchmarks", "route_path": "/benchmarks/"}]
+    assert root_index["breadcrumbs"] == [{"label": "benchmarks", "route_path": "/benchmarks/"}]
     assert [problem["problem_type"] for problem in root_index["problems"]] == ["CVRP", "VRPTW"]
     assert not (output_repo_dir / "benchmarks" / "vrptw" / "index.json").exists()
 
@@ -650,7 +650,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    assert webapp_summary.asset_files_written == 14
+    assert webapp_summary.asset_files_written == 15
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -706,6 +706,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
 
     site_js = (site_output / "webapp" / "site.js").read_text(encoding="utf-8")
     workbench_js = (site_output / "webapp" / "workbench.js").read_text(encoding="utf-8")
+    assert "GITHUB_BENCHMARKS_ROOT" in site_js
+    assert "GitHub_Invertocat_Black.svg" in site_js
+    assert "breadcrumb-github-link" in site_js
+    assert 'FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"])' in site_js
+    assert "pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments" in site_js
     assert "Open Derive Mode" not in site_js
     assert "deriveBenchmarkBtn" not in workbench_js
     assert "projectCoordinates(routeLine.coordinates, width, height, projectionBounds)" in site_js

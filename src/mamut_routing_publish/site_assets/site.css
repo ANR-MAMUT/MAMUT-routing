@@ -475,6 +475,35 @@ a.vrp-link:focus-visible {
   opacity: 0.55;
 }
 
+.breadcrumb-github-link {
+  width: 1.7rem;
+  height: 1.7rem;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  opacity: 0.78;
+  transition: opacity 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.breadcrumb-github-link:hover,
+.breadcrumb-github-link:focus-visible {
+  background: color-mix(in srgb, var(--highlight) 12%, transparent);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.breadcrumb-github-link img {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: block;
+}
+
+[data-theme="dark"] .breadcrumb-github-link img {
+  filter: invert(1);
+}
+
 .page-heading {
   margin-top: 1rem;
 }

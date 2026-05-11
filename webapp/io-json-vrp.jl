@@ -1424,7 +1424,7 @@ function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snap
 end
 
 
-function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, breadcrumbs=BreadcrumbItem[BreadcrumbItem("Benchmarks", "/benchmarks/")], problems)
+function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, breadcrumbs=BreadcrumbItem[BreadcrumbItem("benchmarks", "/benchmarks/")], problems)
     return BenchmarksIndexPayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -3002,7 +3002,7 @@ function benchmarks_index_payload_from_dict(payload::AbstractDict)
         generated_at=require_field(payload, "generated_at"),
         snapshot=require_field(payload, "snapshot"),
         route_path=require_field(payload, "route_path"),
-        breadcrumbs=get(payload, "breadcrumbs", BreadcrumbItem[BreadcrumbItem("Benchmarks", "/benchmarks/")]),
+        breadcrumbs=get(payload, "breadcrumbs", BreadcrumbItem[BreadcrumbItem("benchmarks", "/benchmarks/")]),
         problems=require_field(payload, "problems"),
     )
 end

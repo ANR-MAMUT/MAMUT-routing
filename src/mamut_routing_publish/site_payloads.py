@@ -1141,7 +1141,7 @@ def _build_instance_page_payload(
     supported_objectives = [entry.objective_function for entry in resolved.bks_entries]
 
     breadcrumbs = _build_breadcrumbs(
-        ("Benchmarks", "/benchmarks/"),
+        ("benchmarks", "/benchmarks/"),
         (resolved.locator.problem_type.value, _problem_route_path(resolved.locator.problem_type)),
         (
             resolved.locator.benchmark_name.value,
@@ -1267,7 +1267,7 @@ def _build_root_benchmarks_index(
         generated_at=generated_at,
         snapshot=snapshot,
         route_path="/benchmarks/",
-        breadcrumbs=_build_breadcrumbs(("Benchmarks", "/benchmarks/")),
+        breadcrumbs=_build_breadcrumbs(("benchmarks", "/benchmarks/")),
         problems=problem_cards,
     )
 
@@ -1828,7 +1828,7 @@ def _build_problem_index(
         snapshot=snapshot,
         route_path=_problem_route_path(problem_type),
         title=problem_type.value,
-        breadcrumbs=_build_breadcrumbs(("Benchmarks", "/benchmarks/"), (problem_type.value, _problem_route_path(problem_type))),
+        breadcrumbs=_build_breadcrumbs(("benchmarks", "/benchmarks/"), (problem_type.value, _problem_route_path(problem_type))),
         problem_type=problem_type,
         summary=_build_catalog_summary(problem_items),
         families=family_cards,
@@ -2030,7 +2030,7 @@ def generate_site_payloads(
                 route_path=_family_route_path(problem_type, benchmark_name),
                 title=f"{benchmark_name.value} ({problem_type.value})",
                 breadcrumbs=_build_breadcrumbs(
-                    ("Benchmarks", "/benchmarks/"),
+                    ("benchmarks", "/benchmarks/"),
                     (problem_type.value, _problem_route_path(problem_type)),
                     (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
                 ),
@@ -2063,7 +2063,7 @@ def generate_site_payloads(
                     route_path=_size_route_path(problem_type, benchmark_name, size_bucket),
                     title=f"{benchmark_name.value} {size_bucket}",
                     breadcrumbs=_build_breadcrumbs(
-                        ("Benchmarks", "/benchmarks/"),
+                        ("benchmarks", "/benchmarks/"),
                         (problem_type.value, _problem_route_path(problem_type)),
                         (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
                         (size_bucket, _size_route_path(problem_type, benchmark_name, size_bucket)),
@@ -2098,7 +2098,7 @@ def generate_site_payloads(
                     route_path=_variant_route_path(problem_type, benchmark_name, metric_variant),
                     title=f"{benchmark_name.value} {metric_variant.value} ({problem_type.value})",
                     breadcrumbs=_build_breadcrumbs(
-                        ("Benchmarks", "/benchmarks/"),
+                        ("benchmarks", "/benchmarks/"),
                         (problem_type.value, _problem_route_path(problem_type)),
                         (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
                         (metric_variant.value, _variant_route_path(problem_type, benchmark_name, metric_variant)),
@@ -2134,7 +2134,7 @@ def generate_site_payloads(
                         route_path=_place_route_path(problem_type, benchmark_name, metric_variant, place_slug),
                         title=f"{benchmark_name.value} {metric_variant.value} {place_slug}",
                         breadcrumbs=_build_breadcrumbs(
-                            ("Benchmarks", "/benchmarks/"),
+                            ("benchmarks", "/benchmarks/"),
                             (problem_type.value, _problem_route_path(problem_type)),
                             (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
                             (metric_variant.value, _variant_route_path(problem_type, benchmark_name, metric_variant)),
@@ -2164,7 +2164,7 @@ def generate_site_payloads(
                             route_path=_size_route_path(problem_type, benchmark_name, size_bucket, metric_variant=metric_variant, place_slug=place_slug),
                             title=f"{benchmark_name.value} {metric_variant.value} {place_slug} {size_bucket}",
                             breadcrumbs=_build_breadcrumbs(
-                                ("Benchmarks", "/benchmarks/"),
+                                ("benchmarks", "/benchmarks/"),
                                 (problem_type.value, _problem_route_path(problem_type)),
                                 (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
                                 (metric_variant.value, _variant_route_path(problem_type, benchmark_name, metric_variant)),
