@@ -1,7 +1,7 @@
 using JSON3
 
-const BENCHMARK_NAMES = Set(["Sintef2008", "Dimacs2021", "Mamut2026"])
-const INSTANCE_ORIGINS = Set(["Solomon1987", "GehHom1999", "OsmCvrpGen"])
+const BENCHMARK_NAMES = Set(["Sintef2008", "Dimacs2021", "Mamut2026", "Ortec2022"])
+const INSTANCE_ORIGINS = Set(["Solomon1987", "GehHom1999", "OsmCvrpGen", "Ortec2022"])
 const PROBLEM_TYPES = Set(["CVRP", "VRPTW"])
 const METRIC_VARIANTS = Set(["fastest", "shortest", "euclidean"])
 const OBJECTIVE_FUNCTIONS = Set(["HierarchicalVehicleCost", "MonoCost"])
@@ -20,10 +20,11 @@ const SITE_PAYLOAD_KINDS = Set([
     "variant_index",
     "place_index",
     "size_index",
+    "subset_index",
     "instance_page",
     "objectives_page",
 ])
-const CATALOG_PAYLOAD_KINDS = Set(["family_index", "variant_index", "place_index", "size_index"])
+const CATALOG_PAYLOAD_KINDS = Set(["family_index", "variant_index", "place_index", "size_index", "subset_index"])
 const VRP_TYPES = Set(["CVRP", "CVRPTW"])
 const INTEGER_TOLERANCE = 1.0e-9
 const KNOWN_VRP_SECTIONS = Set([
@@ -61,6 +62,8 @@ struct InstanceMetadata
     sibling_variant_paths::Dict{String,String}
     derived_problem_paths::Dict{String,String}
     source_problem_paths::Dict{String,String}
+    license::Union{Nothing,String}
+    license_url::Union{Nothing,String}
 end
 
 
@@ -178,6 +181,7 @@ struct BenchmarkLocator
     place_slug::Union{Nothing,String}
     size_bucket::String
     instance_identifier::String
+    subset::Union{Nothing,String}
 end
 
 
@@ -264,6 +268,8 @@ struct BKSPageEntry
     source::Union{Nothing,String}
     method::Union{Nothing,String}
     validated_num_routes::Union{Nothing,Int}
+    license::Union{Nothing,String}
+    license_url::Union{Nothing,String}
 end
 
 
@@ -283,6 +289,10 @@ struct InstancePageSummary
     authors::Union{Nothing,String}
     generated_at::Union{Nothing,String}
     source_city::Union{Nothing,String}
+    subset::Union{Nothing,String}
+    license::Union{Nothing,String}
+    license_url::Union{Nothing,String}
+    instance_provider::Union{Nothing,String}
     has_geometry_sidecar::Bool
     viewer_render_mode::String
     road_cache_status::String
@@ -505,11 +515,13 @@ struct CatalogIndexPayload
     metric_variant::Union{Nothing,String}
     place_slug::Union{Nothing,String}
     size_bucket::Union{Nothing,String}
+    subset::Union{Nothing,String}
     summary::CatalogSummary
     filter_facets::Vector{FilterFacet}
     variant_routes::Vector{SubrouteEntry}
     place_routes::Vector{SubrouteEntry}
     size_routes::Vector{SubrouteEntry}
+    subset_routes::Vector{SubrouteEntry}
     items::Vector{InstanceListItem}
 end
 
@@ -815,6 +827,8 @@ function InstanceMetadata(;
     sibling_variant_paths=Dict{String,String}(),
     derived_problem_paths=Dict{String,String}(),
     source_problem_paths=Dict{String,String}(),
+    license=nothing,
+    license_url=nothing,
 )
     num_vehicles_lb_int = coerce_optional_int(num_vehicles_lb, "num_vehicles_lb")
     num_vehicles_lb_int === nothing || require_positive(num_vehicles_lb_int, "num_vehicles_lb")
@@ -841,6 +855,8 @@ function InstanceMetadata(;
         sibling_paths,
         derived_paths,
         source_paths,
+        coerce_optional_string(license, "license"),
+        coerce_optional_string(license_url, "license_url"),
     )
 end
 
@@ -1061,7 +1077,7 @@ function FilterFacet(; key, label, options)
 end
 
 
-function BenchmarkLocator(; problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket, instance_identifier)
+function BenchmarkLocator(; problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket, instance_identifier, subset=nothing)
     metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
     metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
     return BenchmarkLocator(
@@ -1071,6 +1087,7 @@ function BenchmarkLocator(; problem_type, benchmark_name, metric_variant=nothing
         coerce_optional_string(place_slug, "place_slug"),
         coerce_string(size_bucket, "size_bucket"),
         coerce_string(instance_identifier, "instance_identifier"),
+        coerce_optional_string(subset, "subset"),
     )
 end
 
@@ -1163,7 +1180,7 @@ function SiteArtifactLinks(; vrp_json_path, vrp_path=nothing, meta_path=nothing,
 end
 
 
-function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=nothing, authors=nothing, source=nothing, method=nothing, validated_num_routes=nothing)
+function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=nothing, authors=nothing, source=nothing, method=nothing, validated_num_routes=nothing, license=nothing, license_url=nothing)
     validated_num_routes_int = coerce_optional_int(validated_num_routes, "validated_num_routes")
     validated_num_routes_int === nothing || require_nonnegative(validated_num_routes_int, "validated_num_routes")
     return BKSPageEntry(
@@ -1175,11 +1192,13 @@ function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=noth
         coerce_optional_string(source, "source"),
         coerce_optional_string(method, "method"),
         validated_num_routes_int,
+        coerce_optional_string(license, "license"),
+        coerce_optional_string(license_url, "license_url"),
     )
 end
 
 
-function InstancePageSummary(; display_name, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket, num_customers, historical_topology_type=nothing, historical_tw_type=nothing, num_vehicles=nothing, num_vehicles_lb=nothing, vehicle_capacity, authors=nothing, generated_at=nothing, source_city=nothing, has_geometry_sidecar=false, viewer_render_mode="straight_line", road_cache_status="not_applicable", road_cache_metrics=String[], road_cache_entry_count=0, road_cache_expected_entry_count=nothing, supported_objective_functions)
+function InstancePageSummary(; display_name, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket, num_customers, historical_topology_type=nothing, historical_tw_type=nothing, num_vehicles=nothing, num_vehicles_lb=nothing, vehicle_capacity, authors=nothing, generated_at=nothing, source_city=nothing, has_geometry_sidecar=false, viewer_render_mode="straight_line", road_cache_status="not_applicable", road_cache_metrics=String[], road_cache_entry_count=0, road_cache_expected_entry_count=nothing, supported_objective_functions, subset=nothing, license=nothing, license_url=nothing, instance_provider=nothing)
     metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
     metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
     num_vehicles_int = coerce_optional_int(num_vehicles, "num_vehicles")
@@ -1205,6 +1224,10 @@ function InstancePageSummary(; display_name, problem_type, benchmark_name, metri
         coerce_optional_string(authors, "authors"),
         coerce_optional_string(generated_at, "generated_at"),
         coerce_optional_string(source_city, "source_city"),
+        coerce_optional_string(subset, "subset"),
+        coerce_optional_string(license, "license"),
+        coerce_optional_string(license_url, "license_url"),
+        coerce_optional_string(instance_provider, "instance_provider"),
         has_geometry_sidecar isa Bool ? has_geometry_sidecar : error("has_geometry_sidecar must be a Bool"),
         coerce_string(viewer_render_mode, "viewer_render_mode"),
         coerce_string(road_cache_status, "road_cache_status"),
@@ -1453,7 +1476,7 @@ function ProblemIndexPayload(; payload_kind, schema_version, generated_at, snaps
 end
 
 
-function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, description=nothing, breadcrumbs, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket=nothing, summary, filter_facets=FilterFacet[], variant_routes=SubrouteEntry[], place_routes=SubrouteEntry[], size_routes=SubrouteEntry[], items=InstanceListItem[])
+function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, description=nothing, breadcrumbs, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket=nothing, summary, filter_facets=FilterFacet[], variant_routes=SubrouteEntry[], place_routes=SubrouteEntry[], size_routes=SubrouteEntry[], items=InstanceListItem[], subset=nothing, subset_routes=SubrouteEntry[])
     metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
     metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
     return CatalogIndexPayload(
@@ -1470,11 +1493,13 @@ function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snaps
         metric_variant_value,
         coerce_optional_string(place_slug, "place_slug"),
         coerce_optional_string(size_bucket, "size_bucket"),
+        coerce_optional_string(subset, "subset"),
         summary isa CatalogSummary ? summary : catalog_summary_from_dict(summary),
         filter_facets isa AbstractVector ? [facet isa FilterFacet ? facet : filter_facet_from_dict(facet) for facet in filter_facets] : error("filter_facets must be a list"),
         variant_routes isa AbstractVector ? [route isa SubrouteEntry ? route : subroute_entry_from_dict(route) for route in variant_routes] : error("variant_routes must be a list"),
         place_routes isa AbstractVector ? [route isa SubrouteEntry ? route : subroute_entry_from_dict(route) for route in place_routes] : error("place_routes must be a list"),
         size_routes isa AbstractVector ? [route isa SubrouteEntry ? route : subroute_entry_from_dict(route) for route in size_routes] : error("size_routes must be a list"),
+        subset_routes isa AbstractVector ? [route isa SubrouteEntry ? route : subroute_entry_from_dict(route) for route in subset_routes] : error("subset_routes must be a list"),
         items isa AbstractVector ? [item isa InstanceListItem ? item : instance_list_item_from_dict(item) for item in items] : error("items must be a list"),
     )
 end
@@ -1605,6 +1630,8 @@ function instance_metadata_payload(value::InstanceMetadata)
     push!(result, "sibling_variant_paths" => value.sibling_variant_paths)
     push!(result, "derived_problem_paths" => value.derived_problem_paths)
     push!(result, "source_problem_paths" => value.source_problem_paths)
+    push_if_not_nothing!(result, "license", value.license)
+    push_if_not_nothing!(result, "license_url", value.license_url)
     return result
 end
 
@@ -1737,6 +1764,7 @@ benchmark_locator_payload(value::BenchmarkLocator) = begin
     push_if_not_nothing!(result, "place_slug", value.place_slug)
     push!(result, "size_bucket" => value.size_bucket)
     push!(result, "instance_identifier" => value.instance_identifier)
+    push_if_not_nothing!(result, "subset", value.subset)
     result
 end
 
@@ -1828,6 +1856,8 @@ bks_page_entry_payload(value::BKSPageEntry) = begin
     push_if_not_nothing!(result, "source", value.source)
     push_if_not_nothing!(result, "method", value.method)
     push_if_not_nothing!(result, "validated_num_routes", value.validated_num_routes)
+    push_if_not_nothing!(result, "license", value.license)
+    push_if_not_nothing!(result, "license_url", value.license_url)
     result
 end
 
@@ -1857,6 +1887,10 @@ instance_page_summary_payload(value::InstancePageSummary) = begin
     push!(result, "road_cache_entry_count" => value.road_cache_entry_count)
     push_if_not_nothing!(result, "road_cache_expected_entry_count", value.road_cache_expected_entry_count)
     push!(result, "supported_objective_functions" => value.supported_objective_functions)
+    push_if_not_nothing!(result, "subset", value.subset)
+    push_if_not_nothing!(result, "license", value.license)
+    push_if_not_nothing!(result, "license_url", value.license_url)
+    push_if_not_nothing!(result, "instance_provider", value.instance_provider)
     result
 end
 
@@ -2009,12 +2043,14 @@ catalog_index_payload(value::CatalogIndexPayload) = begin
         "variant_routes" => [subroute_entry_payload(route) for route in value.variant_routes],
         "place_routes" => [subroute_entry_payload(route) for route in value.place_routes],
         "size_routes" => [subroute_entry_payload(route) for route in value.size_routes],
+        "subset_routes" => [subroute_entry_payload(route) for route in value.subset_routes],
         "items" => [instance_list_item_payload(item) for item in value.items],
     ]
     push_if_not_nothing!(result, "description", value.description)
     push_if_not_nothing!(result, "metric_variant", value.metric_variant)
     push_if_not_nothing!(result, "place_slug", value.place_slug)
     push_if_not_nothing!(result, "size_bucket", value.size_bucket)
+    push_if_not_nothing!(result, "subset", value.subset)
     result
 end
 
@@ -2387,6 +2423,8 @@ function instance_metadata_from_dict(payload::AbstractDict)
         "sibling_variant_paths",
         "derived_problem_paths",
         "source_problem_paths",
+        "license",
+        "license_url",
     ])
     ensure_allowed_keys(payload, allowed, "InstanceMetadata")
     return InstanceMetadata(
@@ -2406,6 +2444,8 @@ function instance_metadata_from_dict(payload::AbstractDict)
         sibling_variant_paths=get(payload, "sibling_variant_paths", Dict{String,String}()),
         derived_problem_paths=get(payload, "derived_problem_paths", Dict{String,String}()),
         source_problem_paths=get(payload, "source_problem_paths", Dict{String,String}()),
+        license=get(payload, "license", nothing),
+        license_url=get(payload, "license_url", nothing),
     )
 end
 
@@ -2603,7 +2643,7 @@ end
 
 
 function benchmark_locator_from_dict(payload::AbstractDict)
-    allowed = Set(["problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "instance_identifier"])
+    allowed = Set(["problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "instance_identifier", "subset"])
     ensure_allowed_keys(payload, allowed, "BenchmarkLocator")
     return BenchmarkLocator(
         problem_type=require_field(payload, "problem_type"),
@@ -2612,6 +2652,7 @@ function benchmark_locator_from_dict(payload::AbstractDict)
         place_slug=get(payload, "place_slug", nothing),
         size_bucket=require_field(payload, "size_bucket"),
         instance_identifier=require_field(payload, "instance_identifier"),
+        subset=get(payload, "subset", nothing),
     )
 end
 
@@ -2719,7 +2760,7 @@ end
 
 
 function bks_page_entry_from_dict(payload::AbstractDict)
-    allowed = Set(["objective_function", "artifact_path", "num_routes", "cost", "authors", "source", "method", "validated_num_routes"])
+    allowed = Set(["objective_function", "artifact_path", "num_routes", "cost", "authors", "source", "method", "validated_num_routes", "license", "license_url"])
     ensure_allowed_keys(payload, allowed, "BKSPageEntry")
     return BKSPageEntry(
         objective_function=require_field(payload, "objective_function"),
@@ -2730,12 +2771,14 @@ function bks_page_entry_from_dict(payload::AbstractDict)
         source=get(payload, "source", nothing),
         method=get(payload, "method", nothing),
         validated_num_routes=get(payload, "validated_num_routes", nothing),
+        license=get(payload, "license", nothing),
+        license_url=get(payload, "license_url", nothing),
     )
 end
 
 
 function instance_page_summary_from_dict(payload::AbstractDict)
-    allowed = Set(["display_name", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "num_customers", "historical_topology_type", "historical_tw_type", "num_vehicles", "num_vehicles_lb", "vehicle_capacity", "authors", "generated_at", "source_city", "has_geometry_sidecar", "viewer_render_mode", "road_cache_status", "road_cache_metrics", "road_cache_entry_count", "road_cache_expected_entry_count", "supported_objective_functions"])
+    allowed = Set(["display_name", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "num_customers", "historical_topology_type", "historical_tw_type", "num_vehicles", "num_vehicles_lb", "vehicle_capacity", "authors", "generated_at", "source_city", "has_geometry_sidecar", "viewer_render_mode", "road_cache_status", "road_cache_metrics", "road_cache_entry_count", "road_cache_expected_entry_count", "supported_objective_functions", "subset", "license", "license_url", "instance_provider"])
     ensure_allowed_keys(payload, allowed, "InstancePageSummary")
     return InstancePageSummary(
         display_name=require_field(payload, "display_name"),
@@ -2760,6 +2803,10 @@ function instance_page_summary_from_dict(payload::AbstractDict)
         road_cache_entry_count=get(payload, "road_cache_entry_count", 0),
         road_cache_expected_entry_count=get(payload, "road_cache_expected_entry_count", nothing),
         supported_objective_functions=require_field(payload, "supported_objective_functions"),
+        subset=get(payload, "subset", nothing),
+        license=get(payload, "license", nothing),
+        license_url=get(payload, "license_url", nothing),
+        instance_provider=get(payload, "instance_provider", nothing),
     )
 end
 
@@ -3027,7 +3074,7 @@ end
 
 
 function catalog_index_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "description", "breadcrumbs", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "summary", "filter_facets", "variant_routes", "place_routes", "size_routes", "items"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "description", "breadcrumbs", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "summary", "filter_facets", "variant_routes", "place_routes", "size_routes", "items", "subset", "subset_routes"])
     ensure_allowed_keys(payload, allowed, "CatalogIndexPayload")
     return CatalogIndexPayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3049,6 +3096,8 @@ function catalog_index_payload_from_dict(payload::AbstractDict)
         place_routes=get(payload, "place_routes", SubrouteEntry[]),
         size_routes=get(payload, "size_routes", SubrouteEntry[]),
         items=get(payload, "items", InstanceListItem[]),
+        subset=get(payload, "subset", nothing),
+        subset_routes=get(payload, "subset_routes", SubrouteEntry[]),
     )
 end
 

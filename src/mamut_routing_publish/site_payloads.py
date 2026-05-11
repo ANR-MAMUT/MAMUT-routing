@@ -43,6 +43,7 @@ class SitePayloadKind(str, Enum):
     VARIANT_INDEX = "variant_index"
     PLACE_INDEX = "place_index"
     SIZE_INDEX = "size_index"
+    SUBSET_INDEX = "subset_index"
     INSTANCE_PAGE = "instance_page"
     OBJECTIVES_PAGE = "objectives_page"
 
@@ -118,6 +119,7 @@ class BenchmarkLocator(BaseModel):
     place_slug: str | None = None
     size_bucket: str
     instance_identifier: str
+    subset: str | None = None
 
 
 class ProblemSummaryCard(BaseModel):
@@ -212,6 +214,8 @@ class BKSPageEntry(BaseModel):
     source: str | None = None
     method: str | None = None
     validated_num_routes: int | None = None
+    license: str | None = None
+    license_url: str | None = None
 
 
 class InstancePageSummary(BaseModel):
@@ -239,6 +243,10 @@ class InstancePageSummary(BaseModel):
     road_cache_entry_count: int = 0
     road_cache_expected_entry_count: int | None = None
     supported_objective_functions: list[ObjectiveFunction]
+    subset: str | None = None
+    license: str | None = None
+    license_url: str | None = None
+    instance_provider: str | None = None
 
 
 class BksValue(BaseModel):
@@ -439,11 +447,13 @@ class CatalogIndexPayload(SitePayloadBase):
     metric_variant: MetricVariant | None = None
     place_slug: str | None = None
     size_bucket: str | None = None
+    subset: str | None = None
     summary: CatalogSummary
     filter_facets: list[FilterFacet] = Field(default_factory=list)
     variant_routes: list[SubrouteEntry] = Field(default_factory=list)
     place_routes: list[SubrouteEntry] = Field(default_factory=list)
     size_routes: list[SubrouteEntry] = Field(default_factory=list)
+    subset_routes: list[SubrouteEntry] = Field(default_factory=list)
     items: list[InstanceListItem] = Field(default_factory=list)
 
 
@@ -495,6 +505,10 @@ class _ResolvedInstanceSummary(BaseModel):
     generated_at: str | None = None
     source_city: str | None = None
     num_vehicles_lb: int | None = None
+    subset: str | None = None
+    license: str | None = None
+    license_url: str | None = None
+    instance_provider: str | None = None
 
 
 class _ResolvedSiteInstance(BaseModel):
@@ -540,6 +554,14 @@ def _family_route_path(problem_type: ProblemType, benchmark_name: BenchmarkName)
     return f"{_problem_route_path(problem_type)}{_route_segment(benchmark_name.value)}/"
 
 
+def _subset_route_path(
+    problem_type: ProblemType,
+    benchmark_name: BenchmarkName,
+    subset: str,
+) -> str:
+    return f"{_family_route_path(problem_type, benchmark_name)}{_route_segment(subset)}/"
+
+
 def _variant_route_path(
     problem_type: ProblemType,
     benchmark_name: BenchmarkName,
@@ -563,9 +585,12 @@ def _size_route_path(
     size_bucket: str,
     metric_variant: MetricVariant | None = None,
     place_slug: str | None = None,
+    subset: str | None = None,
 ) -> str:
     if metric_variant is not None and place_slug is not None:
         return f"{_place_route_path(problem_type, benchmark_name, metric_variant, place_slug)}{size_bucket}/"
+    if subset is not None:
+        return f"{_subset_route_path(problem_type, benchmark_name, subset)}{size_bucket}/"
     return f"{_family_route_path(problem_type, benchmark_name)}{size_bucket}/"
 
 
@@ -576,10 +601,9 @@ def _instance_route_path(
     size_bucket: str,
     metric_variant: MetricVariant | None = None,
     place_slug: str | None = None,
+    subset: str | None = None,
 ) -> str:
-    if metric_variant is not None and place_slug is not None:
-        return f"{_size_route_path(problem_type, benchmark_name, size_bucket, metric_variant, place_slug)}{instance_identifier}/"
-    return f"{_size_route_path(problem_type, benchmark_name, size_bucket)}{instance_identifier}/"
+    return f"{_size_route_path(problem_type, benchmark_name, size_bucket, metric_variant=metric_variant, place_slug=place_slug, subset=subset)}{instance_identifier}/"
 
 
 def _route_payload_path(
@@ -868,6 +892,8 @@ def _build_bks_entries(output_repo_dir: Path, instance_path: Path, bks_paths: li
     entries: list[BKSPageEntry] = []
     for bks_path in (bks_paths if bks_paths is not None else _discover_bks_paths(instance_path)):
         bks = load_bks(bks_path)
+        license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
+        license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
         entries.append(
             BKSPageEntry(
                 objective_function=bks.objective_function,
@@ -878,6 +904,8 @@ def _build_bks_entries(output_repo_dir: Path, instance_path: Path, bks_paths: li
                 source=bks.metadata.get("source"),
                 method=bks.metadata.get("method"),
                 validated_num_routes=bks.metadata.get("validated_num_routes"),
+                license=license_value,
+                license_url=license_url_value,
             )
         )
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function))
@@ -887,8 +915,14 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     instance = discovered_item.load()
     problem_type = discovered_item.problem_type
     benchmark_name = _normalize_benchmark_name(discovered_item.benchmark_name)
-    size_bucket = f"n={instance.num_customers}"
+    # The size bucket is path-derived (catalogue facet), not the per-instance
+    # ``num_customers``. For historical/Mamut2026 the two are identical; for
+    # Ortec2022 they intentionally diverge (bucket=200, instance=212) so the
+    # site groups instances by bucket while the JSON preserves the exact value.
+    bucket_n = discovered_item.num_customers if discovered_item.num_customers is not None else instance.num_customers
+    size_bucket = f"n={bucket_n}"
     instance_identifier = instance.instance_name
+    subset_segment = getattr(discovered_item, "subset", None)
     route_path = _instance_route_path(
         problem_type,
         benchmark_name,
@@ -896,6 +930,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         size_bucket,
         metric_variant=discovered_item.metric_variant,
         place_slug=discovered_item.place_slug,
+        subset=subset_segment,
     )
     topology_type, tw_type = (None, None)
     if discovered_item.metric_variant is None:
@@ -908,14 +943,33 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     generated_instance_at = None
     source_city = None
     num_vehicles_lb = None
+    license_value: str | None = None
+    license_url_value: str | None = None
+    instance_provider_value: str | None = None
     if has_structured_metadata(instance):
         authors = instance.metadata.authors
         generated_instance_at = instance.metadata.generated_at
         source_city = instance.metadata.source_city
         num_vehicles_lb = instance.metadata.num_vehicles_lb
+        license_value = instance.metadata.license
+        license_url_value = instance.metadata.license_url
         sibling_variant_routes = _build_related_routes(output_repo_dir, instance.metadata.sibling_variant_paths)
         derived_problem_routes = _build_related_routes(output_repo_dir, instance.metadata.derived_problem_paths)
         source_problem_routes = _build_related_routes(output_repo_dir, instance.metadata.source_problem_paths)
+    elif isinstance(getattr(instance, "metadata", None), dict):
+        meta_dict = instance.metadata
+        authors = meta_dict.get("authors")
+        generated_instance_at = meta_dict.get("generated_at")
+        source_city = meta_dict.get("source_city")
+        num_vehicles_lb = meta_dict.get("num_vehicles_lb")
+        license_value = meta_dict.get("license")
+        license_url_value = meta_dict.get("license_url")
+        instance_provider_value = meta_dict.get("instance_provider")
+    subset_value = getattr(discovered_item, "subset", None)
+    # ``subset`` is path-derived (5-part layout). Fall back to metadata for
+    # tooling that constructs ``_ResolvedSiteInstance`` outside path discovery.
+    if subset_value is None and isinstance(getattr(instance, "metadata", None), dict):
+        subset_value = instance.metadata.get("subset")
 
     artifact_links = _build_artifact_links(output_repo_dir, discovered_item.instance_path, instance)
     bks_paths = _discover_bks_paths(discovered_item.instance_path)
@@ -936,6 +990,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
             place_slug=discovered_item.place_slug,
             size_bucket=size_bucket,
             instance_identifier=instance_identifier,
+            subset=subset_segment,
         ),
         display_name=instance_identifier,
         instance_id=discovered_item.instance_id,
@@ -948,6 +1003,10 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
             generated_at=generated_instance_at,
             source_city=source_city,
             num_vehicles_lb=num_vehicles_lb,
+            subset=subset_value,
+            license=license_value,
+            license_url=license_url_value,
+            instance_provider=instance_provider_value,
         ),
         artifact_links=artifact_links,
         historical_topology_type=topology_type,
@@ -1192,6 +1251,17 @@ def _build_instance_page_payload(
                 ),
             )
         )
+    if resolved.locator.subset is not None:
+        breadcrumbs.append(
+            BreadcrumbItem(
+                label=resolved.locator.subset,
+                route_path=_subset_route_path(
+                    resolved.locator.problem_type,
+                    resolved.locator.benchmark_name,
+                    resolved.locator.subset,
+                ),
+            )
+        )
     breadcrumbs.append(
         BreadcrumbItem(
             label=resolved.locator.size_bucket,
@@ -1201,6 +1271,7 @@ def _build_instance_page_payload(
                 resolved.locator.size_bucket,
                 metric_variant=resolved.locator.metric_variant,
                 place_slug=resolved.locator.place_slug,
+                subset=resolved.locator.subset,
             ),
         )
     )
@@ -1236,6 +1307,10 @@ def _build_instance_page_payload(
             road_cache_entry_count=resolved.road_cache_entry_count,
             road_cache_expected_entry_count=resolved.road_cache_expected_entry_count,
             supported_objective_functions=supported_objectives,
+            subset=resolved.instance_summary.subset,
+            license=resolved.instance_summary.license,
+            license_url=resolved.instance_summary.license_url,
+            instance_provider=resolved.instance_summary.instance_provider,
         ),
         artifact_links=resolved.artifact_links,
         sibling_variant_routes=resolved.sibling_variant_routes,
@@ -1254,7 +1329,8 @@ def _sorted_benchmark_names(items: list[_ResolvedSiteInstance]) -> list[Benchmar
     order = {
         BenchmarkName.SINTEF_2008: 0,
         BenchmarkName.DIMACS_2021: 1,
-        BenchmarkName.MAMUT_2026: 2,
+        BenchmarkName.ORTEC_2022: 2,
+        BenchmarkName.MAMUT_2026: 3,
     }
     return sorted({item.locator.benchmark_name for item in items}, key=lambda value: (order.get(value, 99), value.value))
 
@@ -1388,7 +1464,8 @@ def _build_objective_related_routes(
     benchmark_order = {
         BenchmarkName.SINTEF_2008: 0,
         BenchmarkName.DIMACS_2021: 1,
-        BenchmarkName.MAMUT_2026: 2,
+        BenchmarkName.ORTEC_2022: 2,
+        BenchmarkName.MAMUT_2026: 3,
     }
     entries: list[SubrouteEntry] = []
     for problem_type, benchmark_name in sorted(
@@ -1449,7 +1526,7 @@ def _build_objectives_page_payload(
             description="Single-objective cost minimization where total routing cost is optimized directly.",
             interpretation_notes=[
                 "Compare MonoCost results as cost-first solutions even when they use more vehicles than HVC references.",
-                "DIMACS-style references and all current CVRP Mamut2026 BKS entries use this objective.",
+                "DIMACS-style references, the Ortec2022 (EURO Meets NeurIPS 2022) family, and all current CVRP Mamut2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.MONO_COST),
         ),
@@ -1874,6 +1951,8 @@ def _build_catalog_index(
     generated_at: str,
     snapshot: SnapshotRef,
     description: str | None = None,
+    subset: str | None = None,
+    subset_routes: list[SubrouteEntry] | None = None,
 ) -> CatalogIndexPayload:
     return CatalogIndexPayload(
         payload_kind=payload_kind,
@@ -1888,11 +1967,13 @@ def _build_catalog_index(
         metric_variant=metric_variant,
         place_slug=place_slug,
         size_bucket=size_bucket,
+        subset=subset,
         summary=_build_catalog_summary(items),
         filter_facets=_build_filter_facets(items),
         variant_routes=variant_routes,
         place_routes=place_routes,
         size_routes=size_routes,
+        subset_routes=subset_routes or [],
         items=[
             _build_instance_list_item(item)
             for item in sorted(items, key=lambda current: (current.instance_summary.num_customers, current.display_name))
@@ -2127,10 +2208,17 @@ def generate_site_payloads(
                 {item.locator.metric_variant for item in family_items if item.locator.metric_variant is not None},
                 key=_metric_variant_sort_key,
             )
+            family_subsets = sorted(
+                {item.locator.subset for item in family_items if item.locator.subset is not None}
+            )
 
             family_variant_groups = {
                 variant.value: [item for item in family_items if item.locator.metric_variant == variant]
                 for variant in metric_variants
+            }
+            family_subset_groups = {
+                subset: [item for item in family_items if item.locator.subset == subset]
+                for subset in family_subsets
             }
             family_size_groups = {
                 size_bucket: [item for item in family_items if item.locator.size_bucket == size_bucket]
@@ -2156,18 +2244,26 @@ def generate_site_payloads(
                     lambda key: _variant_route_path(problem_type, benchmark_name, MetricVariant(key)),
                 ),
                 place_routes=[],
+                # Size shortcuts at the family level only when neither metric
+                # variants nor subsets partition the family further; otherwise
+                # users drill down through the partitioning facet first.
                 size_routes=_make_subroute_entries(
                     family_size_groups,
                     lambda key: _size_route_path(problem_type, benchmark_name, key),
-                ) if not metric_variants else [],
+                ) if not metric_variants and not family_subsets else [],
+                subset_routes=_make_subroute_entries(
+                    family_subset_groups,
+                    lambda key: _subset_route_path(problem_type, benchmark_name, key),
+                ),
                 generated_at=generated_at,
                 snapshot=snapshot,
             )
             written_paths.append(_write_payload(site_output, family_payload.route_path, family_payload, payload_root))
             benchmark_pages_written += 1
 
+            # Size pages directly under the family — only when no further partitioning.
             for size_bucket, size_items in family_size_groups.items():
-                if metric_variants:
+                if metric_variants or family_subsets:
                     continue
                 size_payload = _build_catalog_index(
                     payload_kind=SitePayloadKind.SIZE_INDEX,
@@ -2193,6 +2289,77 @@ def generate_site_payloads(
                 )
                 written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
                 benchmark_pages_written += 1
+
+            # Subset pages (e.g. Ortec2022 final/public). Each subset gets its
+            # own catalog index plus per-(subset, size) size pages, mirroring
+            # the metric-variant branch below.
+            for subset_value, subset_items in family_subset_groups.items():
+                subset_size_groups = {
+                    size_bucket: [item for item in subset_items if item.locator.size_bucket == size_bucket]
+                    for size_bucket in sorted({item.locator.size_bucket for item in subset_items})
+                }
+                subset_payload = _build_catalog_index(
+                    payload_kind=SitePayloadKind.SUBSET_INDEX,
+                    route_path=_subset_route_path(problem_type, benchmark_name, subset_value),
+                    title=f"{benchmark_name.value} {subset_value} ({problem_type.value})",
+                    breadcrumbs=_build_breadcrumbs(
+                        ("benchmarks", "/benchmarks/"),
+                        (problem_type.value, _problem_route_path(problem_type)),
+                        (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
+                        (subset_value, _subset_route_path(problem_type, benchmark_name, subset_value)),
+                    ),
+                    items=subset_items,
+                    problem_type=problem_type,
+                    benchmark_name=benchmark_name,
+                    metric_variant=None,
+                    place_slug=None,
+                    size_bucket=None,
+                    subset=subset_value,
+                    variant_routes=[],
+                    place_routes=[],
+                    size_routes=_make_subroute_entries(
+                        subset_size_groups,
+                        lambda key, _subset=subset_value: _size_route_path(
+                            problem_type, benchmark_name, key, subset=_subset
+                        ),
+                    ),
+                    generated_at=generated_at,
+                    snapshot=snapshot,
+                )
+                written_paths.append(_write_payload(site_output, subset_payload.route_path, subset_payload, payload_root))
+                benchmark_pages_written += 1
+
+                for size_bucket, size_items in subset_size_groups.items():
+                    size_payload = _build_catalog_index(
+                        payload_kind=SitePayloadKind.SIZE_INDEX,
+                        route_path=_size_route_path(
+                            problem_type, benchmark_name, size_bucket, subset=subset_value
+                        ),
+                        title=f"{benchmark_name.value} {subset_value} {size_bucket}",
+                        breadcrumbs=_build_breadcrumbs(
+                            ("benchmarks", "/benchmarks/"),
+                            (problem_type.value, _problem_route_path(problem_type)),
+                            (benchmark_name.value, _family_route_path(problem_type, benchmark_name)),
+                            (subset_value, _subset_route_path(problem_type, benchmark_name, subset_value)),
+                            (size_bucket, _size_route_path(
+                                problem_type, benchmark_name, size_bucket, subset=subset_value
+                            )),
+                        ),
+                        items=size_items,
+                        problem_type=problem_type,
+                        benchmark_name=benchmark_name,
+                        metric_variant=None,
+                        place_slug=None,
+                        size_bucket=size_bucket,
+                        subset=subset_value,
+                        variant_routes=[],
+                        place_routes=[],
+                        size_routes=[],
+                        generated_at=generated_at,
+                        snapshot=snapshot,
+                    )
+                    written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
+                    benchmark_pages_written += 1
 
             for metric_variant in metric_variants:
                 variant_items = family_variant_groups[metric_variant.value]

@@ -784,6 +784,7 @@ function renderCatalogIndex(payload) {
       ])}<div class="badge-row">${payload.summary.supported_objective_functions.map((objective) => badge(objective)).join("")}</div>`,
     ),
     renderSubrouteList("Variants", payload.variant_routes),
+    renderSubrouteList("Subsets", payload.subset_routes),
     renderSubrouteList("Places", payload.place_routes),
     renderSubrouteList("Sizes", payload.size_routes),
     renderFacetList(payload.filter_facets),
@@ -1348,9 +1349,15 @@ async function renderInstancePage(payload, options = {}) {
           ["Place", payload.summary.place_slug || payload.summary.historical_topology_type || "n/a"],
           ["Size", payload.summary.size_bucket],
           ["Customers", payload.summary.num_customers],
-          ["Vehicles", payload.summary.num_vehicles ?? payload.summary.num_vehicles_lb ?? "n/a"],
+          ["Vehicles", payload.summary.num_vehicles ?? payload.summary.num_vehicles_lb ?? "unlimited"],
           ["Capacity", payload.summary.vehicle_capacity],
-        ])}<div class="badge-row">${(payload.summary.supported_objective_functions || []).map((objective) => badge(objective)).join("")}${payload.summary.historical_topology_type ? badge(payload.summary.historical_topology_type, true) : ""}${payload.summary.historical_tw_type ? badge(`TW${payload.summary.historical_tw_type}`, true) : ""}</div>`,
+          ...(payload.summary.subset ? [["Subset", payload.summary.subset]] : []),
+          ...(payload.summary.instance_provider ? [["Provider", payload.summary.instance_provider]] : []),
+          ...(payload.summary.authors ? [["Authors", payload.summary.authors]] : []),
+          ...(payload.summary.license ? [["License", payload.summary.license_url
+            ? { html: `<a href="${escapeHtml(payload.summary.license_url)}" target="_blank" rel="noopener">${escapeHtml(payload.summary.license)}</a>` }
+            : payload.summary.license]] : []),
+        ])}<div class="badge-row">${(payload.summary.supported_objective_functions || []).map((objective) => badge(objective)).join("")}${payload.summary.historical_topology_type ? badge(payload.summary.historical_topology_type, true) : ""}${payload.summary.historical_tw_type ? badge(`TW${payload.summary.historical_tw_type}`, true) : ""}${payload.summary.subset ? badge(`subset:${payload.summary.subset}`, true) : ""}</div>`,
       ),
       renderGeometryCard(payload.summary),
       renderCard(
@@ -1362,7 +1369,7 @@ async function renderInstancePage(payload, options = {}) {
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
-      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a']])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -3147,6 +3154,7 @@ async function renderPayloadPage() {
     case "variant_index":
     case "place_index":
     case "size_index":
+    case "subset_index":
       if (payload.payload_kind === "problem_index") {
         renderProblemIndex(payload);
       } else {
