@@ -462,7 +462,7 @@ function renderProblemCards(problems) {
       (problem) =>
         `<article class="mini-card"><h3>${escapeHtml(problem.problem_type)}</h3><p>${problem.family_count} families · ${problem.instance_count} instances · ${problem.bks_count} BKS</p><div class="badge-row">${problem.supported_objective_functions
           .map((objective) => badge(objective))
-          .join("")}</div><div class="inline-actions" style="margin-top:0.9rem"><a class="button-link primary" href="${routeHref(problem.route_path)}">Browse ${escapeHtml(problem.problem_type)}</a></div></article>`,
+          .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(problem.route_path)}">Browse ${escapeHtml(problem.problem_type)}</a></div></article>`,
     )
     .join("")}</div>`;
 }
@@ -645,7 +645,7 @@ function renderFamilyCards(families) {
           : "";
         return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${family.instance_count} instances · ${family.bks_count} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
           .map((objective) => badge(objective, true))
-          .join("")}</div><div class="inline-actions" style="margin-top:0.9rem"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a>${contextAction}</div></article>`;
+          .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a>${contextAction}</div></article>`;
       },
     )
     .join("")}</div>`;

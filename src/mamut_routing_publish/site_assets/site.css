@@ -1194,6 +1194,18 @@ a.vrp-link:focus-visible {
   background: color-mix(in srgb, var(--panel) 94%, transparent);
 }
 
+.family-grid > .mini-card,
+.problem-grid > .mini-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.family-grid > .mini-card > .inline-actions,
+.problem-grid > .mini-card > .inline-actions {
+  margin-top: auto;
+  padding-top: 0.9rem;
+}
+
 .mini-card h3,
 .mini-card h4 {
   margin: 0 0 0.45rem;
