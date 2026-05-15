@@ -367,6 +367,52 @@ function renderCard(title, body) {
   return `<section class="card"><h2>${escapeHtml(title)}</h2>${body}</section>`;
 }
 
+function renderMarkdownInline(value) {
+  return escapeHtml(value)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, label, href) => {
+      return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+    })
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderMarkdownBlocks(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const blocks = [];
+  let paragraph = [];
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    blocks.push(`<p>${renderMarkdownInline(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    blocks.push(`<ul>${listItems.map((item) => `<li>${renderMarkdownInline(item)}</li>`).join("")}</ul>`);
+    listItems = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    if (trimmed.startsWith("- ")) {
+      flushParagraph();
+      listItems.push(trimmed.slice(2).trim());
+      continue;
+    }
+    flushList();
+    paragraph.push(trimmed);
+  }
+  flushParagraph();
+  flushList();
+  return blocks.join("");
+}
+
 function renderStatGrid(entries) {
   return `<dl class="stat-grid">${entries
     .map(([label, value]) => {
@@ -593,10 +639,14 @@ function activateHomePreviewLibrary(samples) {
 function renderFamilyCards(families) {
   return `<div class="family-grid">${families
     .map(
-      (family) =>
-        `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${family.instance_count} instances · ${family.bks_count} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
+      (family) => {
+        const contextAction = family.context_route_path
+          ? `<a class="button-link" href="${routeHref(family.context_route_path)}">Description</a>`
+          : "";
+        return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${family.instance_count} instances · ${family.bks_count} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
           .map((objective) => badge(objective, true))
-          .join("")}</div><div class="inline-actions" style="margin-top:0.9rem"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a></div></article>`,
+          .join("")}</div><div class="inline-actions" style="margin-top:0.9rem"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a>${contextAction}</div></article>`;
+      },
     )
     .join("")}</div>`;
 }
@@ -773,6 +823,12 @@ function renderProblemIndex(payload) {
 
 function renderCatalogIndex(payload) {
   setPage(payload.title, payload.description || `Static listing for ${payload.benchmark_name}.`, payload.breadcrumbs, "catalog");
+  const descriptionCard = payload.context_route_path
+    ? renderCard(
+        "Description",
+        `${renderMarkdownBlocks(payload.context_summary || "")}<div class="inline-actions" style="margin-top:0.8rem"><a class="button-link" href="${routeHref(payload.context_route_path)}">Description</a></div>`,
+      )
+    : "";
   state.aside.innerHTML = [
     renderCard(
       "Catalog Summary",
@@ -783,6 +839,7 @@ function renderCatalogIndex(payload) {
         ["Places", payload.summary.place_count],
       ])}<div class="badge-row">${payload.summary.supported_objective_functions.map((objective) => badge(objective)).join("")}</div>`,
     ),
+    descriptionCard,
     renderSubrouteList("Variants", payload.variant_routes),
     renderSubrouteList("Subsets", payload.subset_routes),
     renderSubrouteList("Places", payload.place_routes),
@@ -795,6 +852,22 @@ function renderCatalogIndex(payload) {
     ? renderInstanceGroups(payload.items)
     : renderInstanceRows(payload.items);
   setStatus(`Loaded ${payload.items.length} instances`);
+}
+
+function renderFamilyContext(payload) {
+  setPage(payload.title, "Benchmark family provenance, objective contract, and curation notes.", payload.breadcrumbs, "editorial");
+  state.aside.innerHTML = [
+    renderCard(
+      "Family",
+      `${renderStatGrid([
+        ["Problem", payload.problem_type],
+        ["Benchmark", payload.benchmark_name],
+        ["Snapshot", payload.snapshot.snapshot_id],
+      ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="button-link primary" href="${routeHref(payload.family_route_path)}">Open family</a></div>`,
+    ),
+  ].join("");
+  state.stage.innerHTML = `<article class="context-prose">${renderMarkdownBlocks(payload.markdown)}</article>`;
+  setStatus(`Loaded context for ${payload.problem_type} / ${payload.benchmark_name}`);
 }
 
 function coordinateBounds(points) {
@@ -3175,6 +3248,9 @@ async function renderPayloadPage() {
       break;
     case "objectives_page":
       renderObjectives(payload);
+      break;
+    case "family_context_page":
+      renderFamilyContext(payload);
       break;
     default:
       renderUnknownPayload(payload);

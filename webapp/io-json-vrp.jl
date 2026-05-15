@@ -23,6 +23,7 @@ const SITE_PAYLOAD_KINDS = Set([
     "subset_index",
     "instance_page",
     "objectives_page",
+    "family_context_page",
 ])
 const CATALOG_PAYLOAD_KINDS = Set(["family_index", "variant_index", "place_index", "size_index", "subset_index"])
 const VRP_TYPES = Set(["CVRP", "CVRPTW"])
@@ -199,6 +200,7 @@ end
 struct FamilySummaryCard
     benchmark_name::String
     route_path::String
+    context_route_path::Union{Nothing,String}
     metric_variants::Vector{String}
     instance_count::Int
     bks_count::Int
@@ -509,6 +511,8 @@ struct CatalogIndexPayload
     route_path::String
     title::String
     description::Union{Nothing,String}
+    context_route_path::Union{Nothing,String}
+    context_summary::Union{Nothing,String}
     breadcrumbs::Vector{BreadcrumbItem}
     problem_type::String
     benchmark_name::String
@@ -554,6 +558,21 @@ struct ObjectivesPagePayload
     title::String
     breadcrumbs::Vector{BreadcrumbItem}
     explainers::Vector{ObjectiveExplainer}
+end
+
+
+struct FamilyContextPagePayload
+    payload_kind::String
+    schema_version::String
+    generated_at::String
+    snapshot::SnapshotRef
+    route_path::String
+    title::String
+    breadcrumbs::Vector{BreadcrumbItem}
+    problem_type::String
+    benchmark_name::String
+    markdown::String
+    family_route_path::String
 end
 
 
@@ -1105,10 +1124,11 @@ function ProblemSummaryCard(; problem_type, route_path, benchmark_names, family_
 end
 
 
-function FamilySummaryCard(; benchmark_name, route_path, metric_variants, instance_count, bks_count, supported_objective_functions)
+function FamilySummaryCard(; benchmark_name, route_path, context_route_path=nothing, metric_variants, instance_count, bks_count, supported_objective_functions)
     return FamilySummaryCard(
         require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+        context_route_path === nothing ? nothing : validate_site_path(coerce_string(context_route_path, "context_route_path"), "context_route_path"),
         normalize_choice_vector(metric_variants, METRIC_VARIANTS, "metric_variants"),
         require_nonnegative(coerce_int(instance_count, "instance_count"), "instance_count"),
         require_nonnegative(coerce_int(bks_count, "bks_count"), "bks_count"),
@@ -1476,7 +1496,7 @@ function ProblemIndexPayload(; payload_kind, schema_version, generated_at, snaps
 end
 
 
-function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, description=nothing, breadcrumbs, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket=nothing, summary, filter_facets=FilterFacet[], variant_routes=SubrouteEntry[], place_routes=SubrouteEntry[], size_routes=SubrouteEntry[], items=InstanceListItem[], subset=nothing, subset_routes=SubrouteEntry[])
+function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, description=nothing, context_route_path=nothing, context_summary=nothing, breadcrumbs, problem_type, benchmark_name, metric_variant=nothing, place_slug=nothing, size_bucket=nothing, summary, filter_facets=FilterFacet[], variant_routes=SubrouteEntry[], place_routes=SubrouteEntry[], size_routes=SubrouteEntry[], items=InstanceListItem[], subset=nothing, subset_routes=SubrouteEntry[])
     metric_variant_value = coerce_optional_string(metric_variant, "metric_variant")
     metric_variant_value === nothing || require_choice(metric_variant_value, METRIC_VARIANTS, "metric_variant")
     return CatalogIndexPayload(
@@ -1487,6 +1507,8 @@ function CatalogIndexPayload(; payload_kind, schema_version, generated_at, snaps
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
         coerce_string(title, "title"),
         coerce_optional_string(description, "description"),
+        context_route_path === nothing ? nothing : validate_site_path(coerce_string(context_route_path, "context_route_path"), "context_route_path"),
+        coerce_optional_string(context_summary, "context_summary"),
         breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
         require_choice(coerce_string(problem_type, "problem_type"), PROBLEM_TYPES, "problem_type"),
         require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
@@ -1536,6 +1558,23 @@ function ObjectivesPagePayload(; payload_kind, schema_version, generated_at, sna
         coerce_string(title, "title"),
         breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
         explainers isa AbstractVector ? [explainer isa ObjectiveExplainer ? explainer : objective_explainer_from_dict(explainer) for explainer in explainers] : error("explainers must be a list"),
+    )
+end
+
+
+function FamilyContextPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, breadcrumbs, problem_type, benchmark_name, markdown, family_route_path)
+    return FamilyContextPagePayload(
+        require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
+        coerce_string(schema_version, "schema_version"),
+        coerce_string(generated_at, "generated_at"),
+        snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
+        validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+        coerce_string(title, "title"),
+        breadcrumbs isa AbstractVector ? [breadcrumb isa BreadcrumbItem ? breadcrumb : breadcrumb_item_from_dict(breadcrumb) for breadcrumb in breadcrumbs] : error("breadcrumbs must be a list"),
+        require_choice(coerce_string(problem_type, "problem_type"), PROBLEM_TYPES, "problem_type"),
+        require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
+        coerce_string(markdown, "markdown"),
+        validate_site_path(coerce_string(family_route_path, "family_route_path"), "family_route_path"),
     )
 end
 
@@ -1780,14 +1819,18 @@ problem_summary_card_payload(value::ProblemSummaryCard) = Pair{String,Any}[
 ]
 
 
-family_summary_card_payload(value::FamilySummaryCard) = Pair{String,Any}[
-    "benchmark_name" => value.benchmark_name,
-    "route_path" => value.route_path,
-    "metric_variants" => value.metric_variants,
-    "instance_count" => value.instance_count,
-    "bks_count" => value.bks_count,
-    "supported_objective_functions" => value.supported_objective_functions,
-]
+family_summary_card_payload(value::FamilySummaryCard) = begin
+    result = Pair{String,Any}[
+        "benchmark_name" => value.benchmark_name,
+        "route_path" => value.route_path,
+        "metric_variants" => value.metric_variants,
+        "instance_count" => value.instance_count,
+        "bks_count" => value.bks_count,
+        "supported_objective_functions" => value.supported_objective_functions,
+    ]
+    push_if_not_nothing!(result, "context_route_path", value.context_route_path)
+    result
+end
 
 
 subroute_entry_payload(value::SubrouteEntry) = Pair{String,Any}[
@@ -2047,6 +2090,8 @@ catalog_index_payload(value::CatalogIndexPayload) = begin
         "items" => [instance_list_item_payload(item) for item in value.items],
     ]
     push_if_not_nothing!(result, "description", value.description)
+    push_if_not_nothing!(result, "context_route_path", value.context_route_path)
+    push_if_not_nothing!(result, "context_summary", value.context_summary)
     push_if_not_nothing!(result, "metric_variant", value.metric_variant)
     push_if_not_nothing!(result, "place_slug", value.place_slug)
     push_if_not_nothing!(result, "size_bucket", value.size_bucket)
@@ -2086,6 +2131,21 @@ objectives_page_payload(value::ObjectivesPagePayload) = Pair{String,Any}[
 ]
 
 
+family_context_page_payload(value::FamilyContextPagePayload) = Pair{String,Any}[
+    "payload_kind" => value.payload_kind,
+    "schema_version" => value.schema_version,
+    "generated_at" => value.generated_at,
+    "snapshot" => snapshot_ref_payload(value.snapshot),
+    "route_path" => value.route_path,
+    "title" => value.title,
+    "breadcrumbs" => [breadcrumb_item_payload(item) for item in value.breadcrumbs],
+    "problem_type" => value.problem_type,
+    "benchmark_name" => value.benchmark_name,
+    "markdown" => value.markdown,
+    "family_route_path" => value.family_route_path,
+]
+
+
 payload(value::ArtifactPaths) = artifact_paths_payload(value)
 payload(value::InstanceMetadata) = instance_metadata_payload(value)
 payload(value::HistoricalBenchmarkInstance) = historical_instance_payload(value)
@@ -2121,6 +2181,7 @@ payload(value::ProblemIndexPayload) = problem_index_payload(value)
 payload(value::CatalogIndexPayload) = catalog_index_payload(value)
 payload(value::InstancePagePayload) = instance_page_payload(value)
 payload(value::ObjectivesPagePayload) = objectives_page_payload(value)
+payload(value::FamilyContextPagePayload) = family_context_page_payload(value)
 payload(value::NamedTuple) = [String(name) => getfield(value, name) for name in propertynames(value)]
 payload(value::AbstractDict) = [String(key) => nested for (key, nested) in pairs(value)]
 payload(value::AbstractVector{<:Pair}) = [String(pair.first) => pair.second for pair in value]
@@ -2293,6 +2354,11 @@ end
 
 
 function custom_json_encode(value::ObjectivesPagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
+    return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
+end
+
+
+function custom_json_encode(value::FamilyContextPagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
     return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
 end
 
@@ -2673,11 +2739,12 @@ end
 
 
 function family_summary_card_from_dict(payload::AbstractDict)
-    allowed = Set(["benchmark_name", "route_path", "metric_variants", "instance_count", "bks_count", "supported_objective_functions"])
+    allowed = Set(["benchmark_name", "route_path", "context_route_path", "metric_variants", "instance_count", "bks_count", "supported_objective_functions"])
     ensure_allowed_keys(payload, allowed, "FamilySummaryCard")
     return FamilySummaryCard(
         benchmark_name=require_field(payload, "benchmark_name"),
         route_path=require_field(payload, "route_path"),
+        context_route_path=get(payload, "context_route_path", nothing),
         metric_variants=require_field(payload, "metric_variants"),
         instance_count=require_field(payload, "instance_count"),
         bks_count=require_field(payload, "bks_count"),
@@ -3074,7 +3141,7 @@ end
 
 
 function catalog_index_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "description", "breadcrumbs", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "summary", "filter_facets", "variant_routes", "place_routes", "size_routes", "items", "subset", "subset_routes"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "description", "context_route_path", "context_summary", "breadcrumbs", "problem_type", "benchmark_name", "metric_variant", "place_slug", "size_bucket", "summary", "filter_facets", "variant_routes", "place_routes", "size_routes", "items", "subset", "subset_routes"])
     ensure_allowed_keys(payload, allowed, "CatalogIndexPayload")
     return CatalogIndexPayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3084,6 +3151,8 @@ function catalog_index_payload_from_dict(payload::AbstractDict)
         route_path=require_field(payload, "route_path"),
         title=require_field(payload, "title"),
         description=get(payload, "description", nothing),
+        context_route_path=get(payload, "context_route_path", nothing),
+        context_summary=get(payload, "context_summary", nothing),
         breadcrumbs=require_field(payload, "breadcrumbs"),
         problem_type=require_field(payload, "problem_type"),
         benchmark_name=require_field(payload, "benchmark_name"),
@@ -3141,6 +3210,25 @@ function objectives_page_payload_from_dict(payload::AbstractDict)
 end
 
 
+function family_context_page_payload_from_dict(payload::AbstractDict)
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "breadcrumbs", "problem_type", "benchmark_name", "markdown", "family_route_path"])
+    ensure_allowed_keys(payload, allowed, "FamilyContextPagePayload")
+    return FamilyContextPagePayload(
+        payload_kind=require_field(payload, "payload_kind"),
+        schema_version=require_field(payload, "schema_version"),
+        generated_at=require_field(payload, "generated_at"),
+        snapshot=require_field(payload, "snapshot"),
+        route_path=require_field(payload, "route_path"),
+        title=require_field(payload, "title"),
+        breadcrumbs=require_field(payload, "breadcrumbs"),
+        problem_type=require_field(payload, "problem_type"),
+        benchmark_name=require_field(payload, "benchmark_name"),
+        markdown=require_field(payload, "markdown"),
+        family_route_path=require_field(payload, "family_route_path"),
+    )
+end
+
+
 function site_payload_from_dict(payload::AbstractDict)
     payload_kind = require_choice(coerce_string(require_field(payload, "payload_kind"), "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind")
     if payload_kind == "home_page"
@@ -3172,6 +3260,9 @@ function site_payload_from_dict(payload::AbstractDict)
     end
     if payload_kind == "objectives_page"
         return objectives_page_payload_from_dict(payload)
+    end
+    if payload_kind == "family_context_page"
+        return family_context_page_payload_from_dict(payload)
     end
     error("Unsupported site payload kind '$payload_kind'")
 end
@@ -3229,7 +3320,8 @@ function is_site_payload_model(model)
            model isa ProblemIndexPayload ||
            model isa CatalogIndexPayload ||
            model isa InstancePagePayload ||
-           model isa ObjectivesPagePayload
+           model isa ObjectivesPagePayload ||
+           model isa FamilyContextPagePayload
 end
 
 

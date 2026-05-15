@@ -730,6 +730,72 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert 'data-payload-static-root="/site-payloads"' in root_html_api
 
 
+def test_generate_site_payloads_writes_family_context_pages_from_report(tmp_path: Path) -> None:
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    context_report = output_repo_dir / "family_context.md"
+    context_report.write_text(
+        """# Benchmark families
+
+### `Sintef2008` (VRPTW)
+
+SINTEF context first paragraph with `HierarchicalVehicleCost` and a [source](https://example.com/sintef).
+
+- Preserves a bullet as report Markdown.
+
+### Related benchmark infrastructure
+
+This heading is intentionally not a benchmark-family page.
+
+### `Mamut2026` (CVRP)
+
+MAMUT CVRP context first paragraph.
+""",
+        encoding="utf-8",
+    )
+
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="abcdef123456",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="2026-04-23-abcdef1",
+        history_summary="Fixture publication.",
+        family_context_report_path=context_report,
+    )
+
+    payload_root = output_repo_dir / "dist" / "site-payloads"
+    vrptw_problem = json.loads((payload_root / "benchmarks" / "vrptw" / "index.json").read_text(encoding="utf-8"))
+    sintef_card = next(family for family in vrptw_problem["families"] if family["benchmark_name"] == "Sintef2008")
+    mamut_vrptw_card = next(family for family in vrptw_problem["families"] if family["benchmark_name"] == "Mamut2026")
+    assert sintef_card["context_route_path"] == "/benchmarks/vrptw/sintef2008/context/"
+    assert mamut_vrptw_card["context_route_path"] is None
+
+    family_payload = json.loads(
+        (payload_root / "benchmarks" / "vrptw" / "sintef2008" / "index.json").read_text(encoding="utf-8")
+    )
+    assert family_payload["context_route_path"] == "/benchmarks/vrptw/sintef2008/context/"
+    assert family_payload["context_summary"] == (
+        "SINTEF context first paragraph with `HierarchicalVehicleCost` and a [source](https://example.com/sintef)."
+    )
+
+    context_payload = json.loads(
+        (payload_root / "benchmarks" / "vrptw" / "sintef2008" / "context" / "index.json").read_text(encoding="utf-8")
+    )
+    assert context_payload["payload_kind"] == "family_context_page"
+    assert context_payload["title"] == "Sintef2008 (VRPTW) Context"
+    assert context_payload["family_route_path"] == "/benchmarks/vrptw/sintef2008/"
+    assert "Preserves a bullet" in context_payload["markdown"]
+    assert not (payload_root / "benchmarks" / "related-benchmark-infrastructure").exists()
+
+    cvrp_problem = json.loads((payload_root / "benchmarks" / "cvrp" / "index.json").read_text(encoding="utf-8"))
+    mamut_cvrp_card = next(family for family in cvrp_problem["families"] if family["benchmark_name"] == "Mamut2026")
+    assert mamut_cvrp_card["context_route_path"] == "/benchmarks/cvrp/mamut2026/context/"
+
+    webapp_summary = generate_site_webapp(output_repo_dir)
+    assert webapp_summary.html_files_written > 0
+    assert (output_repo_dir / "dist" / "benchmarks" / "vrptw" / "sintef2008" / "context" / "index.html").exists()
+
+
 def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
     output_repo_dir = tmp_path / "MAMUT-routing"
     build_fixture_site_inputs(output_repo_dir)

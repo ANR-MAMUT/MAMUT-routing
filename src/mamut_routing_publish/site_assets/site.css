@@ -122,6 +122,40 @@ code,
   user-select: none;
 }
 
+.context-prose {
+  max-width: 88ch;
+  margin: 0 auto;
+}
+
+.context-prose p {
+  margin: 0 0 1rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.context-prose ul {
+  margin: 0 0 1rem 1.25rem;
+  padding: 0;
+  line-height: 1.65;
+}
+
+.context-prose li {
+  margin: 0.35rem 0;
+}
+
+.context-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.context-prose code {
+  background: var(--mono-bg);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  padding: 0.08rem 0.3rem;
+}
+
 /* History timeline */
 .history-timeline {
   position: relative;

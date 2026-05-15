@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import os
 from pathlib import Path
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +27,7 @@ from .road_cache import enforce_full_road_cache
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
 DEFAULT_SITE_OUTPUT_DIR = Path("dist")
 DEFAULT_SITE_PAYLOAD_ROOT_DIR = Path("site-payloads")
+DEFAULT_FAMILY_CONTEXT_REPORT_PATH = Path(__file__).with_name("site_assets") / "texts" / "mamut-routing_benchmark_families.md"
 
 ViewerRenderMode = Literal["straight_line", "cached_road"]
 RoadCacheStatus = Literal["not_applicable", "none", "partial", "complete"]
@@ -46,6 +48,7 @@ class SitePayloadKind(str, Enum):
     SUBSET_INDEX = "subset_index"
     INSTANCE_PAGE = "instance_page"
     OBJECTIVES_PAGE = "objectives_page"
+    FAMILY_CONTEXT_PAGE = "family_context_page"
 
 
 class SnapshotRef(BaseModel):
@@ -139,6 +142,7 @@ class FamilySummaryCard(BaseModel):
 
     benchmark_name: BenchmarkName
     route_path: str
+    context_route_path: str | None = None
     metric_variants: list[MetricVariant]
     instance_count: int
     bks_count: int
@@ -441,6 +445,8 @@ class CatalogIndexPayload(SitePayloadBase):
     route_path: str
     title: str
     description: str | None = None
+    context_route_path: str | None = None
+    context_summary: str | None = None
     breadcrumbs: list[BreadcrumbItem]
     problem_type: ProblemType
     benchmark_name: BenchmarkName
@@ -480,6 +486,18 @@ class ObjectivesPagePayload(SitePayloadBase):
     title: str
     breadcrumbs: list[BreadcrumbItem]
     explainers: list[ObjectiveExplainer]
+
+
+class FamilyContextPagePayload(SitePayloadBase):
+    payload_kind: Literal[SitePayloadKind.FAMILY_CONTEXT_PAGE] = SitePayloadKind.FAMILY_CONTEXT_PAGE
+
+    route_path: str
+    title: str
+    breadcrumbs: list[BreadcrumbItem]
+    problem_type: ProblemType
+    benchmark_name: BenchmarkName
+    markdown: str
+    family_route_path: str
 
 
 class SitePayloadGenerationSummary(BaseModel):
@@ -552,6 +570,10 @@ def _problem_route_path(problem_type: ProblemType) -> str:
 
 def _family_route_path(problem_type: ProblemType, benchmark_name: BenchmarkName) -> str:
     return f"{_problem_route_path(problem_type)}{_route_segment(benchmark_name.value)}/"
+
+
+def _family_context_route_path(problem_type: ProblemType, benchmark_name: BenchmarkName) -> str:
+    return f"{_family_route_path(problem_type, benchmark_name)}context/"
 
 
 def _subset_route_path(
@@ -1175,6 +1197,74 @@ def _build_filter_facets(items: list[_ResolvedSiteInstance]) -> list[FilterFacet
 
 def _build_breadcrumbs(*pairs: tuple[str, str]) -> list[BreadcrumbItem]:
     return [BreadcrumbItem(label=label, route_path=route_path) for label, route_path in pairs]
+
+
+_FAMILY_CONTEXT_HEADING_RE = re.compile(r"^###\s+`(?P<benchmark>[^`]+)`\s+\((?P<problem>[^)]+)\)\s*$")
+
+
+class _FamilyContextSection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    title: str
+    markdown: str
+
+
+def _resolve_family_context_report_path(output_repo_dir: Path, report_path: str | Path | None = None) -> Path:
+    if report_path is not None:
+        candidate = Path(report_path)
+        return candidate if candidate.is_absolute() else output_repo_dir / candidate
+    return DEFAULT_FAMILY_CONTEXT_REPORT_PATH
+
+
+def _load_family_context_sections(
+    output_repo_dir: Path,
+    report_path: str | Path | None = None,
+) -> dict[tuple[ProblemType, BenchmarkName], _FamilyContextSection]:
+    path = _resolve_family_context_report_path(output_repo_dir, report_path)
+    if not path.is_file():
+        return {}
+
+    sections: dict[tuple[ProblemType, BenchmarkName], _FamilyContextSection] = {}
+    active_key: tuple[ProblemType, BenchmarkName] | None = None
+    active_title: str | None = None
+    active_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal active_key, active_title, active_lines
+        if active_key is not None and active_title is not None:
+            markdown = "\n".join(active_lines).strip()
+            if markdown:
+                sections[active_key] = _FamilyContextSection(title=active_title, markdown=markdown)
+        active_key = None
+        active_title = None
+        active_lines = []
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("### "):
+            flush()
+            match = _FAMILY_CONTEXT_HEADING_RE.match(line)
+            if match is None:
+                continue
+            try:
+                problem_type = ProblemType(match.group("problem"))
+                benchmark_name = BenchmarkName(match.group("benchmark"))
+            except ValueError:
+                continue
+            active_key = (problem_type, benchmark_name)
+            active_title = f"{benchmark_name.value} ({problem_type.value})"
+            continue
+        if active_key is not None:
+            active_lines.append(line)
+
+    flush()
+    return sections
+
+
+def _context_summary_from_markdown(markdown: str) -> str:
+    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", markdown) if paragraph.strip()]
+    if not paragraphs:
+        return ""
+    return re.sub(r"\s+", " ", paragraphs[0])
 
 
 def _write_payload(
@@ -1897,7 +1987,9 @@ def _build_problem_index(
     problem_type: ProblemType,
     generated_at: str,
     snapshot: SnapshotRef,
+    family_context_sections: dict[tuple[ProblemType, BenchmarkName], _FamilyContextSection] | None = None,
 ) -> ProblemIndexPayload:
+    family_context_sections = family_context_sections or {}
     problem_items = [item for item in items if item.locator.problem_type == problem_type]
     family_cards: list[FamilySummaryCard] = []
     for benchmark_name in _sorted_benchmark_names(problem_items):
@@ -1914,6 +2006,11 @@ def _build_problem_index(
             FamilySummaryCard(
                 benchmark_name=benchmark_name,
                 route_path=_family_route_path(problem_type, benchmark_name),
+                context_route_path=(
+                    _family_context_route_path(problem_type, benchmark_name)
+                    if (problem_type, benchmark_name) in family_context_sections
+                    else None
+                ),
                 metric_variants=variants,
                 instance_count=len(family_items),
                 bks_count=sum(len(item.bks_entries) for item in family_items),
@@ -1951,6 +2048,8 @@ def _build_catalog_index(
     generated_at: str,
     snapshot: SnapshotRef,
     description: str | None = None,
+    context_route_path: str | None = None,
+    context_summary: str | None = None,
     subset: str | None = None,
     subset_routes: list[SubrouteEntry] | None = None,
 ) -> CatalogIndexPayload:
@@ -1961,6 +2060,8 @@ def _build_catalog_index(
         route_path=route_path,
         title=title,
         description=description,
+        context_route_path=context_route_path,
+        context_summary=context_summary,
         breadcrumbs=breadcrumbs,
         problem_type=problem_type,
         benchmark_name=benchmark_name,
@@ -1978,6 +2079,34 @@ def _build_catalog_index(
             _build_instance_list_item(item)
             for item in sorted(items, key=lambda current: (current.instance_summary.num_customers, current.display_name))
         ],
+    )
+
+
+def _build_family_context_page_payload(
+    *,
+    problem_type: ProblemType,
+    benchmark_name: BenchmarkName,
+    context_section: _FamilyContextSection,
+    generated_at: str,
+    snapshot: SnapshotRef,
+) -> FamilyContextPagePayload:
+    route_path = _family_context_route_path(problem_type, benchmark_name)
+    family_route_path = _family_route_path(problem_type, benchmark_name)
+    return FamilyContextPagePayload(
+        generated_at=generated_at,
+        snapshot=snapshot,
+        route_path=route_path,
+        title=f"{context_section.title} Context",
+        breadcrumbs=_build_breadcrumbs(
+            ("benchmarks", "/benchmarks/"),
+            (problem_type.value, _problem_route_path(problem_type)),
+            (benchmark_name.value, family_route_path),
+            ("context", route_path),
+        ),
+        problem_type=problem_type,
+        benchmark_name=benchmark_name,
+        markdown=context_section.markdown,
+        family_route_path=family_route_path,
     )
 
 
@@ -2071,6 +2200,7 @@ def generate_site_payloads(
     reporter: ProgressReporter | None = None,
     jobs: str | int = 1,
     list_files: bool = False,
+    family_context_report_path: str | Path | None = None,
 ) -> SitePayloadGenerationSummary:
     output_repo = Path(output_repo_dir)
     site_output = _resolve_site_output_dir(output_repo, site_output_dir)
@@ -2100,6 +2230,7 @@ def generate_site_payloads(
     if reporter is not None:
         reporter.phase("discovered benchmark instances", instances=len(discovered_instances))
     resolved_items = _resolve_instances(output_repo, discovered_instances, jobs=jobs, reporter=reporter)
+    family_context_sections = _load_family_context_sections(output_repo, family_context_report_path)
 
     site_counts = SiteCounts(
         problem_count=len({item.locator.problem_type for item in resolved_items}),
@@ -2197,7 +2328,13 @@ def generate_site_payloads(
     instance_pages_written = 0
 
     for problem_type in _sorted_problem_types(resolved_items):
-        problem_payload = _build_problem_index(resolved_items, problem_type, generated_at, snapshot)
+        problem_payload = _build_problem_index(
+            resolved_items,
+            problem_type,
+            generated_at,
+            snapshot,
+            family_context_sections,
+        )
         written_paths.append(_write_payload(site_output, problem_payload.route_path, problem_payload, payload_root))
         benchmark_pages_written += 1
 
@@ -2224,6 +2361,17 @@ def generate_site_payloads(
                 size_bucket: [item for item in family_items if item.locator.size_bucket == size_bucket]
                 for size_bucket in sorted({item.locator.size_bucket for item in family_items})
             }
+            context_section = family_context_sections.get((problem_type, benchmark_name))
+            context_route_path = (
+                _family_context_route_path(problem_type, benchmark_name)
+                if context_section is not None
+                else None
+            )
+            context_summary = (
+                _context_summary_from_markdown(context_section.markdown)
+                if context_section is not None
+                else None
+            )
             family_payload = _build_catalog_index(
                 payload_kind=SitePayloadKind.FAMILY_INDEX,
                 route_path=_family_route_path(problem_type, benchmark_name),
@@ -2257,9 +2405,22 @@ def generate_site_payloads(
                 ),
                 generated_at=generated_at,
                 snapshot=snapshot,
+                context_route_path=context_route_path,
+                context_summary=context_summary,
             )
             written_paths.append(_write_payload(site_output, family_payload.route_path, family_payload, payload_root))
             benchmark_pages_written += 1
+
+            if context_section is not None:
+                context_payload = _build_family_context_page_payload(
+                    problem_type=problem_type,
+                    benchmark_name=benchmark_name,
+                    context_section=context_section,
+                    generated_at=generated_at,
+                    snapshot=snapshot,
+                )
+                written_paths.append(_write_payload(site_output, context_payload.route_path, context_payload, payload_root))
+                benchmark_pages_written += 1
 
             # Size pages directly under the family — only when no further partitioning.
             for size_bucket, size_items in family_size_groups.items():
@@ -2286,6 +2447,8 @@ def generate_site_payloads(
                     size_routes=[],
                     generated_at=generated_at,
                     snapshot=snapshot,
+                    context_route_path=context_route_path,
+                    context_summary=context_summary,
                 )
                 written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
                 benchmark_pages_written += 1
@@ -2325,6 +2488,8 @@ def generate_site_payloads(
                     ),
                     generated_at=generated_at,
                     snapshot=snapshot,
+                    context_route_path=context_route_path,
+                    context_summary=context_summary,
                 )
                 written_paths.append(_write_payload(site_output, subset_payload.route_path, subset_payload, payload_root))
                 benchmark_pages_written += 1
@@ -2357,6 +2522,8 @@ def generate_site_payloads(
                         size_routes=[],
                         generated_at=generated_at,
                         snapshot=snapshot,
+                        context_route_path=context_route_path,
+                        context_summary=context_summary,
                     )
                     written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
                     benchmark_pages_written += 1
@@ -2398,6 +2565,8 @@ def generate_site_payloads(
                     ) if place_groups and len(place_groups) == 1 else [],
                     generated_at=generated_at,
                     snapshot=snapshot,
+                    context_route_path=context_route_path,
+                    context_summary=context_summary,
                 )
                 written_paths.append(_write_payload(site_output, variant_payload.route_path, variant_payload, payload_root))
                 benchmark_pages_written += 1
@@ -2432,6 +2601,8 @@ def generate_site_payloads(
                         ),
                         generated_at=generated_at,
                         snapshot=snapshot,
+                        context_route_path=context_route_path,
+                        context_summary=context_summary,
                     )
                     written_paths.append(_write_payload(site_output, place_payload.route_path, place_payload, payload_root))
                     benchmark_pages_written += 1
@@ -2460,6 +2631,8 @@ def generate_site_payloads(
                             size_routes=[],
                             generated_at=generated_at,
                             snapshot=snapshot,
+                            context_route_path=context_route_path,
+                            context_summary=context_summary,
                         )
                         written_paths.append(_write_payload(site_output, size_payload.route_path, size_payload, payload_root))
                         benchmark_pages_written += 1
