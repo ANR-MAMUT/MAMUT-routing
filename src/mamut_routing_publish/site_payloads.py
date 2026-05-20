@@ -1494,9 +1494,9 @@ def _build_project_page_payload(
         anr_project_url="https://anr.fr/Projet-ANR-22-CE22-0016",
         anr_project_title="Machine learning et matheuristiques pour le transport urbain - MAMUT",
         anr_context=(
-            "MAMUT is an ANR-funded research project on recurring and dynamic vehicle-routing problems in urban logistics. "
-            "The project frames routing as a meeting point between operations research and artificial intelligence: fast, "
-            "specialized optimization methods on one side, and learned use of historical data on the other."
+            "MAMUT is ANR-funded research project regrouping several French public laboratories and teams alongside private entities on the study of vehicle-routing problems in urban logistics. "
+            "The project frames routing as a meeting point between Operation Research, Data Science, Applied Algorithmics and Artificial Intelligence "
+            "and aims to advance resolution methods while pushing forward modern software and data management practices on experimental evaluation."
         ),
         facts=[
             ProjectFact(label="Funding call", value="CE22 - Transports et mobilites, constructions dans les territoires urbains et peri-urbains 2022"),

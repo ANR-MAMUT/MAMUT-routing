@@ -990,8 +990,7 @@ a.vrp-link:focus-visible {
 .summary-grid,
 .detail-grid,
 .explainer-grid,
-.project-fact-grid,
-.project-thread-grid {
+.project-fact-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.8rem;
@@ -1018,9 +1017,7 @@ a.vrp-link:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.project-lead p,
-.project-note p,
-.project-thread p {
+.project-lead p {
   max-width: 96ch;
 }
 
@@ -1052,6 +1049,19 @@ a.vrp-link:focus-visible {
   grid-template-rows: minmax(0, 1fr) auto;
   place-items: center;
   gap: 0.35rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.project-logo-card:hover,
+.project-logo-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  outline: none;
 }
 
 .project-logo-card img {
@@ -1064,7 +1074,7 @@ a.vrp-link:focus-visible {
   height: 46px;
 }
 
-.project-logo-card figcaption {
+.project-logo-card .project-logo-caption {
   color: #1f2937;
   font-size: 0.78rem;
   font-weight: 600;
@@ -1086,11 +1096,6 @@ a.vrp-link:focus-visible {
 
 .project-fact-grid {
   grid-template-columns: repeat(6, minmax(0, 1fr));
-}
-
-.project-thread-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: stretch;
 }
 
 .project-fact {
@@ -1122,23 +1127,6 @@ a.vrp-link:focus-visible {
   width: fit-content;
   white-space: normal;
   overflow-wrap: anywhere;
-}
-
-.project-thread {
-  display: grid;
-  gap: 0.55rem;
-  align-content: start;
-  min-width: 0;
-}
-
-.project-thread h3 {
-  overflow-wrap: anywhere;
-}
-
-.project-note {
-  display: grid;
-  gap: 0.65rem;
-  min-width: 0;
 }
 
 .form-grid {
@@ -1455,10 +1443,6 @@ th {
     grid-template-columns: 1fr;
   }
 
-  .project-thread-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .project-fact-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1535,10 +1519,6 @@ th {
 
   .home-preview-heading {
     display: grid;
-  }
-
-  .project-thread-grid {
-    grid-template-columns: 1fr;
   }
 
   .project-fact-grid {

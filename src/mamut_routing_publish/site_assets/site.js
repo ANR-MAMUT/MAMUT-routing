@@ -40,13 +40,13 @@ const GITHUB_BENCHMARKS_ROOT = "https://github.com/ANR-MAMUT/MAMUT-routing/tree/
 const GITHUB_ICON_PATH = "/webapp/icons/GitHub_Invertocat_Black.svg";
 const FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"]);
 const PROJECT_PARTICIPANT_LOGOS = [
-  { label: "ANR", src: "/webapp/logos/ANR-logo-2021-noir.png", wide: true },
-  { label: "CNRS", src: "/webapp/logos/LOGO_CNRS_BLEU.png" },
-  { label: "CITI", src: "/webapp/logos/citi_logo.png" },
-  { label: "Inria", src: "/webapp/logos/inr_logo_rouge.png", wide: true },
-  { label: "INSA", src: "/webapp/logos/logo-insa.png", wide: true },
-  { label: "LAB-STICC", src: "/webapp/logos/logo-labsticc.png", wide: true },
-  { label: "Universite Bretagne Sud", src: "/webapp/logos/logo-ubs.png", wide: true },
+  { label: "ANR", src: "/webapp/logos/ANR-logo-2021-noir.png", wide: true, href: "https://anr.fr/en/" },
+  { label: "CNRS", src: "/webapp/logos/LOGO_CNRS_BLEU.png", href: "https://www.cnrs.fr/en" },
+  { label: "CITI", src: "/webapp/logos/citi_logo.png", href: "https://www.citi-lab.fr/" },
+  { label: "Inria", src: "/webapp/logos/inr_logo_rouge.png", wide: true, href: "https://www.inria.fr/en" },
+  { label: "INSA", src: "/webapp/logos/logo-insa.png", wide: true, href: "https://www.insa-lyon.fr/en" },
+  { label: "LAB-STICC", src: "/webapp/logos/logo-labsticc.png", wide: true, href: "https://labsticc.fr/en" },
+  { label: "Universite Bretagne Sud", src: "/webapp/logos/logo-ubs.png", wide: true, href: "https://www.univ-ubs.fr/en/index.html" },
 ];
 
 const WORKBENCH_PAYLOAD_CACHE = new Map();
@@ -3082,20 +3082,14 @@ function renderObjectives(payload) {
 
 function renderProject(payload) {
   setPage(payload.title, payload.subtitle, [], "project");
-  state.aside.innerHTML = [
-    renderCard(
-      "Project Record",
-      `${renderStatGrid([
-        ["Code", payload.anr_project_code],
-        ["Project", payload.anr_project_title],
-        ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
-      ])}`,
-    ),
-    renderCard(
-      "Threads",
-      `<div class="chip-row">${(payload.research_threads || []).map((thread) => `<a class="selector-chip" href="#${escapeHtml(thread.title)}">${escapeHtml(thread.title)}</a>`).join("")}</div>`,
-    ),
-  ].join("");
+  state.aside.innerHTML = renderCard(
+    "Project Record",
+    `${renderStatGrid([
+      ["Code", payload.anr_project_code],
+      ["Project", payload.anr_project_title],
+      ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
+    ])}`,
+  );
 
   const factCards = (payload.facts || [])
     .map((fact) => {
@@ -3105,21 +3099,12 @@ function renderProject(payload) {
       return `<article class="project-fact"><span>${escapeHtml(fact.label)}</span><strong>${value}</strong></article>`;
     })
     .join("");
-  const threadCards = (payload.research_threads || [])
-    .map(
-      (thread) => `<article class="mini-card project-thread" id="${escapeHtml(thread.title)}">
-        <div class="badge-row">${(thread.tags || []).map((tag) => badge(tag)).join("")}</div>
-        <h3>${escapeHtml(thread.title)}</h3>
-        <p>${escapeHtml(thread.body)}</p>
-      </article>`,
-    )
-    .join("");
   const participantLogos = PROJECT_PARTICIPANT_LOGOS
     .map(
-      (logo) => `<figure class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}">
+      (logo) => `<a class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}" href="${escapeHtml(logo.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(logo.label)} (opens in a new tab)">
         <img src="${siteAssetHref(logo.src)}" alt="${escapeHtml(logo.label)} logo" loading="lazy" />
-        <figcaption>${escapeHtml(logo.label)}</figcaption>
-      </figure>`,
+        <span class="project-logo-caption">${escapeHtml(logo.label)}</span>
+      </a>`,
     )
     .join("");
 
@@ -3140,15 +3125,6 @@ function renderProject(payload) {
         <div class="project-logo-grid">${participantLogos}</div>
       </section>
       <section class="project-fact-grid">${factCards}</section>
-      <section class="project-thread-grid">${threadCards}</section>
-      <section class="mini-card project-note">
-        <h3>How This Work Came To Be</h3>
-        <p>${escapeHtml(payload.collaboration_note)}</p>
-        <div class="inline-actions">
-          <a class="button-link primary" href="${routeHref('/workbench/')}">Open Workbench</a>
-          <a class="button-link" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a>
-        </div>
-      </section>
     </div>`;
   setStatus(`Loaded ${payload.anr_project_code}`);
 }
