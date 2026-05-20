@@ -3082,14 +3082,24 @@ function renderObjectives(payload) {
 
 function renderProject(payload) {
   setPage(payload.title, payload.subtitle, [], "project");
-  state.aside.innerHTML = renderCard(
-    "Project Record",
-    `${renderStatGrid([
-      ["Code", payload.anr_project_code],
-      ["Project", payload.anr_project_title],
-      ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
-    ])}`,
-  );
+  state.aside.innerHTML = [
+    renderCard(
+      "Project Record",
+      `${renderStatGrid([
+        ["Code", payload.anr_project_code],
+        ["Project", payload.anr_project_title],
+        ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
+      ])}`,
+    ),
+    renderCard(
+      "Repos and Related links",
+      `${renderStatGrid([
+        ["Source", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">ANR-MAMUT/MAMUT-routing</a>` }],
+        ["mamut-routing-lib", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT/MAMUT-routing-lib" target="_blank" rel="noopener">ANR-MAMUT/MAMUT-routing-lib</a>` }],
+        ["Organization", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT" target="_blank" rel="noopener">ANR-MAMUT</a>` }],
+      ])}`,
+    ),
+  ].join("");
 
   const factCards = (payload.facts || [])
     .map((fact) => {
