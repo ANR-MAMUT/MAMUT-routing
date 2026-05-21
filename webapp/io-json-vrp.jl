@@ -14,6 +14,7 @@ const SITE_PAYLOAD_KINDS = Set([
     "site_history",
     "history_detail",
     "project_page",
+    "project_text_page",
     "benchmarks_index",
     "problem_index",
     "family_index",
@@ -440,6 +441,13 @@ struct ProjectNarrativeBlock
 end
 
 
+struct ProjectSubpageCard
+    title::String
+    description::String
+    route_path::String
+end
+
+
 struct ProjectPagePayload
     payload_kind::String
     schema_version::String
@@ -456,6 +464,21 @@ struct ProjectPagePayload
     facts::Vector{ProjectFact}
     research_threads::Vector{ProjectNarrativeBlock}
     collaboration_note::String
+    related_pages::Vector{ProjectSubpageCard}
+end
+
+
+struct ProjectTextPagePayload
+    payload_kind::String
+    schema_version::String
+    generated_at::String
+    snapshot::SnapshotRef
+    route_path::String
+    title::String
+    subtitle::String
+    breadcrumbs::Vector{BreadcrumbItem}
+    markdown::String
+    project_route_path::String
 end
 
 
@@ -1427,7 +1450,16 @@ function ProjectNarrativeBlock(; title, body, tags=String[])
 end
 
 
-function ProjectPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/project/", title, subtitle, breadcrumbs, anr_project_code, anr_project_url, anr_project_title, anr_context, facts, research_threads, collaboration_note)
+function ProjectSubpageCard(; title, description, route_path)
+    return ProjectSubpageCard(
+        coerce_string(title, "title"),
+        coerce_string(description, "description"),
+        validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+    )
+end
+
+
+function ProjectPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/project/", title, subtitle, breadcrumbs, anr_project_code, anr_project_url, anr_project_title, anr_context, facts, research_threads, collaboration_note, related_pages=ProjectSubpageCard[])
     return ProjectPagePayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1444,6 +1476,23 @@ function ProjectPagePayload(; payload_kind, schema_version, generated_at, snapsh
         facts isa AbstractVector ? [fact isa ProjectFact ? fact : project_fact_from_dict(fact) for fact in facts] : error("facts must be a list"),
         research_threads isa AbstractVector ? [thread isa ProjectNarrativeBlock ? thread : project_narrative_block_from_dict(thread) for thread in research_threads] : error("research_threads must be a list"),
         coerce_string(collaboration_note, "collaboration_note"),
+        related_pages isa AbstractVector ? [page isa ProjectSubpageCard ? page : project_subpage_card_from_dict(page) for page in related_pages] : error("related_pages must be a list"),
+    )
+end
+
+
+function ProjectTextPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, subtitle, breadcrumbs, markdown, project_route_path="/project/")
+    return ProjectTextPagePayload(
+        require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
+        coerce_string(schema_version, "schema_version"),
+        coerce_string(generated_at, "generated_at"),
+        snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
+        validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
+        coerce_string(title, "title"),
+        coerce_string(subtitle, "subtitle"),
+        breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
+        coerce_string(markdown, "markdown"),
+        validate_site_path(coerce_string(project_route_path, "project_route_path"), "project_route_path"),
     )
 end
 
@@ -2012,6 +2061,13 @@ project_narrative_block_payload(value::ProjectNarrativeBlock) = Pair{String,Any}
 ]
 
 
+project_subpage_card_payload(value::ProjectSubpageCard) = Pair{String,Any}[
+    "title" => value.title,
+    "description" => value.description,
+    "route_path" => value.route_path,
+]
+
+
 project_page_payload(value::ProjectPagePayload) = Pair{String,Any}[
     "payload_kind" => value.payload_kind,
     "schema_version" => value.schema_version,
@@ -2028,6 +2084,21 @@ project_page_payload(value::ProjectPagePayload) = Pair{String,Any}[
     "facts" => [project_fact_payload(fact) for fact in value.facts],
     "research_threads" => [project_narrative_block_payload(thread) for thread in value.research_threads],
     "collaboration_note" => value.collaboration_note,
+    "related_pages" => [project_subpage_card_payload(page) for page in value.related_pages],
+]
+
+
+project_text_page_payload(value::ProjectTextPagePayload) = Pair{String,Any}[
+    "payload_kind" => value.payload_kind,
+    "schema_version" => value.schema_version,
+    "generated_at" => value.generated_at,
+    "snapshot" => snapshot_ref_payload(value.snapshot),
+    "route_path" => value.route_path,
+    "title" => value.title,
+    "subtitle" => value.subtitle,
+    "breadcrumbs" => [breadcrumb_item_payload(item) for item in value.breadcrumbs],
+    "markdown" => value.markdown,
+    "project_route_path" => value.project_route_path,
 ]
 
 
@@ -2171,6 +2242,7 @@ payload(value::SubrouteEntry) = subroute_entry_payload(value)
 payload(value::ObjectiveExplainer) = objective_explainer_payload(value)
 payload(value::ProjectFact) = project_fact_payload(value)
 payload(value::ProjectNarrativeBlock) = project_narrative_block_payload(value)
+payload(value::ProjectSubpageCard) = project_subpage_card_payload(value)
 payload(value::CatalogSummary) = catalog_summary_payload(value)
 payload(value::InstanceListItem) = instance_list_item_payload(value)
 payload(value::SiteArtifactLinks) = site_artifact_links_payload(value)
@@ -2181,6 +2253,7 @@ payload(value::SiteHistoryEntry) = site_history_entry_payload(value)
 payload(value::SiteHistoryLedger) = site_history_ledger_payload(value)
 payload(value::HomePagePayload) = home_page_payload(value)
 payload(value::ProjectPagePayload) = project_page_payload(value)
+payload(value::ProjectTextPagePayload) = project_text_page_payload(value)
 payload(value::HistoryDetailPayload) = history_detail_payload(value)
 payload(value::BenchmarksIndexPayload) = benchmarks_index_payload(value)
 payload(value::ProblemIndexPayload) = problem_index_payload(value)
@@ -2330,6 +2403,11 @@ end
 
 
 function custom_json_encode(value::ProjectPagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
+    return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
+end
+
+
+function custom_json_encode(value::ProjectTextPagePayload; indent::Int=4, level::Int=0, sort_keys::Bool=false)
     return custom_json_encode(payload(value); indent=indent, level=level, sort_keys=sort_keys)
 end
 
@@ -3067,8 +3145,19 @@ function project_narrative_block_from_dict(payload::AbstractDict)
 end
 
 
+function project_subpage_card_from_dict(payload::AbstractDict)
+    allowed = Set(["title", "description", "route_path"])
+    ensure_allowed_keys(payload, allowed, "ProjectSubpageCard")
+    return ProjectSubpageCard(
+        title=require_field(payload, "title"),
+        description=require_field(payload, "description"),
+        route_path=require_field(payload, "route_path"),
+    )
+end
+
+
 function project_page_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "breadcrumbs", "anr_project_code", "anr_project_url", "anr_project_title", "anr_context", "facts", "research_threads", "collaboration_note"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "breadcrumbs", "anr_project_code", "anr_project_url", "anr_project_title", "anr_context", "facts", "research_threads", "collaboration_note", "related_pages"])
     ensure_allowed_keys(payload, allowed, "ProjectPagePayload")
     return ProjectPagePayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3086,6 +3175,25 @@ function project_page_payload_from_dict(payload::AbstractDict)
         facts=require_field(payload, "facts"),
         research_threads=require_field(payload, "research_threads"),
         collaboration_note=require_field(payload, "collaboration_note"),
+        related_pages=get(payload, "related_pages", ProjectSubpageCard[]),
+    )
+end
+
+
+function project_text_page_payload_from_dict(payload::AbstractDict)
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "breadcrumbs", "markdown", "project_route_path"])
+    ensure_allowed_keys(payload, allowed, "ProjectTextPagePayload")
+    return ProjectTextPagePayload(
+        payload_kind=require_field(payload, "payload_kind"),
+        schema_version=require_field(payload, "schema_version"),
+        generated_at=require_field(payload, "generated_at"),
+        snapshot=require_field(payload, "snapshot"),
+        route_path=require_field(payload, "route_path"),
+        title=require_field(payload, "title"),
+        subtitle=require_field(payload, "subtitle"),
+        breadcrumbs=require_field(payload, "breadcrumbs"),
+        markdown=require_field(payload, "markdown"),
+        project_route_path=get(payload, "project_route_path", "/project/"),
     )
 end
 
@@ -3254,6 +3362,9 @@ function site_payload_from_dict(payload::AbstractDict)
     if payload_kind == "project_page"
         return project_page_payload_from_dict(payload)
     end
+    if payload_kind == "project_text_page"
+        return project_text_page_payload_from_dict(payload)
+    end
     if payload_kind == "benchmarks_index"
         return benchmarks_index_payload_from_dict(payload)
     end
@@ -3323,6 +3434,7 @@ function is_site_payload_model(model)
            model isa SiteHistoryLedger ||
            model isa HomePagePayload ||
            model isa ProjectPagePayload ||
+           model isa ProjectTextPagePayload ||
            model isa HistoryDetailPayload ||
            model isa BenchmarksIndexPayload ||
            model isa ProblemIndexPayload ||

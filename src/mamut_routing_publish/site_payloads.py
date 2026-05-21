@@ -28,6 +28,7 @@ SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
 DEFAULT_SITE_OUTPUT_DIR = Path("dist")
 DEFAULT_SITE_PAYLOAD_ROOT_DIR = Path("site-payloads")
 DEFAULT_FAMILY_CONTEXT_REPORT_PATH = Path(__file__).with_name("site_assets") / "texts" / "mamut-routing_benchmark_families.md"
+DEFAULT_PROJECT_PAGES_DIR = Path(__file__).with_name("site_assets") / "texts" / "project_pages"
 
 ViewerRenderMode = Literal["straight_line", "cached_road"]
 RoadCacheStatus = Literal["not_applicable", "none", "partial", "complete"]
@@ -39,6 +40,7 @@ class SitePayloadKind(str, Enum):
     SITE_HISTORY = "site_history"
     HISTORY_DETAIL = "history_detail"
     PROJECT_PAGE = "project_page"
+    PROJECT_TEXT_PAGE = "project_text_page"
     BENCHMARKS_INDEX = "benchmarks_index"
     PROBLEM_INDEX = "problem_index"
     FAMILY_INDEX = "family_index"
@@ -388,6 +390,14 @@ class ProjectNarrativeBlock(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class ProjectSubpageCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    description: str
+    route_path: str
+
+
 class ProjectPagePayload(SitePayloadBase):
     payload_kind: Literal[SitePayloadKind.PROJECT_PAGE] = SitePayloadKind.PROJECT_PAGE
 
@@ -402,6 +412,18 @@ class ProjectPagePayload(SitePayloadBase):
     facts: list[ProjectFact]
     research_threads: list[ProjectNarrativeBlock]
     collaboration_note: str
+    related_pages: list[ProjectSubpageCard] = Field(default_factory=list)
+
+
+class ProjectTextPagePayload(SitePayloadBase):
+    payload_kind: Literal[SitePayloadKind.PROJECT_TEXT_PAGE] = SitePayloadKind.PROJECT_TEXT_PAGE
+
+    route_path: str
+    title: str
+    subtitle: str
+    breadcrumbs: list[BreadcrumbItem]
+    markdown: str
+    project_route_path: str = "/project/"
 
 
 class HistoryDetailPayload(SitePayloadBase):
@@ -1204,6 +1226,36 @@ def _build_breadcrumbs(*pairs: tuple[str, str]) -> list[BreadcrumbItem]:
 _FAMILY_CONTEXT_HEADING_RE = re.compile(r"^###\s+`(?P<benchmark>[^`]+)`\s+\((?P<problem>[^)]+)\)\s*$")
 
 
+class _ProjectPageSource(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    slug: str
+    source: str
+
+    @property
+    def route_path(self) -> str:
+        return f"/project/{self.slug}/"
+
+
+PROJECT_PAGE_SOURCES = [
+    _ProjectPageSource(slug="legal-mentions", source="legal_mentions.md"),
+    _ProjectPageSource(slug="authors", source="AUTHORS.md"),
+    _ProjectPageSource(slug="citing", source="citing.md"),
+    _ProjectPageSource(slug="faq", source="faq.md"),
+    _ProjectPageSource(slug="related-projects", source="related_projects.md"),
+    _ProjectPageSource(slug="funding", source="funding.md"),
+]
+
+
+class _ProjectPageDocument(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    route_path: str
+    title: str
+    subtitle: str
+    markdown: str
+
+
 class _FamilyContextSection(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -1534,9 +1586,14 @@ def _build_home_page_payload(
 
 
 def _build_project_page_payload(
+    project_documents: list[_ProjectPageDocument],
     generated_at: str,
     snapshot: SnapshotRef,
 ) -> ProjectPagePayload:
+    related_pages = [
+        ProjectSubpageCard(title=document.title, description=document.subtitle, route_path=document.route_path)
+        for document in project_documents
+    ]
     return ProjectPagePayload(
         generated_at=generated_at,
         snapshot=snapshot,
@@ -1592,6 +1649,104 @@ def _build_project_page_payload(
             "Together, these two doctoral tracks explain how this work came to be: the benchmark library needs realistic, documented inputs, "
             "and the generator needs a benchmark contract where generated instances can be stored, viewed, compared, and reused."
         ),
+        related_pages=related_pages,
+    )
+
+
+def _project_page_source_path(output_repo_dir: Path, source: _ProjectPageSource) -> Path:
+    if source.source == "AUTHORS.md":
+        return output_repo_dir / "AUTHORS.md"
+    return DEFAULT_PROJECT_PAGES_DIR / source.source
+
+
+def _fallback_project_page_title(slug: str) -> str:
+    return " ".join(part.upper() if part == "faq" else part.capitalize() for part in slug.split("-"))
+
+
+def _markdown_inline_plain_text(value: str) -> str:
+    value = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", value)
+    value = re.sub(r"`([^`]+)`", r"\1", value)
+    value = re.sub(r"\*\*([^*]+)\*\*", r"\1", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _extract_project_markdown_title(markdown: str, fallback: str) -> str:
+    for line in markdown.splitlines():
+        match = re.match(r"^#\s+(.+?)\s*$", line.strip())
+        if match is not None:
+            return _markdown_inline_plain_text(match.group(1))
+    return fallback
+
+
+def _extract_project_markdown_intro(markdown: str, fallback: str) -> str:
+    lines = markdown.splitlines()
+    h1_index = next((index for index, line in enumerate(lines) if re.match(r"^#\s+", line.strip())), -1)
+    paragraph_lines: list[str] = []
+    in_code_block = False
+
+    for line in lines[h1_index + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            if paragraph_lines:
+                break
+            continue
+        if in_code_block:
+            continue
+        if not stripped:
+            if paragraph_lines:
+                break
+            continue
+        if stripped.startswith("#") or stripped.startswith("- ") or stripped.startswith(">"):
+            if paragraph_lines:
+                break
+            continue
+        paragraph_lines.append(stripped)
+
+    if not paragraph_lines:
+        return fallback
+    return _markdown_inline_plain_text(" ".join(paragraph_lines))
+
+
+def _load_project_page_document(output_repo_dir: Path, source: _ProjectPageSource) -> _ProjectPageDocument:
+    source_path = _project_page_source_path(output_repo_dir, source)
+    fallback_title = _fallback_project_page_title(source.slug)
+    if not source_path.is_file():
+        markdown = f"# {fallback_title}\n\nThis project page is not available yet."
+    else:
+        markdown = source_path.read_text(encoding="utf-8").strip()
+        if not markdown:
+            markdown = f"# {fallback_title}\n\nThis project page is not available yet."
+
+    title = _extract_project_markdown_title(markdown, fallback_title)
+    return _ProjectPageDocument(
+        route_path=source.route_path,
+        title=title,
+        subtitle=_extract_project_markdown_intro(markdown, title),
+        markdown=markdown,
+    )
+
+
+def _load_project_page_documents(output_repo_dir: Path) -> list[_ProjectPageDocument]:
+    return [_load_project_page_document(output_repo_dir, source) for source in PROJECT_PAGE_SOURCES]
+
+
+def _build_project_text_page_payload(
+    document: _ProjectPageDocument,
+    generated_at: str,
+    snapshot: SnapshotRef,
+) -> ProjectTextPagePayload:
+    return ProjectTextPagePayload(
+        generated_at=generated_at,
+        snapshot=snapshot,
+        route_path=document.route_path,
+        title=document.title,
+        subtitle=document.subtitle,
+        breadcrumbs=_build_breadcrumbs(
+            ("project", "/project/"),
+            (document.title, document.route_path),
+        ),
+        markdown=document.markdown,
     )
 
 
@@ -2370,8 +2525,12 @@ def generate_site_payloads(
     home_payload = _build_home_page_payload(site_counts, root_payload, generated_at, snapshot, history_summary)
     static_payloads: list[tuple[str, BaseModel]] = []
     static_payloads.append((home_payload.route_path, home_payload))
-    project_payload = _build_project_page_payload(generated_at, snapshot)
+    project_documents = _load_project_page_documents(output_repo)
+    project_payload = _build_project_page_payload(project_documents, generated_at, snapshot)
     static_payloads.append((project_payload.route_path, project_payload))
+    for document in project_documents:
+        project_text_payload = _build_project_text_page_payload(document, generated_at, snapshot)
+        static_payloads.append((project_text_payload.route_path, project_text_payload))
     objectives_payload = _build_objectives_page_payload(resolved_items, generated_at, snapshot)
     static_payloads.append((objectives_payload.route_path, objectives_payload))
     static_payloads.append((root_payload.route_path, root_payload))

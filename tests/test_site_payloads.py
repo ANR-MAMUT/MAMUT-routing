@@ -243,6 +243,18 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         historical_path.with_name("C101.bks.HierarchicalVehicleCost.json"),
         make_bks("C101", ObjectiveFunction.HIERARCHICAL_VEHICLE_COST, "fixture-historical").model_dump(mode="json"),
     )
+    (output_repo_dir / "AUTHORS.md").write_text(
+        """# Authors, Supervision, and Contributors
+
+This page records the authorship, scientific supervision, project context, and contributor policy for MAMUT-routing.
+
+## Original Authors and Maintainers
+
+- Florian Rascoussier, aka Onyr
+- Adrien Pichon, aka Anzury
+""",
+        encoding="utf-8",
+    )
 
     return generated_cvrp, generated_vrptw
 
@@ -261,6 +273,7 @@ def probe_julia_site_payload_types(output_repo_dir: Path, snapshot_id: str, inst
         ("history", site_output / "site" / "history.json"),
         ("benchmarks", payload_root / "benchmarks" / "index.json"),
         ("project", payload_root / "project" / "index.json"),
+        ("project_text", payload_root / "project" / "legal-mentions" / "index.json"),
         ("objectives", payload_root / "objectives" / "index.json"),
         ("problem", payload_root / "benchmarks" / "vrptw" / "index.json"),
         ("family", payload_root / "benchmarks" / "vrptw" / "sintef2008" / "index.json"),
@@ -315,6 +328,7 @@ def probe_julia_site_api_routes(output_repo_dir: Path, snapshot_id: str, instanc
     checks = [
         ("home", "/", "/api/site-payload"),
         ("project", "/project/", "/api/site-payload/project"),
+        ("project_text", "/project/legal-mentions/", "/api/site-payload/project/legal-mentions"),
         ("problem", "benchmarks/vrptw", "/api/site-payload?route=benchmarks%2Fvrptw"),
         (
             "instance",
@@ -615,6 +629,40 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
         "Onyr's benchmark thread",
         "A. Pichon's instance-generation thread",
     ]
+    expected_project_routes = [
+        "/project/legal-mentions/",
+        "/project/authors/",
+        "/project/citing/",
+        "/project/faq/",
+        "/project/related-projects/",
+        "/project/funding/",
+    ]
+    assert [page["route_path"] for page in project_payload["related_pages"]] == expected_project_routes
+
+    project_text_payloads = {
+        route: json.loads((payload_root / route.strip("/") / "index.json").read_text(encoding="utf-8"))
+        for route in expected_project_routes
+    }
+    for route, payload in project_text_payloads.items():
+        assert payload["payload_kind"] == "project_text_page"
+        assert payload["route_path"] == route
+        assert payload["project_route_path"] == "/project/"
+
+    authors_payload = project_text_payloads["/project/authors/"]
+    assert authors_payload["title"] == "Authors, Supervision, and Contributors"
+    assert authors_payload["markdown"].startswith("# Authors, Supervision, and Contributors")
+    assert "Florian Rascoussier, aka Onyr" in authors_payload["markdown"]
+    assert "Adrien Pichon, aka Anzury" in authors_payload["markdown"]
+
+    legal_payload = project_text_payloads["/project/legal-mentions/"]
+    assert legal_payload["title"] == "Legal Mentions"
+    assert legal_payload["markdown"].startswith("# Legal Mentions")
+    assert "MIT License" in legal_payload["markdown"]
+    assert "CC BY-NC 4.0" in legal_payload["markdown"]
+    assert "ODbL" in legal_payload["markdown"]
+    assert "does not require cookies" in legal_payload["markdown"]
+    assert "Google Fonts" in legal_payload["markdown"]
+    assert "unpkg.com" in legal_payload["markdown"]
 
     historical_instance_page = json.loads(
         (payload_root / "benchmarks" / "vrptw" / "sintef2008" / "n=2" / "C101" / "index.json").read_text(encoding="utf-8")
@@ -657,6 +705,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
     assert (site_output / "project" / "index.html").exists()
+    for route in expected_project_routes:
+        assert (site_output / route.strip("/") / "index.html").exists()
     assert not (output_repo_dir / "index.html").exists()
     assert not (output_repo_dir / "site").exists()
     assert not (output_repo_dir / "benchmarks" / "vrptw" / "index.json").exists()
@@ -905,6 +955,7 @@ def test_julia_loader_parses_generated_site_payloads_as_typed_models(tmp_path: P
         "history": "SiteHistoryLedger",
         "benchmarks": "BenchmarksIndexPayload",
         "project": "ProjectPagePayload",
+        "project_text": "ProjectTextPagePayload",
         "objectives": "ObjectivesPagePayload",
         "problem": "ProblemIndexPayload",
         "family": "CatalogIndexPayload",
@@ -946,6 +997,13 @@ def test_julia_site_api_resolves_routes_and_renders_payload_json(tmp_path: Path)
             "payload_kind": "project_page",
             "route_path": "/project/",
             "extracted_route": "/project/",
+            "has_kind": "true",
+        },
+        "project_text": {
+            "model_type": "ProjectTextPagePayload",
+            "payload_kind": "project_text_page",
+            "route_path": "/project/legal-mentions/",
+            "extracted_route": "/project/legal-mentions/",
             "has_kind": "true",
         },
         "problem": {

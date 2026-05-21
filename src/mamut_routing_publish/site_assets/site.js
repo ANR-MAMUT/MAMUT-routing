@@ -381,6 +381,10 @@ function renderMarkdownBlocks(markdown) {
   const blocks = [];
   let paragraph = [];
   let listItems = [];
+  let quoteLines = [];
+  let codeLines = [];
+  let inCodeBlock = false;
+  let codeLanguage = "";
 
   const flushParagraph = () => {
     if (paragraph.length === 0) return;
@@ -392,24 +396,75 @@ function renderMarkdownBlocks(markdown) {
     blocks.push(`<ul>${listItems.map((item) => `<li>${renderMarkdownInline(item)}</li>`).join("")}</ul>`);
     listItems = [];
   };
+  const flushQuote = () => {
+    if (quoteLines.length === 0) return;
+    blocks.push(`<blockquote>${renderMarkdownBlocks(quoteLines.join("\n"))}</blockquote>`);
+    quoteLines = [];
+  };
+  const flushCode = () => {
+    if (codeLines.length === 0 && !codeLanguage) return;
+    const languageClass = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+    blocks.push(`<pre class="mono-block"><code${languageClass}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    codeLines = [];
+    codeLanguage = "";
+  };
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  };
 
   for (const line of lines) {
     const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      if (inCodeBlock) {
+        flushCode();
+        inCodeBlock = false;
+      } else {
+        flushAll();
+        inCodeBlock = true;
+        codeLanguage = trimmed.slice(3).trim();
+        codeLines = [];
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
     if (!trimmed) {
       flushParagraph();
       flushList();
+      flushQuote();
+      continue;
+    }
+    const headingMatch = trimmed.match(/^(#{1,5})\s+(.+)$/);
+    if (headingMatch) {
+      flushAll();
+      const level = headingMatch[1].length;
+      blocks.push(`<h${level}>${renderMarkdownInline(headingMatch[2].trim())}</h${level}>`);
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      flushParagraph();
+      flushList();
+      quoteLines.push(trimmed.replace(/^>\s?/, ""));
       continue;
     }
     if (trimmed.startsWith("- ")) {
       flushParagraph();
+      flushQuote();
       listItems.push(trimmed.slice(2).trim());
       continue;
     }
     flushList();
+    flushQuote();
     paragraph.push(trimmed);
   }
-  flushParagraph();
-  flushList();
+  if (inCodeBlock) {
+    flushCode();
+  }
+  flushAll();
   return blocks.join("");
 }
 
@@ -3089,6 +3144,11 @@ function renderObjectives(payload) {
 
 function renderProject(payload) {
   setPage(payload.title, payload.subtitle, [], "project");
+  const projectPages = (payload.related_pages || [])
+    .map(
+      (page) => `<article class="mini-card"><h3>${escapeHtml(page.title)}</h3><p>${escapeHtml(page.description)}</p><div class="inline-actions"><a class="button-link" href="${routeHref(page.route_path)}">Open page</a></div></article>`,
+    )
+    .join("");
   state.aside.innerHTML = [
     renderCard(
       "Project Record",
@@ -3137,6 +3197,10 @@ function renderProject(payload) {
         </div>
         <p>${escapeHtml(payload.anr_context)}</p>
       </section>
+      <section class="mini-card">
+        <h3>Project Pages</h3>
+        ${projectPages ? `<div class="family-grid">${projectPages}</div>` : `<div class="empty-state">No project sub-pages are published yet.</div>`}
+      </section>
       <section class="mini-card project-logo-panel">
         <h3>Participants</h3>
         <div class="project-logo-grid">${participantLogos}</div>
@@ -3144,6 +3208,29 @@ function renderProject(payload) {
       <section class="project-fact-grid">${factCards}</section>
     </div>`;
   setStatus(`Loaded ${payload.anr_project_code}`);
+}
+
+function renderProjectTextPage(payload) {
+  setPage(payload.title, payload.subtitle, payload.breadcrumbs || [], "project");
+  state.aside.innerHTML = [
+    renderCard(
+      "Project",
+      `<div class="inline-actions"><a class="button-link primary" href="${routeHref(payload.project_route_path || "/project/")}">Back to Project</a></div>`,
+    ),
+    renderCard(
+      "Snapshot",
+      renderStatGrid([
+        ["Snapshot", payload.snapshot?.snapshot_id || "n/a"],
+        ["Generated", payload.generated_at || "n/a"],
+      ]),
+    ),
+    renderCard(
+      "Source",
+      `<div class="inline-actions"><a class="mini-link" href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">GitHub repository</a></div>`,
+    ),
+  ].join("");
+  state.stage.innerHTML = `<article class="context-prose">${renderMarkdownBlocks(payload.markdown)}</article>`;
+  setStatus(`Loaded ${payload.title}`);
 }
 
 function renderWorkbenchPlaceholder() {
@@ -3238,6 +3325,9 @@ async function renderPayloadPage() {
       break;
     case "project_page":
       renderProject(payload);
+      break;
+    case "project_text_page":
+      renderProjectTextPage(payload);
       break;
     case "objectives_page":
       renderObjectives(payload);

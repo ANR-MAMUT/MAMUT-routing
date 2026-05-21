@@ -335,7 +335,7 @@ dev = [
 
 [[package]]
 name = "mamut-routing-publish"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mamut-routing-lib", extra = ["pyvrp"] },

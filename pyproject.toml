@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mamut-routing-publish"
-version = "0.0.1"
+version = "0.1.0"
 description = "Snapshot, site, and release-archive generation toolkit for the MAMUT-routing benchmark repository."
 readme = "README.md"
 authors = [
@@ -37,7 +37,7 @@ keywords = [
     "static site generation",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
