@@ -7,6 +7,7 @@ Curated CVRP and VRPTW benchmarks, the static benchmark website, and the Julia w
 This repository is part of the
 [MAMUT project](https://github.com/ANR-MAMUT) ([ANR-22-CE22-0016](https://anr.fr/Project-ANR-22-CE22-0016)),
 an academic research project advancing the state of the art in combinatorial optimization for logistics and transportation problems.
+See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and contributor information.
 
 ## Layout
 
