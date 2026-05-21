@@ -86,7 +86,6 @@ code,
 }
 
 .table-cell-num {
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
@@ -996,6 +995,11 @@ a.vrp-link:focus-visible {
   gap: 0.8rem;
 }
 
+.family-grid,
+.problem-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
 .project-page {
   display: grid;
   gap: clamp(0.9rem, 1.5vw, 1.25rem);
@@ -1192,6 +1196,7 @@ a.vrp-link:focus-visible {
 .problem-grid > .mini-card > .inline-actions {
   margin-top: auto;
   padding-top: 0.9rem;
+  flex-wrap: nowrap;
 }
 
 .mini-card h3,
