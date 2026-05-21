@@ -2,6 +2,8 @@
 
 Curated CVRP and VRPTW benchmarks, the static benchmark website, and the Julia webapp that visualizes instances and routes — all in one repository.
 
+[![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
+
 ## MAMUT project context
 
 This repository is part of the
@@ -91,6 +93,22 @@ julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
 ```
 
 This command starts the server, serving the static site and the route-payload API from the local `dist/` directory. 
+
+## Archival and reproducibility
+
+`MAMUT-routing` is archived by [Software Heritage](https://www.softwareheritage.org/). The badge above points to the archived GitHub origin and tracks the repository-level archive status:
+
+- [Software Heritage origin](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
+- [Software Heritage archival visits](https://archive.softwareheritage.org/browse/origin/visits/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
+
+For academic referencing, use Software Heritage identifiers (SWHIDs) to cite precise archived objects rather than the moving repository origin. This is especially useful for reproducibility because MAMUT-routing contains several layers of research artifacts:
+
+- a full repository revision, to identify the exact version of the benchmark contract and publishing tooling;
+- a release directory or tagged revision, to identify a stable public snapshot;
+- an individual instance file, BKS file, metadata file, or generated artifact, to pin-point the exact object used in an experiment;
+- a line-level source-code reference, when a paper or report needs to cite a specific validation rule, parser, objective implementation, or publishing routine.
+
+Versioned SWHIDs for public releases will be listed in the citation metadata and release notes. When reporting computational results, prefer citing both the MAMUT-routing release and the exact benchmark artifacts used whenever the distinction matters.
 
 ## License
 

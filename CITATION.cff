@@ -1,0 +1,61 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: MAMUT-routing
+message: >-
+  If you use MAMUT-routing, please cite it using the metadata
+  from this file.
+type: software
+authors:
+  - given-names: Florian
+    family-names: Rascoussier
+    alias: Onyr
+    affiliation: IMT Atlantique; INSA Lyon
+    orcid: "https://orcid.org/0009-0005-3253-9814"
+  - given-names: Adrien
+    family-names: Pichon
+    alias: Anzury
+    affiliation: Université Bretagne Sud
+    orcid: "https://orcid.org/0009-0005-8630-3962"
+identifiers:
+  - type: swh
+    value: "swh:1:rev:5dd0e60f69816a5e6afa3fa8c3c95902c5de3245"
+    description: >-
+      Software Heritage archived revision for MAMUT-routing
+      v0.1.0
+url: "https://archive.softwareheritage.org/swh:1:rev:5dd0e60f69816a5e6afa3fa8c3c95902c5de3245;origin=https://github.com/ANR-MAMUT/MAMUT-routing;visit=swh:1:snp:81443df7dfea454bbac85e88446639666fffa44b"
+repository-code: "https://github.com/ANR-MAMUT/MAMUT-routing"
+abstract: >-
+  MAMUT-routing is an open-source and open-science benchmark
+  repository and tool suite for routing research, with an initial
+  focus on CVRP and VRPTW benchmarks. It curates historical
+  benchmark families, best-known solutions, objective conventions,
+  licensing and provenance metadata, and generated OpenStreetMap-based
+  instances into a reproducible benchmark-as-contract infrastructure.
+  The project provides both machine-readable benchmark artifacts and
+  a browsable static website with visualization and validation-oriented
+  tooling, supporting reproducible computational experiments in
+  Operations Research, Computer Science, and Applied Algorithmics.
+keywords:
+  - benchmarking
+  - CVRP
+  - VRPTW
+  - reproducibility
+  - vehicle routing problem
+  - benchmark curation
+  - best-known solutions
+  - BKS
+  - open science
+  - optimization benchmarks
+  - benchmark contracts
+  - OpenStreetMap
+  - OSM
+  - urban logistics
+  - research software
+  - research dataset
+  - solution validation
+  - routing
+license: MIT
+version: 0.1.0
+date-released: "2026-05-21"

@@ -81,8 +81,10 @@ exclude = [
 
 [tool.uv.sources]
 mamut-routing-lib = { path = "MAMUT-routing-lib", editable = true }
+cffconvert = { git = "https://github.com/citation-file-format/cffconvert", rev = "b6045d78aac9e02b039703b030588d54d53262ac" }
 
 [dependency-groups]
 dev = [
+    "cffconvert",
     "pytest>=9.0.0",
 ]
