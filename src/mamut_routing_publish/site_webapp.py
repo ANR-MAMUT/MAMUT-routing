@@ -109,6 +109,15 @@ def _render_shell_html(
             ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
         ]
     )
+    tagline_by_nav = {
+        "home": "Open VRPTW benchmark catalog, provenance, and routing workbench.",
+        "benchmarks": "Lists of problems and benchmark families with instance and BKS data.",
+        "project": "Research context for the MAMUT ANR project and its participants.",
+        "objectives": "Reference of objective functions used to compare VRPTW solutions.",
+        "history": "Snapshot ledger tracking catalog updates and benchmark changes.",
+    }
+    tagline_text = tagline_by_nav.get(active_nav, "")
+    tagline_html = f'<p class="brand-tagline">{tagline_text}</p>' if tagline_text else ""
     workbench_attr = f' data-workbench-mode="{workbench_mode}"' if workbench_mode else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -129,7 +138,7 @@ def _render_shell_html(
     <div class="header-row">
       <div>
         <a class="brand-link brand-link-with-logo" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, '/'))}"><img class="brand-logo" src="{logo_href}" alt="MAMUT project logo" /><span>MAMUT-routing</span></a>
-        <p class="brand-tagline">Benchmark distribution, provenance, and routing workbench.</p>
+        {tagline_html}
       </div>
       <label class="theme-toggle" title="Toggle dark mode">
         <input id="themeSwitch" type="checkbox" />
@@ -209,7 +218,7 @@ def _render_workbench_shell_html(
         <div class="header-row">
             <div>
                 <a class="brand-link brand-link-with-logo" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, '/'))}"><img class="brand-logo" src="{logo_href}" alt="MAMUT project logo" /><span>MAMUT-routing</span></a>
-                <p class="brand-tagline">Original-style workbench for benchmark preload, upload visualization, and OSM-backed preview flows.</p>
+                <p class="brand-tagline">Original-style workbench for benchmark preload, upload visualization, single and batch instance generation, and OSM-backed preview flows.</p>
             </div>
             <label class="theme-toggle" title="Toggle dark mode">
                 <input id="themeSwitch" type="checkbox" />

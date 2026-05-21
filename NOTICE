@@ -1,0 +1,39 @@
+MAMUT-routing third-party and data-license notice
+================================================
+
+MAMUT-routing is a mixed software and benchmark repository. The source code is
+MIT-licensed unless a file says otherwise. Benchmark data and generated
+artifacts are licensed at the benchmark-family level.
+
+Component licensing
+-------------------
+
+- Source code in this repository: MIT License.
+- benchmarks/VRPTW/Sintef2008: MAMUT-routing curation artifacts are provided
+  under MIT where MAMUT-routing holds the relevant rights. The underlying
+  classical VRPTW benchmark definitions originate from Solomon (1987),
+  Gehring and Homberger (1999), and the SINTEF VRPTW benchmark convention.
+- benchmarks/VRPTW/Dimacs2021: MAMUT-routing curation artifacts are provided
+  under MIT where MAMUT-routing holds the relevant rights. The benchmark
+  contract follows the 12th DIMACS Implementation Challenge VRPTW rules.
+- benchmarks/VRPTW/Ortec2022: ORTEC instances and related redistributed BKS
+  files are provided under Creative Commons Attribution-NonCommercial 4.0
+  International (CC BY-NC 4.0).
+- benchmarks/CVRP/Mamut2026 and benchmarks/VRPTW/Mamut2026: OSM-derived
+  benchmark instances, sidecars, generated route artifacts, and related
+  benchmark data are distributed under ODbL 1.0 where they derive from
+  OpenStreetMap data.
+
+Attribution
+-----------
+
+OpenStreetMap-derived artifacts use data from OpenStreetMap and its
+contributors. OpenStreetMap data is available under the Open Data Commons Open
+Database License: https://www.openstreetmap.org/copyright
+
+ORTEC benchmark artifacts are derived from the EURO Meets NeurIPS 2022 Vehicle
+Routing Competition material and retain the original CC BY-NC 4.0 terms:
+https://creativecommons.org/licenses/by-nc/4.0/
+
+Users redistributing benchmark subsets should preserve this NOTICE and the
+family-level README.md and LICENSE files.

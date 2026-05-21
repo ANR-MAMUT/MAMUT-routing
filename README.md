@@ -93,4 +93,10 @@ This command starts the server, serving the static site and the route-payload AP
 
 ## License
 
-[MIT](LICENSE).
+The source code is licensed under the [MIT License](LICENSE).
+
+This repository also contains benchmark data and generated artifacts under
+family-specific terms. In particular, `Ortec2022` material is under
+`CC BY-NC 4.0`, and OSM-derived `Mamut2026` artifacts are under `ODbL 1.0`
+where applicable. See [NOTICE](NOTICE) and the `README.md`/`LICENSE` files in
+each benchmark family directory.

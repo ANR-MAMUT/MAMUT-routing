@@ -753,6 +753,24 @@ MAMUT CVRP context first paragraph.
 """,
         encoding="utf-8",
     )
+    sintef_license = output_repo_dir / "benchmarks" / "VRPTW" / "Sintef2008" / "LICENSE"
+    sintef_license.write_text(
+        """SPDX-License-Identifier: MIT
+
+MAMUT curation artifacts use the MIT License.
+https://mit-license.org/
+""",
+        encoding="utf-8",
+    )
+    mamut_cvrp_license = output_repo_dir / "benchmarks" / "CVRP" / "Mamut2026" / "LICENSE"
+    mamut_cvrp_license.write_text(
+        """SPDX-License-Identifier: ODbL-1.0
+
+OSM-derived artifacts use ODbL.
+https://opendatacommons.org/licenses/odbl/1-0/
+""",
+        encoding="utf-8",
+    )
 
     generate_site_payloads(
         output_repo_dir=output_repo_dir,
@@ -785,15 +803,30 @@ MAMUT CVRP context first paragraph.
     assert context_payload["title"] == "Sintef2008 (VRPTW) Context"
     assert context_payload["family_route_path"] == "/benchmarks/vrptw/sintef2008/"
     assert "Preserves a bullet" in context_payload["markdown"]
+    assert context_payload["license_spdx_id"] == "MIT"
+    assert "MAMUT curation artifacts use the MIT License." in context_payload["license_markdown"]
+    assert "[https://mit-license.org/](https://mit-license.org/)" in context_payload["license_markdown"]
     assert not (payload_root / "benchmarks" / "related-benchmark-infrastructure").exists()
 
     cvrp_problem = json.loads((payload_root / "benchmarks" / "cvrp" / "index.json").read_text(encoding="utf-8"))
     mamut_cvrp_card = next(family for family in cvrp_problem["families"] if family["benchmark_name"] == "Mamut2026")
     assert mamut_cvrp_card["context_route_path"] == "/benchmarks/cvrp/mamut2026/context/"
+    mamut_cvrp_context_payload = json.loads(
+        (payload_root / "benchmarks" / "cvrp" / "mamut2026" / "context" / "index.json").read_text(encoding="utf-8")
+    )
+    assert mamut_cvrp_context_payload["license_spdx_id"] == "ODbL-1.0"
+    assert (
+        "[https://opendatacommons.org/licenses/odbl/1-0/](https://opendatacommons.org/licenses/odbl/1-0/)"
+        in mamut_cvrp_context_payload["license_markdown"]
+    )
 
     webapp_summary = generate_site_webapp(output_repo_dir)
     assert webapp_summary.html_files_written > 0
     assert (output_repo_dir / "dist" / "benchmarks" / "vrptw" / "sintef2008" / "context" / "index.html").exists()
+    site_js = (output_repo_dir / "dist" / "webapp" / "site.js").read_text(encoding="utf-8")
+    assert 'renderCard(\n        "License"' in site_js
+    assert "payload.license_spdx_id" in site_js
+    assert "payload.license_markdown" in site_js
 
 
 def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:

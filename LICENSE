@@ -1,3 +1,27 @@
+MAMUT-routing license notice
+============================
+
+Unless otherwise stated, the source code of MAMUT-routing is licensed under the
+MIT License below.
+
+This repository also contains benchmark instances, best-known solution records,
+generated route and visualization artifacts, and source-data sidecars. These
+non-code materials may be governed by different licenses. In particular:
+
+- Ortec2022 instances and related redistributed BKS files are provided under
+  their original Creative Commons Attribution-NonCommercial 4.0 International
+  license (CC BY-NC 4.0).
+- Mamut2026 instances and OSM-derived benchmark artifacts are derived from
+  OpenStreetMap data and are distributed, where applicable, under the Open Data
+  Commons Open Database License 1.0 (ODbL 1.0), with attribution to
+  OpenStreetMap and its contributors.
+- Family-level license files under benchmarks/ give the applicable terms for
+  each benchmark family.
+
+The MIT License applies to MAMUT-routing source code and to MAMUT-authored
+materials only to the extent that no more specific license notice applies.
+
+
 MIT License
 
 Copyright (c) 2026 ANR-MAMUT

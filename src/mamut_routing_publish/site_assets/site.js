@@ -856,6 +856,12 @@ function renderCatalogIndex(payload) {
 
 function renderFamilyContext(payload) {
   setPage(payload.title, "Benchmark family provenance, objective contract, and curation notes.", payload.breadcrumbs, "editorial");
+  const licenseCard = payload.license_markdown || payload.license_spdx_id
+    ? renderCard(
+        "License",
+        `${payload.license_spdx_id ? `<div class="badge-row">${badge(payload.license_spdx_id, true)}</div>` : ""}${payload.license_markdown ? renderMarkdownBlocks(payload.license_markdown) : ""}`,
+      )
+    : "";
   state.aside.innerHTML = [
     renderCard(
       "Family",
@@ -865,6 +871,7 @@ function renderFamilyContext(payload) {
         ["Snapshot", payload.snapshot.snapshot_id],
       ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="button-link primary" href="${routeHref(payload.family_route_path)}">Open family</a></div>`,
     ),
+    licenseCard,
   ].join("");
   state.stage.innerHTML = `<article class="context-prose">${renderMarkdownBlocks(payload.markdown)}</article>`;
   setStatus(`Loaded context for ${payload.problem_type} / ${payload.benchmark_name}`);

@@ -498,6 +498,8 @@ class FamilyContextPagePayload(SitePayloadBase):
     benchmark_name: BenchmarkName
     markdown: str
     family_route_path: str
+    license_spdx_id: str | None = None
+    license_markdown: str | None = None
 
 
 class SitePayloadGenerationSummary(BaseModel):
@@ -1209,6 +1211,13 @@ class _FamilyContextSection(BaseModel):
     markdown: str
 
 
+class _FamilyLicenseSection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    spdx_id: str | None = None
+    markdown: str | None = None
+
+
 def _resolve_family_context_report_path(output_repo_dir: Path, report_path: str | Path | None = None) -> Path:
     if report_path is not None:
         candidate = Path(report_path)
@@ -1265,6 +1274,50 @@ def _context_summary_from_markdown(markdown: str) -> str:
     if not paragraphs:
         return ""
     return re.sub(r"\s+", " ", paragraphs[0])
+
+
+_SPDX_LICENSE_RE = re.compile(r"^SPDX-License-Identifier:\s*(?P<id>\S+)\s*$")
+_STANDALONE_URL_RE = re.compile(r"^https?://\S+$")
+
+
+def _license_file_path(output_repo_dir: Path, problem_type: ProblemType, benchmark_name: BenchmarkName) -> Path:
+    return output_repo_dir / "benchmarks" / problem_type.value / benchmark_name.value / "LICENSE"
+
+
+def _markdown_link_for_url(url: str) -> str:
+    return f"[{url}]({url})"
+
+
+def _load_family_license_section(
+    output_repo_dir: Path,
+    problem_type: ProblemType,
+    benchmark_name: BenchmarkName,
+) -> _FamilyLicenseSection:
+    path = _license_file_path(output_repo_dir, problem_type, benchmark_name)
+    if not path.is_file():
+        return _FamilyLicenseSection()
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    spdx_id: str | None = None
+    if lines:
+        match = _SPDX_LICENSE_RE.match(lines[0].strip())
+        if match is not None:
+            spdx_id = match.group("id")
+            lines = lines[1:]
+
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+
+    markdown_lines = []
+    for line in lines:
+        stripped = line.strip()
+        markdown_lines.append(_markdown_link_for_url(stripped) if _STANDALONE_URL_RE.match(stripped) else line.rstrip())
+    markdown = "\n".join(markdown_lines).strip() or None
+    if spdx_id is None and markdown is None:
+        return _FamilyLicenseSection()
+    return _FamilyLicenseSection(spdx_id=spdx_id, markdown=markdown)
 
 
 def _write_payload(
@@ -1503,7 +1556,7 @@ def _build_project_page_payload(
             ProjectFact(label="Coordinator", value="Marc Sevaux, Universite Bretagne Sud"),
             ProjectFact(label="Partners", value="CITI EA3720, Mapotempo, LAB-STICC IMT Atlantique, LAB-STICC Universite Bretagne Sud"),
             ProjectFact(label="ANR support", value="497,722 euros"),
-            ProjectFact(label="Scientific period", value="January 2023 - 48 months"),
+            ProjectFact(label="Scientific period", value="2023 - 2026"),
             ProjectFact(label="Official record", value="ANR project page", href="https://anr.fr/Projet-ANR-22-CE22-0016"),
         ],
         research_threads=[
@@ -2084,6 +2137,7 @@ def _build_catalog_index(
 
 def _build_family_context_page_payload(
     *,
+    output_repo_dir: Path,
     problem_type: ProblemType,
     benchmark_name: BenchmarkName,
     context_section: _FamilyContextSection,
@@ -2092,6 +2146,7 @@ def _build_family_context_page_payload(
 ) -> FamilyContextPagePayload:
     route_path = _family_context_route_path(problem_type, benchmark_name)
     family_route_path = _family_route_path(problem_type, benchmark_name)
+    license_section = _load_family_license_section(output_repo_dir, problem_type, benchmark_name)
     return FamilyContextPagePayload(
         generated_at=generated_at,
         snapshot=snapshot,
@@ -2107,6 +2162,8 @@ def _build_family_context_page_payload(
         benchmark_name=benchmark_name,
         markdown=context_section.markdown,
         family_route_path=family_route_path,
+        license_spdx_id=license_section.spdx_id,
+        license_markdown=license_section.markdown,
     )
 
 
@@ -2413,6 +2470,7 @@ def generate_site_payloads(
 
             if context_section is not None:
                 context_payload = _build_family_context_page_payload(
+                    output_repo_dir=output_repo,
                     problem_type=problem_type,
                     benchmark_name=benchmark_name,
                     context_section=context_section,

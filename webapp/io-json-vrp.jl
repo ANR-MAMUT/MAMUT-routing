@@ -573,6 +573,8 @@ struct FamilyContextPagePayload
     benchmark_name::String
     markdown::String
     family_route_path::String
+    license_spdx_id::Union{Nothing,String}
+    license_markdown::Union{Nothing,String}
 end
 
 
@@ -1562,7 +1564,7 @@ function ObjectivesPagePayload(; payload_kind, schema_version, generated_at, sna
 end
 
 
-function FamilyContextPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, breadcrumbs, problem_type, benchmark_name, markdown, family_route_path)
+function FamilyContextPagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path, title, breadcrumbs, problem_type, benchmark_name, markdown, family_route_path, license_spdx_id=nothing, license_markdown=nothing)
     return FamilyContextPagePayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1575,6 +1577,8 @@ function FamilyContextPagePayload(; payload_kind, schema_version, generated_at, 
         require_choice(coerce_string(benchmark_name, "benchmark_name"), BENCHMARK_NAMES, "benchmark_name"),
         coerce_string(markdown, "markdown"),
         validate_site_path(coerce_string(family_route_path, "family_route_path"), "family_route_path"),
+        coerce_optional_string(license_spdx_id, "license_spdx_id"),
+        coerce_optional_string(license_markdown, "license_markdown"),
     )
 end
 
@@ -2143,6 +2147,8 @@ family_context_page_payload(value::FamilyContextPagePayload) = Pair{String,Any}[
     "benchmark_name" => value.benchmark_name,
     "markdown" => value.markdown,
     "family_route_path" => value.family_route_path,
+    "license_spdx_id" => value.license_spdx_id,
+    "license_markdown" => value.license_markdown,
 ]
 
 
@@ -3211,7 +3217,7 @@ end
 
 
 function family_context_page_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "breadcrumbs", "problem_type", "benchmark_name", "markdown", "family_route_path"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "breadcrumbs", "problem_type", "benchmark_name", "markdown", "family_route_path", "license_spdx_id", "license_markdown"])
     ensure_allowed_keys(payload, allowed, "FamilyContextPagePayload")
     return FamilyContextPagePayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3225,6 +3231,8 @@ function family_context_page_payload_from_dict(payload::AbstractDict)
         benchmark_name=require_field(payload, "benchmark_name"),
         markdown=require_field(payload, "markdown"),
         family_route_path=require_field(payload, "family_route_path"),
+        license_spdx_id=get(payload, "license_spdx_id", nothing),
+        license_markdown=get(payload, "license_markdown", nothing),
     )
 end
 

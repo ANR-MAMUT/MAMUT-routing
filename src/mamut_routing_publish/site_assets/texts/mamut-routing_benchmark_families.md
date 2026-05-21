@@ -10,6 +10,8 @@ Though this benchmark became a cornerstone for VRPTW research, it remains perfec
 
 The MAMUT-routing `Sintef2008` family consolidates the SINTEF benchmark with alternative BKS sources such as [Combopt](http://combopt.org/tables/), [CVRPLib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) BKS kindly provided by [Eduardo Queiroga](https://github.com/EduardoQueiroga) through personal communication and [Czech personal website](https://sun.aei.polsl.pl/~zjc/). The curated artifacts expose machine-readable instance files, BKS route files, objective-function metadata, and checker-compatible JSON. We also impose a deterministic route ordering, by sorting routes according to their first customer ID, so that route files and floating-point aggregation are reproducible across runs and formats.
 
+Licensing note: MAMUT-routing-authored curation artifacts for this family are distributed under the [MIT License](https://mit-license.org/) where MAMUT-routing holds the relevant rights. The underlying historical benchmark definitions and some BKS sources remain third-party benchmark material and are not relicensed by this curation.
+
 As of the current MAMUT-routing tree, this family contains the 468 classical VRPTW instances over 8 different instance sizes, each with a `HierarchicalVehicleCost` BKS.
 
 **May 2026 note.** The [CVRPlib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) now also exposes its own VRPTW benchmark (previously unavailable through their website) inspired by SINTEF, but with a different mono-cost objective. As such, their collection differs from our curated `Sintef2008` benchmark family since we respect the original hierarchical objective, whereas cost-only variants belong to a different benchmark contract.
@@ -26,6 +28,8 @@ The DIMACS competition had a lasting impact because it gave heuristic and exact-
 
 The original DIMACS benchmark material, however, was not distributed as a complete curated BKS repository. Public result tables were mainly provided through scoreboards and spreadsheets without route files. The MAMUT-routing `Dimacs2021` family fills this gap by collecting, validating, and normalizing route-level BKS files under the DIMACS objective. Several BKS sources were used, including CVRPLib-provided Solomon/Homberger solutions reevaluated under the DIMACS contract, PyVRP instance collections for larger cases, and additional personal experiments run on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
 
+Licensing note: MAMUT-routing-authored curation artifacts for this family are distributed under the [MIT License](https://mit-license.org/) where MAMUT-routing holds the relevant rights. The underlying historical benchmark definitions, competition material, and some BKS sources remain third-party material and are not relicensed by this curation.
+
 As of the current MAMUT-routing tree, this family mirrors the 468 classical instances over 8 different instance sizes, each with a `MonoCost` BKS.
 
 **May 2026 note.** CVRPLib's newer VRPTW material should be read carefully with respect to objective and cost-scaling conventions. Some BKS may overlap with `Dimacs2021` because both use cost-oriented evaluation on the classical instances, but a BKS is only comparable when the objective, cost scaling, rounding/truncation, and fleet-limit conventions match exactly, and CVRPLib's VRPTW instances use `float64` precision instead of scaled integers. 
@@ -40,7 +44,9 @@ The competition included both static and dynamic VRPTW variants. MAMUT-routing c
 
 The ORTEC contract differs from classical Solomon-style benchmarks in another important way: the number of vehicles is effectively unlimited such that constructing a feasible solution is always feasible and a trivial solution with one elementary route (`depot -> customer -> depot`) per customer is a valid Upper Bound. Like DIMACS, it uses a single-objective cost-minimization contract. In MAMUT-routing, ORTEC instances store `num_vehicles = null` to make this convention explicit.
 
-The [quickstart repository](https://github.com/ortec/euro-neurips-vrp-2022-quickstart) provides the instances and final-round competition results. MAMUT-routing converts the original TSPLIB-like text files into checker-compatible JSON, preserves license metadata (`CC BY-NC 4.0`), and writes one `MonoCost` BKS per instance. For the `final` subset, BKS files come from the published finalist results. For the `public` subset, BKS files were computed separately with a custom HGS-based solver over multiple seeds and long time limits on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+The [quickstart repository](https://github.com/ortec/euro-neurips-vrp-2022-quickstart) provides the instances and final-round competition results. MAMUT-routing converts the original TSPLIB-like text files into checker-compatible JSON, preserves license metadata ([Creative Commons Attribution Non Commercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/)), and writes one `MonoCost` BKS per instance. For the `final` subset, BKS files come from the published finalist results. For the `public` subset, BKS files were computed separately with a custom HGS-based solver over multiple seeds and long time limits on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+
+Licensing note: ORTEC instances and related redistributed BKS files in MAMUT-routing retain the original [Creative Commons Attribution Non Commercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/) terms. This is a non-commercial license and therefore differs from the [MIT License](https://mit-license.org/) used for MAMUT-routing source code.
 
 One public instance required curation beyond direct format conversion: `ORTEC-VRPTW-ASYM-2e2ef021-d1-n210-k17` had one customer time window that made even the elementary route from the depot infeasible under the stored asymmetric matrix. The repaired MAMUT-routing instance records this explicitly in `metadata.repair_note`: customer 210 originally had `[8400, 11700]`, repaired to `[8400, 13378]`, where `13378` is the earliest depot-to-customer arrival time.
 
@@ -64,6 +70,8 @@ Demands and capacity are generated synthetically but recorded in metadata. The `
 
 The important design choice is that `Mamut2026` CVRP instances are not just raw generated files. They are benchmark artifacts with stable IDs, source-city metadata, generator version, source OSM file references, metric variant, sidecar manifests, route-rendering caches, and links to derived VRPTW artifacts. This is what makes the family compatible with the benchmark-as-contract perspective.
 
+Licensing note: because this family is generated from OpenStreetMap data, the OSM-derived instances, sidecars, route-rendering artifacts, and related benchmark data are distributed under the [Open Data Commons Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/) where applicable, with attribution to OpenStreetMap and its contributors.
+
 As of the current MAMUT-routing tree, the seeded CVRP release contains several instances from real-world cities. Each currently has a `MonoCost` BKS produced by PyVRP/HGS. These BKS are heuristic reference solutions, not optimality certificates.
 
 ### `Mamut2026` (VRPTW)
@@ -83,5 +91,6 @@ The current generated time-window metadata records the method, horizon, service-
 
 The VRPTW `Mamut2026` family is meant to complement, not replace, the historical `Sintef2008`, `Dimacs2021`, and `Ortec2022` families. `Sintef2008` and `Dimacs2021` provide continuity with decades of classical Solomon-style research. `Ortec2022` provides a realistic industry-derived benchmark. `Mamut2026` adds an open generation toolchain where geography, travel model, temporal policy, objective convention, and visualization are all explicit and reproducible.
 
-The current family contains instances alongside heuristic BKS for both classical objectives: a `MonoCost` BKS and a `HierarchicalVehicleCost` BKS.
+Licensing note: because this family is derived from the OSM-based `Mamut2026` CVRP layer, the OSM-derived VRPTW instances, sidecars, route-rendering artifacts, and related benchmark data are distributed under the [Open Data Commons Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/) where applicable, with attribution to OpenStreetMap and its contributors.
 
+The current family contains instances alongside heuristic BKS for both classical objectives: a `MonoCost` BKS and a `HierarchicalVehicleCost` BKS.
