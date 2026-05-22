@@ -38,7 +38,10 @@ import typer
 from mamut_routing_lib.artifacts import DEFAULT_MAMUT_ROUTING_ROOT_ENV
 
 from mamut_routing_publish.progress import SUPPORTED_PROGRESS_FORMATS, make_progress_reporter
-from mamut_routing_publish.release_artifacts import generate_release_artifacts
+from mamut_routing_publish.release_artifacts import (
+    DEFAULT_RELEASE_ARCHIVE_COMPRESS_LEVEL,
+    generate_release_artifacts,
+)
 from mamut_routing_publish.site_payloads import (
     DEFAULT_SITE_OUTPUT_DIR,
     DEFAULT_SITE_PAYLOAD_ROOT_DIR,
@@ -530,6 +533,23 @@ def release_build_cmd(
             help="Optional base URL used to populate manifest download URLs.",
         ),
     ] = None,
+    jobs: Annotated[
+        Optional[int],
+        typer.Option(
+            "--jobs",
+            min=1,
+            help="Number of release archives to compress in parallel. Defaults to auto.",
+        ),
+    ] = None,
+    compresslevel: Annotated[
+        int,
+        typer.Option(
+            "--compresslevel",
+            min=0,
+            max=9,
+            help="ZIP deflate compression level. Defaults to high compression for release size.",
+        ),
+    ] = DEFAULT_RELEASE_ARCHIVE_COMPRESS_LEVEL,
 ) -> None:
     """Generate release .zip archives + manifest.
 
@@ -556,6 +576,8 @@ def release_build_cmd(
         source_branch=resolved_branch,
         release_tag=release_tag,
         download_base_url=download_base_url,
+        jobs=jobs,
+        compresslevel=compresslevel,
     )
     _emit_summary(summary)
 
