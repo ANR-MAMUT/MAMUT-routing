@@ -50,6 +50,7 @@ const PROJECT_PARTICIPANT_LOGOS = [
 ];
 
 const WORKBENCH_PAYLOAD_CACHE = new Map();
+const ARTIFACT_JSON_CACHE = new Map();
 let homePreviewRotationTimer = null;
 
 function escapeHtml(value) {
@@ -135,11 +136,23 @@ function siteAssetHref(path) {
 }
 
 async function fetchJson(sourcePath) {
-  const response = await fetch(sourcePath, { cache: "no-store" });
+  const response = await fetch(sourcePath);
   if (!response.ok) {
     throw new Error(`Unable to fetch ${sourcePath}: ${response.status}`);
   }
   return response.json();
+}
+
+function fetchJsonMemo(sourcePath) {
+  if (ARTIFACT_JSON_CACHE.has(sourcePath)) {
+    return ARTIFACT_JSON_CACHE.get(sourcePath);
+  }
+  const promise = fetchJson(sourcePath).catch((error) => {
+    ARTIFACT_JSON_CACHE.delete(sourcePath);
+    throw error;
+  });
+  ARTIFACT_JSON_CACHE.set(sourcePath, promise);
+  return promise;
 }
 
 async function fetchWorkbenchPayloadForRoute(routePath) {
@@ -616,6 +629,35 @@ function renderHomePreviewShowcase(payload, samples) {
   </div>`;
 }
 
+function renderHomePreviewSkeleton() {
+  return `<div class="home-preview-showcase home-preview-loading" data-home-preview-showcase aria-busy="true">
+    <article class="home-preview-card home-preview-skeleton" aria-hidden="true">
+      <div class="home-preview-skeleton-frame">
+        <div class="home-preview-skeleton-spinner"></div>
+      </div>
+    </article>
+    <span class="visually-hidden">Loading instance preview…</span>
+  </div>`;
+}
+
+function fillHomePreviewShowcase(payload, samples) {
+  const showcase = state.stage?.querySelector("[data-home-preview-showcase]");
+  if (!showcase) {
+    return;
+  }
+  const library = Array.isArray(samples)
+    ? samples.filter((sample) => sample?.instancePayload && sample?.preview)
+    : [];
+  showcase.classList.remove("home-preview-loading");
+  showcase.removeAttribute("aria-busy");
+  if (library.length === 0) {
+    showcase.outerHTML = renderHomePreviewFallback(payload);
+    return;
+  }
+  showcase.dataset.activeIndex = "0";
+  showcase.innerHTML = renderHomePreviewFrame(library[0], 0, library.length);
+}
+
 function homePreviewSampleKey(sample) {
   return [
     normalizeRoute(sample?.instancePayload?.route_path || ""),
@@ -623,39 +665,64 @@ function homePreviewSampleKey(sample) {
   ].join("::");
 }
 
-async function loadHomePreviewLibrary() {
-  const seeds = [
-    { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "MonoCost" },
-    { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "shortest", placeSlug: "london", objectiveFunction: "MonoCost" },
-    { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "euclidean", placeSlug: "brest", objectiveFunction: "MonoCost" },
-    { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "HierarchicalVehicleCost" },
-    { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "london", objectiveFunction: "HierarchicalVehicleCost" },
-    { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "euclidean", placeSlug: "london", objectiveFunction: "HierarchicalVehicleCost" },
-    { problemType: "CVRP", benchmarkName: "Mamut2026", objectiveFunction: "MonoCost" },
-    {},
-  ];
-  const samples = [];
-  const seenKeys = new Set();
+// Mirror of HOME_PREVIEW_SEEDS in src/mamut_routing_publish/site_payloads.py,
+// only used by the seed-walker fallback below.
+const HOME_PREVIEW_SEEDS = [
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "MonoCost" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "shortest", placeSlug: "london", objectiveFunction: "MonoCost" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "euclidean", placeSlug: "brest", objectiveFunction: "MonoCost" },
+  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "HierarchicalVehicleCost" },
+  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "london", objectiveFunction: "HierarchicalVehicleCost" },
+];
+
+async function loadHomePreviewSample(seed) {
+  const selection = await buildWorkbenchBenchmarkSelection(seed);
+  if (!selection.instancePayload) {
+    return null;
+  }
+  const preview = await loadWorkbenchInstancePreview(selection.instancePayload, seed.objectiveFunction || null);
+  if (!Array.isArray(preview?.selectedBksData?.routes) || preview.selectedBksData.routes.length === 0) {
+    return null;
+  }
+  return { selection, instancePayload: selection.instancePayload, preview };
+}
+
+async function loadFirstHomePreviewSample(seeds) {
   for (const seed of seeds) {
     try {
-      const selection = await buildWorkbenchBenchmarkSelection(seed);
-      if (!selection.instancePayload) {
-        continue;
+      const sample = await loadHomePreviewSample(seed);
+      if (sample) {
+        return { sample, seedIndex: seeds.indexOf(seed) };
       }
-      const preview = await loadWorkbenchInstancePreview(selection.instancePayload, seed.objectiveFunction || null);
-      if (!Array.isArray(preview?.selectedBksData?.routes) || preview.selectedBksData.routes.length === 0) {
-        continue;
-      }
-      const sample = { selection, instancePayload: selection.instancePayload, preview };
-      const key = homePreviewSampleKey(sample);
-      if (seenKeys.has(key)) {
-        continue;
-      }
-      seenKeys.add(key);
-      samples.push(sample);
     } catch (error) {
       console.warn("Unable to load homepage preview sample", error);
     }
+  }
+  return null;
+}
+
+async function loadRemainingHomePreviewSamples(seeds, skipIndex, seenKeys) {
+  const tasks = seeds.map((seed, index) => {
+    if (index === skipIndex) {
+      return null;
+    }
+    return loadHomePreviewSample(seed).catch((error) => {
+      console.warn("Unable to load homepage preview sample", error);
+      return null;
+    });
+  });
+  const results = await Promise.all(tasks.filter(Boolean));
+  const samples = [];
+  for (const sample of results) {
+    if (!sample) {
+      continue;
+    }
+    const key = homePreviewSampleKey(sample);
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    samples.push(sample);
   }
   return samples;
 }
@@ -687,6 +754,7 @@ function activateHomePreviewLibrary(samples) {
         return;
       }
       activeIndex = nextIndex;
+      showcase.dataset.activeIndex = String(activeIndex);
       showcase.innerHTML = renderHomePreviewFrame(library[activeIndex], activeIndex, library.length);
       window.requestAnimationFrame(() => {
         showcase.classList.remove("home-preview-showcase-swapping");
@@ -795,13 +863,11 @@ function renderInstanceGroups(items) {
   return `<div class="table-wrap"><table class="grouped-instance-table"><thead><tr><th></th><th>Variant</th><th>Objectives</th><th>Actions</th></tr></thead>${tbodies.join("")}</table></div>`;
 }
 
-async function renderHome(payload) {
+function renderHome(payload) {
   setPage(payload.title, payload.subtitle, [], "home");
   if (state.aside) {
     state.aside.innerHTML = "";
   }
-  setStatus("Loading homepage preview...");
-  const previewLibrary = await loadHomePreviewLibrary();
   state.stage.innerHTML = `
     <section class="home-page">
       <section class="home-hero">
@@ -823,7 +889,7 @@ async function renderHome(payload) {
           </div>
           ${renderHomeStatStrip(payload)}
         </div>
-        ${renderHomePreviewShowcase(payload, previewLibrary)}
+        ${renderHomePreviewSkeleton()}
       </section>
       <section class="home-section">
         <div class="home-section-heading">
@@ -844,8 +910,104 @@ async function renderHome(payload) {
         <span>Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</span>
       </section>
     </section>`;
-  activateHomePreviewLibrary(previewLibrary);
   setStatus(`Loaded snapshot ${payload.snapshot.snapshot_id}`);
+  hydrateHomePreviewShowcase(payload);
+}
+
+async function loadHomePreviewBundle(payload) {
+  if (!payload?.home_preview_bundle_href) {
+    return null;
+  }
+  try {
+    const bundle = await fetchJsonMemo(artifactHref(payload.home_preview_bundle_href));
+    if (!Array.isArray(bundle?.samples) || bundle.samples.length === 0) {
+      return null;
+    }
+    return bundle.samples.map((entry) => ({
+      instancePayload: entry.instance_payload,
+      preview: {
+        instanceData: entry.instance_data,
+        // geometryMeta is excluded from the bundle (3-11 MB per instance) and
+        // lazy-loaded after first paint via loadHomePreviewSampleGeometry().
+        geometryMeta: null,
+        selectedEntry: entry.selected_entry,
+        selectedBksData: entry.selected_bks_data,
+        selectedIndex: 0,
+      },
+    }));
+  } catch (error) {
+    console.warn("Unable to load home preview bundle", error);
+    return null;
+  }
+}
+
+function loadHomePreviewSampleGeometry(sample, onLoaded) {
+  const summary = sample?.instancePayload?.summary;
+  const metaPath = sample?.instancePayload?.artifact_links?.meta_path;
+  if (!summary || !metaPath) {
+    return;
+  }
+  if (summary.viewer_render_mode !== "cached_road" || summary.road_cache_status !== "complete") {
+    return;
+  }
+  if (sample.preview.geometryMeta) {
+    return;
+  }
+  fetchJsonMemo(artifactHref(metaPath))
+    .then((data) => {
+      sample.preview.geometryMeta = data;
+      onLoaded?.(sample);
+    })
+    .catch((error) => console.warn("Unable to load homepage geometry sidecar", error));
+}
+
+function refreshHomePreviewActiveFrame(samples, sample) {
+  const showcase = state.stage?.querySelector("[data-home-preview-showcase]");
+  if (!showcase) {
+    return;
+  }
+  const activeIndex = Number(showcase.dataset.activeIndex || 0);
+  if (samples[activeIndex] !== sample) {
+    return;
+  }
+  showcase.innerHTML = renderHomePreviewFrame(sample, activeIndex, samples.length);
+}
+
+async function hydrateHomePreviewShowcase(payload) {
+  const bundleSamples = await loadHomePreviewBundle(payload);
+  if (bundleSamples) {
+    fillHomePreviewShowcase(payload, bundleSamples);
+    activateHomePreviewLibrary(bundleSamples);
+    bundleSamples.forEach((sample) =>
+      loadHomePreviewSampleGeometry(sample, (updated) => refreshHomePreviewActiveFrame(bundleSamples, updated)),
+    );
+    return;
+  }
+
+  // Fallback: the bundle is missing (e.g. older publish, dev environment).
+  // Walk seeds at runtime, same flow as before the bundle was introduced.
+  // TODO: remove this fallback (and the loadHomePreview*/buildWorkbenchBenchmarkSelection helpers it relies on) once we're confident every publish produces a bundle.
+  const seeds = HOME_PREVIEW_SEEDS;
+  const firstResult = await loadFirstHomePreviewSample(seeds);
+  if (!firstResult) {
+    fillHomePreviewShowcase(payload, []);
+    return;
+  }
+  const samples = [firstResult.sample];
+  const seenKeys = new Set([homePreviewSampleKey(firstResult.sample)]);
+  fillHomePreviewShowcase(payload, samples);
+
+  const rest = await loadRemainingHomePreviewSamples(seeds, firstResult.seedIndex, seenKeys);
+  if (rest.length === 0) {
+    return;
+  }
+  samples.push(...rest);
+  const showcase = state.stage?.querySelector("[data-home-preview-showcase]");
+  if (showcase) {
+    showcase.dataset.activeIndex = "0";
+    showcase.innerHTML = renderHomePreviewFrame(samples[0], 0, samples.length);
+  }
+  activateHomePreviewLibrary(samples);
 }
 
 function renderBenchmarksIndex(payload) {
@@ -1462,18 +1624,18 @@ async function renderInstancePage(payload, options = {}) {
     : payload.breadcrumbs;
   setPage(pageTitle, pageIntro, breadcrumbs, "explorer");
   setStatus(`Loading ${payload.title}…`);
-  const instanceData = await fetchJson(artifactHref(payload.artifact_links.vrp_json_path));
+  const instanceData = await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path));
   let geometryMeta = null;
   if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && payload.artifact_links.meta_path) {
     try {
-      geometryMeta = await fetchJson(artifactHref(payload.artifact_links.meta_path));
+      geometryMeta = await fetchJsonMemo(artifactHref(payload.artifact_links.meta_path));
     } catch (error) {
       console.warn("Unable to load geometry sidecar", error);
     }
   }
   let selectedIndex = 0;
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
-  let selectedBksData = selectedEntry ? await fetchJson(artifactHref(selectedEntry.artifact_path)) : null;
+  let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
 
   const renderSelectedState = () => {
     const asideCards = [
@@ -1555,7 +1717,7 @@ async function renderInstancePage(payload, options = {}) {
       button.addEventListener("click", async () => {
         selectedIndex = Number(button.dataset.bksIndex);
         selectedEntry = payload.bks_entries[selectedIndex] || null;
-        selectedBksData = selectedEntry ? await fetchJson(artifactHref(selectedEntry.artifact_path)) : null;
+        selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
         renderSelectedState();
       });
     });
@@ -1953,23 +2115,26 @@ async function loadWorkbenchInstancePreview(instancePayload, preferredObjectiveF
     return null;
   }
 
-  const instanceData = await fetchJson(artifactHref(instancePayload.artifact_links.vrp_json_path));
-  let geometryMeta = null;
-  if (instancePayload.summary.viewer_render_mode === "cached_road" && instancePayload.summary.road_cache_status === "complete" && instancePayload.artifact_links.meta_path) {
-    try {
-      geometryMeta = await fetchJson(artifactHref(instancePayload.artifact_links.meta_path));
-    } catch (error) {
-      console.warn("Unable to load geometry sidecar", error);
-    }
-  }
-
   const bksEntries = Array.isArray(instancePayload.bks_entries) ? instancePayload.bks_entries : [];
   let selectedIndex = bksEntries.findIndex((entry) => matchesWorkbenchValue(entry.objective_function, preferredObjectiveFunction));
   if (selectedIndex < 0) {
     selectedIndex = 0;
   }
   const selectedEntry = bksEntries[selectedIndex] || null;
-  const selectedBksData = selectedEntry ? await fetchJson(artifactHref(selectedEntry.artifact_path)) : null;
+
+  const hasCachedRoad = instancePayload.summary.viewer_render_mode === "cached_road"
+    && instancePayload.summary.road_cache_status === "complete"
+    && instancePayload.artifact_links.meta_path;
+  const [instanceData, geometryMeta, selectedBksData] = await Promise.all([
+    fetchJsonMemo(artifactHref(instancePayload.artifact_links.vrp_json_path)),
+    hasCachedRoad
+      ? fetchJsonMemo(artifactHref(instancePayload.artifact_links.meta_path)).catch((error) => {
+          console.warn("Unable to load geometry sidecar", error);
+          return null;
+        })
+      : Promise.resolve(null),
+    selectedEntry ? fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : Promise.resolve(null),
+  ]);
 
   return {
     instanceData,

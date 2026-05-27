@@ -947,6 +947,59 @@ a.vrp-link:focus-visible {
   align-content: center;
 }
 
+.home-preview-skeleton-frame {
+  min-height: 300px;
+  border-radius: 10px;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--panel) 92%, transparent) 30%,
+    color-mix(in srgb, var(--panel) 78%, transparent) 50%,
+    color-mix(in srgb, var(--panel) 92%, transparent) 70%
+  );
+  background-size: 200% 100%;
+  animation: home-preview-shimmer 1.6s ease-in-out infinite;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+}
+
+.home-preview-skeleton-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  border-top-color: var(--ink);
+  animation: home-preview-spin 0.9s linear infinite;
+}
+
+@keyframes home-preview-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes home-preview-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-preview-skeleton-frame,
+  .home-preview-skeleton-spinner {
+    animation: none;
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .home-card-top {
   display: flex;
   align-items: baseline;

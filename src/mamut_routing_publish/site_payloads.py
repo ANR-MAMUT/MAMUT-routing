@@ -51,6 +51,21 @@ class SitePayloadKind(str, Enum):
     INSTANCE_PAGE = "instance_page"
     OBJECTIVES_PAGE = "objectives_page"
     FAMILY_CONTEXT_PAGE = "family_context_page"
+    HOME_PREVIEW_BUNDLE = "home_preview_bundle"
+
+
+# Seeds that drive the rotating preview card on the home page.
+# Tuples: (problem, family, metric_variant_or_None, place_slug_or_None, objective_function).
+# Resolved server-side at publish time into HomePreviewSample entries.
+HOME_PREVIEW_SEEDS: tuple[tuple[str, str, str | None, str | None, str], ...] = (
+    ("CVRP", "Mamut2026", "fastest", "brest", "MonoCost"),
+    ("CVRP", "Mamut2026", "shortest", "london", "MonoCost"),
+    ("CVRP", "Mamut2026", "euclidean", "brest", "MonoCost"),
+    ("VRPTW", "Mamut2026", "fastest", "brest", "HierarchicalVehicleCost"),
+    ("VRPTW", "Mamut2026", "fastest", "london", "HierarchicalVehicleCost"),
+)
+
+HOME_PREVIEW_BUNDLE_FILENAME = "home-preview-bundle.json"
 
 
 class SnapshotRef(BaseModel):
@@ -372,6 +387,31 @@ class HomePagePayload(SitePayloadBase):
     objectives_route_path: str = "/objectives/"
     history_route_path: str = "/history/"
     workbench_route_path: str = "/workbench/"
+    home_preview_bundle_href: str | None = None
+
+
+class HomePreviewSample(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # `instance_payload` mirrors what the workbench would fetch when navigating to
+    # the instance route — included verbatim to skip the seven-step catalog walk.
+    instance_payload: "InstancePagePayload"
+    # `instance_data` is the parsed vrp.json contents (~60 KB) inlined.
+    instance_data: dict
+    # `selected_entry` mirrors the BKS row the JS picks for this seed.
+    selected_entry: BKSPageEntry
+    # `selected_bks_data` is the parsed bks.json contents (~4 KB) inlined.
+    selected_bks_data: dict
+    # geometry_meta is NOT inlined: meta.json sidecars are 3-11 MB per instance.
+    # The JS lazy-loads them from `instance_payload.artifact_links.meta_path`
+    # when a frame becomes active, falling back to straight-line rendering
+    # until the road geometry resolves.
+
+
+class HomePreviewBundlePayload(SitePayloadBase):
+    payload_kind: Literal[SitePayloadKind.HOME_PREVIEW_BUNDLE] = SitePayloadKind.HOME_PREVIEW_BUNDLE
+
+    samples: list[HomePreviewSample]
 
 
 class ProjectFact(BaseModel):
@@ -1570,6 +1610,7 @@ def _build_home_page_payload(
     generated_at: str,
     snapshot: SnapshotRef,
     history_summary: str,
+    home_preview_bundle_href: str | None = None,
 ) -> HomePagePayload:
     return HomePagePayload(
         generated_at=generated_at,
@@ -1582,6 +1623,73 @@ def _build_home_page_payload(
         latest_publication_summary=history_summary,
         counts=site_counts,
         problems=root_payload.problems,
+        home_preview_bundle_href=home_preview_bundle_href,
+    )
+
+
+def _match_seed_instance(
+    resolved_items: list[_ResolvedSiteInstance],
+    seed: tuple[str, str, str | None, str | None, str],
+) -> tuple[_ResolvedSiteInstance, BKSPageEntry] | None:
+    problem, family, variant, place, objective = seed
+    candidates = [
+        item
+        for item in resolved_items
+        if item.locator.problem_type.value == problem
+        and item.locator.benchmark_name.value == family
+        and (variant is None or (item.locator.metric_variant is not None and item.locator.metric_variant.value == variant))
+        and (place is None or item.locator.place_slug == place)
+        and any(entry.objective_function.value == objective for entry in item.bks_entries)
+    ]
+    if not candidates:
+        return None
+    # Smallest size bucket first for fast-loading previews.
+    candidates.sort(key=lambda item: (item.instance_summary.num_customers or 0, item.route_path))
+    chosen = candidates[0]
+    bks_entry = next(entry for entry in chosen.bks_entries if entry.objective_function.value == objective)
+    return chosen, bks_entry
+
+
+def _build_home_preview_bundle(
+    resolved_items: list[_ResolvedSiteInstance],
+    output_repo_dir: Path,
+    generated_at: str,
+    snapshot: SnapshotRef,
+) -> HomePreviewBundlePayload:
+    samples: list[HomePreviewSample] = []
+    seen_keys: set[tuple[str, str]] = set()
+    for seed in HOME_PREVIEW_SEEDS:
+        match = _match_seed_instance(resolved_items, seed)
+        if match is None:
+            continue
+        resolved, bks_entry = match
+        key = (resolved.route_path, bks_entry.objective_function.value)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        vrp_json_path = output_repo_dir / resolved.artifact_links.vrp_json_path
+        bks_json_path = output_repo_dir / bks_entry.artifact_path
+        if not vrp_json_path.is_file() or not bks_json_path.is_file():
+            continue
+
+        instance_data = load_json_from_file(vrp_json_path)
+        selected_bks_data = load_json_from_file(bks_json_path)
+        instance_payload = _build_instance_page_payload(resolved, generated_at, snapshot)
+
+        samples.append(
+            HomePreviewSample(
+                instance_payload=instance_payload,
+                instance_data=instance_data,
+                selected_entry=bks_entry,
+                selected_bks_data=selected_bks_data,
+            )
+        )
+
+    return HomePreviewBundlePayload(
+        generated_at=generated_at,
+        snapshot=snapshot,
+        samples=samples,
     )
 
 
@@ -2522,7 +2630,21 @@ def generate_site_payloads(
     written_paths.append(history_detail_path)
 
     root_payload = _build_root_benchmarks_index(resolved_items, generated_at, snapshot)
-    home_payload = _build_home_page_payload(site_counts, root_payload, generated_at, snapshot, history_summary)
+
+    home_preview_bundle = _build_home_preview_bundle(resolved_items, output_repo, generated_at, snapshot)
+    bundle_relative = (payload_root / HOME_PREVIEW_BUNDLE_FILENAME).as_posix()
+    bundle_path = site_output / bundle_relative
+    save_json_to_file(home_preview_bundle.model_dump(mode="json"), bundle_path)
+    written_paths.append(bundle_path)
+
+    home_payload = _build_home_page_payload(
+        site_counts,
+        root_payload,
+        generated_at,
+        snapshot,
+        history_summary,
+        home_preview_bundle_href=bundle_relative,
+    )
     static_payloads: list[tuple[str, BaseModel]] = []
     static_payloads.append((home_payload.route_path, home_payload))
     project_documents = _load_project_page_documents(output_repo)
