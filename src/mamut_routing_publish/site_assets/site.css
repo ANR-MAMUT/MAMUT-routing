@@ -1127,10 +1127,28 @@ a.vrp-link:focus-visible {
 .project-fact .mini-link,
 .layout[data-shell="project"] #pageAside .mini-link {
   display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   max-width: 100%;
   width: fit-content;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.github-mini-link img {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.github-mini-link span {
+  min-width: 0;
+}
+
+[data-theme="dark"] .github-mini-link img,
+.github-mini-link:hover img,
+.github-mini-link:focus-visible img {
+  filter: invert(1);
 }
 
 .form-grid {

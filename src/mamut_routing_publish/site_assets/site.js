@@ -293,6 +293,10 @@ function renderBenchmarksGithubLink(href) {
   return `<a class="breadcrumb-github-link" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="Open this benchmark path on GitHub" title="Open this benchmark path on GitHub"><img src="${siteAssetHref(GITHUB_ICON_PATH)}" alt="" /></a>`;
 }
 
+function renderGithubMiniLink(label, href) {
+  return `<a class="mini-link github-mini-link" href="${escapeHtml(href)}" target="_blank" rel="noopener"><img src="${siteAssetHref(GITHUB_ICON_PATH)}" alt="" /> <span>${escapeHtml(label)}</span></a>`;
+}
+
 function badge(label, alt = false) {
   return `<span class="badge${alt ? " alt" : ""}">${escapeHtml(label)}</span>`;
 }
@@ -3161,9 +3165,9 @@ function renderProject(payload) {
     renderCard(
       "Repos and Related links",
       `${renderStatGrid([
-        ["Source", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">ANR-MAMUT/MAMUT-routing</a>` }],
-        ["mamut-routing-lib", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT/MAMUT-routing-lib" target="_blank" rel="noopener">ANR-MAMUT/MAMUT-routing-lib</a>` }],
-        ["Organization", { html: `<a class="mini-link" href="https://github.com/ANR-MAMUT" target="_blank" rel="noopener">ANR-MAMUT</a>` }],
+        ["Source", { html: renderGithubMiniLink("ANR-MAMUT/MAMUT-routing", "https://github.com/ANR-MAMUT/MAMUT-routing") }],
+        ["mamut-routing-lib", { html: renderGithubMiniLink("ANR-MAMUT/MAMUT-routing-lib", "https://github.com/ANR-MAMUT/MAMUT-routing-lib") }],
+        ["Organization", { html: renderGithubMiniLink("ANR-MAMUT", "https://github.com/ANR-MAMUT") }],
       ])}`,
     ),
   ].join("");

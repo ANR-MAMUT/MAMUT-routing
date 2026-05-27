@@ -9,7 +9,7 @@ Original authors and maintainers of MAMUT-routing given in alphabetical order of
 - **Adrien Pichon**, aka Anzury: [GitHub](https://github.com/Anzury), [ORCID](https://orcid.org/0009-0005-8630-3962), [LinkedIn](https://www.linkedin.com/in/adrien-p-9332a4217/)
 - **Florian Rascoussier**, aka Onyr: [GitHub](https://github.com/0nyr), [ORCID](https://orcid.org/0009-0005-3253-9814), [LinkedIn](https://www.linkedin.com/in/florian-rascoussier-onyr/)
 
-Both authors contributed equally to the all aspects of the project which is a collaborative effort bringing together curated benchmark data, tooling, conventions, workbench, and website development.
+Both authors contributed equally to all aspects of the project which is a collaborative effort bringing together curated benchmark data, tooling, conventions, workbench, and website development.
 
 ## Scientific Supervision
 
@@ -22,6 +22,10 @@ This work has been made possible under the scientific supervision of, in alphabe
 - [Alexandru-Liviu Olteanu](http://www-labsticc.univ-ubs.fr/~olteanu/)
 - [Marc Sevaux](http://www-labsticc.univ-ubs.fr/~sevaux/)
 - [Christine Solnon](http://perso.citi.insa-lyon.fr/csolnon/)
+
+## Other acknowledgments
+
+Special thanks to [Eduardo Queiroga](https://github.com/EduardoQueiroga), a maintainer of [CVRPlib](https://galgos.inf.puc-rio.br/cvrplib/en/about) who provided BKS files and to [Romain Fontaine](https://github.com/romainfontaine) for his help with [Grid5000](https://www.grid5000.fr/).
 
 ## Funding and Project Context
 
