@@ -3454,10 +3454,16 @@ function applyTheme(theme) {
 }
 
 function setupThemeToggle() {
-  const storedTheme = localStorage.getItem("mamut-routing-theme");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  applyTheme(storedTheme || (prefersDark ? "dark" : "light"));
-  document.getElementById("themeSwitch").addEventListener("change", (event) => {
+  // The initial theme is applied by the inline bootstrap script in the HTML
+  // <head> (see site_webapp.py:THEME_INIT_SCRIPT) so that the first paint is
+  // already correct. Here we only sync the toggle controls to the resolved
+  // value and wire the click handler.
+  const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const switchInput = document.getElementById("themeSwitch");
+  const themeIcon = document.getElementById("themeIcon");
+  switchInput.checked = currentTheme === "dark";
+  themeIcon.innerHTML = currentTheme === "dark" ? "&#9728;" : "&#9790;";
+  switchInput.addEventListener("change", (event) => {
     applyTheme(event.target.checked ? "dark" : "light");
   });
 }

@@ -14,6 +14,19 @@ from mamut_routing_publish.site_payloads import DEFAULT_SITE_OUTPUT_DIR, DEFAULT
 SUPPORTED_PAYLOAD_MODES = {"static", "api"}
 
 
+# Synchronous theme bootstrap. Must run before the stylesheet link so the very
+# first paint already carries the correct data-theme attribute — otherwise the
+# page paints in light defaults and re-paints once site.js applies the stored
+# preference, producing a visible flash on dark-mode reloads.
+THEME_INIT_SCRIPT = (
+    '<script>(function(){try{var t=localStorage.getItem("mamut-routing-theme");'
+    'if(t!=="dark"&&t!=="light"){t=window.matchMedia&&window.matchMedia('
+    '"(prefers-color-scheme: dark)").matches?"dark":"light";}'
+    'document.documentElement.dataset.theme=t;}catch(e){'
+    'document.documentElement.dataset.theme="light";}})();</script>'
+)
+
+
 class SiteWebappGenerationSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +138,7 @@ def _render_shell_html(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MAMUT-routing</title>
+  {THEME_INIT_SCRIPT}
   <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -203,6 +217,7 @@ def _render_workbench_shell_html(
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAMUT-routing Workbench</title>
+    {THEME_INIT_SCRIPT}
     <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
