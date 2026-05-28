@@ -6,7 +6,9 @@ const WORKBENCH_GENERATION_CITIES_PATH = "/api/workbench/generation/cities";
 const WORKBENCH_GENERATION_PREVIEW_PATH = "/api/workbench/generation/preview";
 const WORKBENCH_GENERATION_GENERATE_PATH = "/api/workbench/generation/generate";
 const WORKBENCH_GENERATION_SINGLE_PATH = "/api/workbench/generation/single";
+const WORKBENCH_GENERATION_SINGLE_DOWNLOAD_PATH = "/api/workbench/generation/single-download";
 const WORKBENCH_GENERATION_BULK_PATH = "/api/workbench/generation/bulk";
+const WORKBENCH_GENERATION_BULK_DOWNLOAD_PATH = "/api/workbench/generation/bulk-download";
 const WORKBENCH_GENERATION_FETCH_OSM_PATH = "/api/workbench/generation/fetch-osm-city";
 const ROUTE_COLORS = [
   "#e63946",
@@ -114,6 +116,7 @@ const {
   parseUploadedInstanceText,
   parseUploadedMetaText,
   parseUploadedSolutionText,
+  postWorkbenchBlob,
   postWorkbenchJson,
   resolvePreviewGeometry,
   routeHref,
@@ -2389,9 +2392,9 @@ genGenerateBtn.addEventListener("click", async () => {
     }
     if (payload.problemType === "VRPTW") {
       lines.push(`TW method: ${payload.twMethod}`);
-      lines.push("Write Files will persist CVRPTW files in the selected output root.");
+      lines.push("Download Files will let you choose a folder to save the CVRPTW files.");
     } else {
-      lines.push("Write Files will persist CVRP files.");
+      lines.push("Download Files will let you choose a folder to save the CVRP files.");
     }
     lines.push("Press 'Display on Map' to render this selection.");
     genResult.textContent = lines.join("\n");
@@ -2406,9 +2409,36 @@ genGenerateBtn.addEventListener("click", async () => {
   }
 });
 
+async function saveZipBlob(blob, suggestedName) {
+  if (typeof window.showSaveFilePicker === "function") {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [
+        {
+          description: "Zip archive",
+          accept: { "application/zip": [".zip"] },
+        },
+      ],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return handle.name || suggestedName;
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = suggestedName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return "browser download folder";
+}
+
 genFilesBtn.addEventListener("click", async () => {
   if (window.location.protocol === "file:") {
-    showToast("Writing generated files requires the site API server over HTTP.");
+    showToast("Downloading generated files requires the site API server over HTTP.");
     return;
   }
   const cached = state.generation.generated;
@@ -2416,70 +2446,46 @@ genFilesBtn.addEventListener("click", async () => {
   const payload = {
     ...(cached?.payload || {}),
     ...currentPayload,
-    outputRoot: genOutputRootInput.value || "instances_v2",
   };
-  const operationId = `generation-write-${Date.now()}`;
+  delete payload.outputRoot;
+  const operationId = `generation-download-${Date.now()}`;
   startProgressBar(
-    "Writing Instance Files",
+    "Preparing Download",
     operationId,
     genFilesBtn,
     predictDuration("Generating Preview", { customers: payload.nCustomers }),
   );
   try {
-    const response = await postWorkbenchJson(WORKBENCH_GENERATION_SINGLE_PATH, payload);
-    const summary = response.summary || {};
-    const problemTypeLabel = response.problem_type || payload.problemType || "CVRP";
-    const lines = [`Problem type: ${problemTypeLabel}`];
-    if (response.vrptw) {
-      const stochastic = response.vrptw.stochastic_params || {};
-      lines.push(
-        `VRPTW instance: ${response.vrptw.instance_id || "?"}`,
-        `  TW method: ${response.vrptw.tw_method || "?"}`,
-        `  Horizon: [${response.vrptw.horizon_start ?? "?"}, ${response.vrptw.horizon_end ?? "?"}] s`,
-        `  Mean service / horizon: ${(stochastic.mean_service_time_horizon_ratio ?? 0).toFixed?.(4) ?? stochastic.mean_service_time_horizon_ratio}`,
-        `  TW width ratio (target): ${(stochastic.time_window_ratio ?? 0).toFixed?.(4) ?? stochastic.time_window_ratio}`,
-        `  Repaired windows: ${stochastic.tw_repaired_count ?? 0}`,
-        `Output folder: ${response.vrptw.folder_relative || response.folder_relative || response.folder || "?"}`,
-        "VRPTW files:",
-        `  fastest .vrp:   ${response.vrptw.files?.fastest_vrp ?? ""}`,
-        `  fastest .json:  ${response.vrptw.files?.fastest_vrp_json ?? ""}`,
-        `  meta: ${response.vrptw.files?.meta ?? ""}`,
-        `  manifest: ${response.vrptw.files?.manifest ?? ""}`,
-      );
-    } else {
-      lines.push(
-        `Instance: ${response.base_name || "?"}`,
-        `Folder: ${response.folder_relative || response.folder || "?"}`,
-        `Customers: ${summary.customers ?? "?"}`,
-        `Capacity: ${summary.capacity ?? "?"}`,
-        `Routes: ${summary.route_count ?? "?"}`,
-        `Total demand: ${summary.total_demand ?? "?"}`,
-        "CVRP files:",
-        `  shortest: ${response.files?.shortest ?? ""}`,
-        `  fastest: ${response.files?.fastest ?? ""}`,
-        `  euclidean: ${response.files?.euclidean ?? ""}`,
-        `  meta: ${response.files?.meta ?? ""}`,
-        `  manifest: ${response.files?.manifest ?? ""}`,
-        "CVRP vrp.json:",
-        `  shortest: ${response.vrp_json_paths?.shortest ?? ""}`,
-        `  fastest: ${response.vrp_json_paths?.fastest ?? ""}`,
-        `  euclidean: ${response.vrp_json_paths?.euclidean ?? ""}`,
-      );
+    const { blob, filename } = await postWorkbenchBlob(WORKBENCH_GENERATION_SINGLE_DOWNLOAD_PATH, payload);
+    const suggestedName = filename || "instance.zip";
+
+    let location;
+    try {
+      location = await saveZipBlob(blob, suggestedName);
+    } catch (saveError) {
+      if (saveError && saveError.name === "AbortError") {
+        genResult.textContent = "Download cancelled.";
+        hideAllProgressBars();
+        showToast("Download cancelled.");
+        return;
+      }
+      throw saveError;
     }
-    if ((summary.parametric_customers ?? 0) > 0) {
-      lines.splice(6, 0, `⚠ ${summary.parametric_customers} parametric customers (POI shortage)`);
-    }
-    genResult.textContent = lines.join("\n");
+
+    const sizeKb = Math.max(1, Math.round(blob.size / 1024));
+    genResult.textContent = [
+      `Downloaded archive: ${suggestedName}`,
+      `Saved to: ${location}`,
+      `Size: ${sizeKb} KB`,
+      "The archive includes MAMUT_summary.json with generation details.",
+    ].join("\n");
     completeProgressBar(operationId);
-    const toast = response.vrptw
-      ? `Wrote VRPTW files for ${response.base_name}`
-      : `Wrote files for ${response.base_name}`;
-    showToast(toast);
+    showToast(`Downloaded ${suggestedName}`);
   } catch (error) {
     console.error(error);
-    genResult.textContent = `Write error: ${error.message || error}`;
+    genResult.textContent = `Download error: ${error.message || error}`;
     hideAllProgressBars();
-    showToast(`Write failed: ${error.message || error}`);
+    showToast(`Download failed: ${error.message || error}`);
   }
 });
 
@@ -2669,59 +2675,35 @@ if (genBulkBtn) {
         onlyIntersections: base.onlyIntersections,
         clusterSeeds: base.clusterSeeds,
         clusterDecayMeters: base.clusterDecayMeters,
-        outputRoot: base.outputRoot,
         twMethod: base.twMethod || bulkPanelTwMethod(),
         twHorizonStart: VRPTW_DEFAULT_HORIZON_START,
         twHorizonEnd: VRPTW_DEFAULT_HORIZON_END,
       };
-      const response = await postWorkbenchJson(WORKBENCH_GENERATION_BULK_PATH, payload);
-      const lines = [`Bulk generation: ${response.count ?? response.results?.length ?? 0} instance set(s)`];
-      if (Array.isArray(response.city_reports) && response.city_reports.length > 0) {
-        lines.push("", "=== City Reports ===");
-        for (const report of response.city_reports) {
-          const icon = report.status === "ok" ? "✓" : report.status === "partial" ? "⚠" : "✗";
-          lines.push(`${icon} ${report.city}: ${report.poi_available ?? 0} POI + ${report.parametric_filled ?? 0} parametric (pool: ${report.pool_total ?? 0})`);
-          if (Array.isArray(report.valid_sizes) && report.valid_sizes.length > 0) {
-            lines.push(`    valid sizes: ${report.valid_sizes.join(", ")}`);
-          }
-          if (Array.isArray(report.skipped_sizes) && report.skipped_sizes.length > 0) {
-            lines.push(`    skipped (not enough POI): ${report.skipped_sizes.join(", ")}`);
-          }
+      const { blob, filename } = await postWorkbenchBlob(WORKBENCH_GENERATION_BULK_DOWNLOAD_PATH, payload);
+      const suggestedName = filename || "mamut_bulk.zip";
+
+      let saveLocation;
+      try {
+        saveLocation = await saveZipBlob(blob, suggestedName);
+      } catch (saveError) {
+        if (saveError && saveError.name === "AbortError") {
+          genResult.textContent = "Bulk download cancelled.";
+          hideAllProgressBars();
+          showToast("Bulk download cancelled.");
+          return;
         }
+        throw saveError;
       }
-      if (Array.isArray(response.results) && response.results.length > 0) {
-        lines.push("", "=== Instances ===");
-        let lastCity = "";
-        for (const inst of response.results) {
-          const summary = inst.summary || {};
-          const folder = inst.folder_relative || inst.folder || "";
-          const segments = folder.split("/");
-          const city = segments.length > 2 ? segments[2] : (segments[0] || "?");
-          if (city !== lastCity) {
-            lines.push(`\n--- ${city} ---`);
-            lastCity = city;
-          }
-          const paramNote = summary.parametric_customers > 0
-            ? ` (${summary.poi_customers ?? 0} POI + ${summary.parametric_customers} parametric)`
-            : "";
-          const typeLabel = inst.problem_type || "CVRP";
-          lines.push(`  [${typeLabel}] ${inst.base_name}: n=${summary.customers ?? "?"}, k=${summary.route_count ?? "?"}, cap=${summary.capacity ?? "?"}${paramNote}`);
-          if (inst.vrptw) {
-            const vrptwId = inst.vrptw.instance_id || "?";
-            const tw = inst.vrptw.tw_method || "?";
-            lines.push(`      VRPTW ${vrptwId}  [${tw}]  fastest: ${inst.vrptw.files?.fastest_vrp_json ?? ""}`);
-          } else if (inst.vrptw_error) {
-            lines.push(`      VRPTW skipped: ${inst.vrptw_error}`);
-          }
-        }
-      }
-      genResult.textContent = lines.join("\n");
+
+      const sizeKb = Math.max(1, Math.round(blob.size / 1024));
+      genResult.textContent = [
+        `Downloaded archive: ${suggestedName}`,
+        `Saved to: ${saveLocation}`,
+        `Size: ${sizeKb} KB`,
+        "The archive includes MAMUT_summary.json listing instances and city reports.",
+      ].join("\n");
       completeProgressBar(operationId);
-      const cvrpDone = response.count ?? response.results?.length ?? 0;
-      const vrptwDone = response.vrptw_count ?? 0;
-      showToast(vrptwDone > 0
-        ? `Bulk generation completed: ${cvrpDone} CVRP set(s), ${vrptwDone} with VRPTW`
-        : `Bulk generation completed: ${cvrpDone} instance set(s)`);
+      showToast(`Downloaded ${suggestedName}`);
       closeBulkModal();
     } catch (error) {
       console.error(error);

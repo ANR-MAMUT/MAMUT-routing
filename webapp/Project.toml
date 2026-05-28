@@ -6,6 +6,7 @@ Hygese = "0672f53d-ad77-409a-bbb3-4bc94f101f4b"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 OSMToolset = "a1c25ae6-0f93-4b3a-bddf-c248cb99b9fa"
 OpenStreetMapX = "86cd37e6-c0ff-550b-95fe-21d72c8d4fc9"
+ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [compat]
 DataFrames = "1"
@@ -13,4 +14,5 @@ Graphs = "1"
 HTTP = "1"
 Hygese = "0.1"
 JSON3 = "1"
+ZipFile = "0.10"
 julia = "1.12"

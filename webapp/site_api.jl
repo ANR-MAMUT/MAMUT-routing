@@ -285,6 +285,53 @@ function site_api_json_response(status::Integer, payload)
 end
 
 
+function load_zipfile_module()
+    if !isdefined(@__MODULE__, :ZipFile)
+        try
+            @eval import ZipFile
+        catch error
+            throw(ArgumentError("ZipFile.jl is required for instance downloads: $(sprint(showerror, error))"))
+        end
+    end
+    return Base.invokelatest(() -> getfield(@__MODULE__, :ZipFile))
+end
+
+
+function site_api_zip_response(status::Integer, body::Vector{UInt8}, filename::AbstractString)
+    http = load_http_module()
+    headers = [
+        "Content-Type" => "application/zip",
+        "Content-Disposition" => "attachment; filename=\"$(filename)\"",
+        "Content-Length" => string(length(body)),
+        "Cache-Control" => "no-store",
+        "Access-Control-Allow-Origin" => "*",
+        "Access-Control-Expose-Headers" => "Content-Disposition",
+    ]
+    return http.Response(Int(status), headers, body)
+end
+
+
+function workbench_zip_directory_bytes(dir_path::AbstractString)
+    zipfile = load_zipfile_module()
+    buffer = IOBuffer()
+    writer = Base.invokelatest(zipfile.Writer, buffer)
+    try
+        for (root, _, filenames) in walkdir(dir_path)
+            for filename in filenames
+                full_path = joinpath(root, filename)
+                rel_path = relpath(full_path, dir_path)
+                arcname = replace(rel_path, '\\' => '/')
+                entry = Base.invokelatest(zipfile.addfile, writer, arcname; method=zipfile.Deflate)
+                Base.invokelatest(write, entry, read(full_path))
+            end
+        end
+    finally
+        Base.invokelatest(close, writer)
+    end
+    return take!(buffer)
+end
+
+
 function site_api_payload_get(payload, key::AbstractString, default=nothing)
     haskey(payload, key) && return payload[key]
     symbol_key = Symbol(key)
@@ -2630,6 +2677,49 @@ function workbench_generation_single_payload(payload; repo_root::AbstractString=
 end
 
 
+function workbench_generation_single_download_zip(payload; repo_root::AbstractString=default_site_repo_root())
+    temp_root = mktempdir(; prefix="mamut_gen_dl_")
+    try
+        mutable = Dict{Symbol,Any}()
+        for (key, value) in pairs(payload)
+            mutable[Symbol(key)] = value
+        end
+        mutable[:outputRoot] = temp_root
+        forced_payload = JSON3.read(JSON3.write(mutable))
+
+        response = workbench_generation_single_payload(forced_payload; repo_root=repo_root)
+
+        sanitized = Dict{String,Any}(
+            "problem_type" => get(response, "problem_type", "CVRP"),
+            "base_name" => get(response, "base_name", ""),
+            "summary" => get(response, "summary", Dict{String,Any}()),
+        )
+        if haskey(response, "vrptw")
+            vrptw_clean = Dict{String,Any}()
+            for (k, v) in pairs(response["vrptw"])
+                key_str = String(k)
+                key_str in ("folder_relative", "folder_fastest_relative", "sidecar_relative", "files") && continue
+                vrptw_clean[key_str] = v
+            end
+            sanitized["vrptw"] = vrptw_clean
+        end
+        save_json_to_file(sanitized, joinpath(temp_root, "MAMUT_summary.json"); indent=2, sort_keys=true)
+
+        zip_bytes = workbench_zip_directory_bytes(temp_root)
+        base = String(get(response, "base_name", "instance"))
+        isempty(base) && (base = "instance")
+        filename = "$(base).zip"
+        return (zip_bytes, filename)
+    finally
+        try
+            rm(temp_root; recursive=true, force=true)
+        catch error
+            @warn "Failed to clean up temporary generation directory" path=temp_root error=error
+        end
+    end
+end
+
+
 function workbench_bulk_tuning_value(instance, normalized_payload, key::AbstractString, default)
     value = site_api_payload_get(instance, key, nothing)
     value === nothing && return site_api_payload_get(normalized_payload, key, default)
@@ -2844,6 +2934,65 @@ function workbench_generation_bulk_payload(payload; repo_root::AbstractString=de
 end
 
 
+function workbench_generation_bulk_download_zip(payload; repo_root::AbstractString=default_site_repo_root())
+    temp_root = mktempdir(; prefix="mamut_gen_bulk_dl_")
+    try
+        mutable = Dict{Symbol,Any}()
+        for (key, value) in pairs(payload)
+            mutable[Symbol(key)] = value
+        end
+        mutable[:outputRoot] = temp_root
+        forced_payload = JSON3.read(JSON3.write(mutable))
+
+        response = workbench_generation_bulk_payload(forced_payload; repo_root=repo_root)
+
+        sanitized_results = Any[]
+        for entry in get(response, "results", Any[])
+            entry isa AbstractDict || continue
+            folder_abs = String(get(entry, "folder", ""))
+            relative_folder = isempty(folder_abs) ? "" :
+                replace(relpath(folder_abs, temp_root), '\\' => '/')
+            clean = Dict{String,Any}()
+            for (k, v) in pairs(entry)
+                key_str = String(k)
+                key_str in ("folder", "folder_relative", "files", "vrp_json_paths", "manifest") && continue
+                if key_str == "vrptw" && v isa AbstractDict
+                    vrptw_clean = Dict{String,Any}()
+                    for (vk, vv) in pairs(v)
+                        vk_str = String(vk)
+                        vk_str in ("folder_relative", "folder_fastest_relative", "sidecar_relative", "files") && continue
+                        vrptw_clean[vk_str] = vv
+                    end
+                    clean[key_str] = vrptw_clean
+                else
+                    clean[key_str] = v
+                end
+            end
+            clean["relative_folder"] = relative_folder
+            push!(sanitized_results, clean)
+        end
+
+        summary = Dict{String,Any}(
+            "count" => get(response, "count", length(sanitized_results)),
+            "vrptw_count" => get(response, "vrptw_count", 0),
+            "results" => sanitized_results,
+            "city_reports" => get(response, "city_reports", Any[]),
+        )
+        save_json_to_file(summary, joinpath(temp_root, "MAMUT_summary.json"); indent=2, sort_keys=true)
+
+        zip_bytes = workbench_zip_directory_bytes(temp_root)
+        filename = "mamut_bulk_$(Dates.format(now(), "yyyymmdd_HHMMSS")).zip"
+        return (zip_bytes, filename)
+    finally
+        try
+            rm(temp_root; recursive=true, force=true)
+        catch error
+            @warn "Failed to clean up temporary bulk generation directory" path=temp_root error=error
+        end
+    end
+end
+
+
 function build_site_api_handler(; repo_root::AbstractString=default_site_repo_root(), api_prefix::AbstractString=DEFAULT_SITE_API_PREFIX, indent::Int=2, sort_keys::Bool=false)
     http = load_http_module()
     resolved_repo_root = canonical_site_repo_root(repo_root)
@@ -2905,10 +3054,30 @@ function build_site_api_handler(; repo_root::AbstractString=default_site_repo_ro
             end
         end
 
+        if method == "POST" && path == "/api/workbench/generation/single-download"
+            try
+                payload = JSON3.read(String(request.body))
+                zip_bytes, filename = workbench_generation_single_download_zip(payload; repo_root=resolved_repo_root)
+                return site_api_zip_response(200, zip_bytes, filename)
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
         if method == "POST" && path == "/api/workbench/generation/bulk"
             try
                 payload = JSON3.read(String(request.body))
                 return site_api_json_response(200, workbench_generation_bulk_payload(payload; repo_root=resolved_repo_root))
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/generation/bulk-download"
+            try
+                payload = JSON3.read(String(request.body))
+                zip_bytes, filename = workbench_generation_bulk_download_zip(payload; repo_root=resolved_repo_root)
+                return site_api_zip_response(200, zip_bytes, filename)
             catch error
                 return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
             end

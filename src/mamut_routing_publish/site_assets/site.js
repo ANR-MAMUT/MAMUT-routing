@@ -191,6 +191,33 @@ function postWorkbenchJson(sourcePath, payload) {
   });
 }
 
+async function postWorkbenchBlob(sourcePath, payload) {
+  const response = await fetch(sourcePath, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data && (data.error || data.message)) {
+        message = data.error || data.message;
+      }
+    } catch (_) {
+      // not JSON; keep status-based message
+    }
+    throw new Error(message);
+  }
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+  const filename = match ? decodeURIComponent(match[1] || match[2] || "").trim() : "";
+  const blob = await response.blob();
+  return { blob, filename };
+}
+
 function payloadStaticHref(routePath) {
   const normalizedRoute = normalizeRoute(routePath);
   if (normalizedRoute === "/") {
@@ -3543,6 +3570,7 @@ export {
   parseUploadedInstanceText,
   parseUploadedMetaText,
   parseUploadedSolutionText,
+  postWorkbenchBlob,
   postWorkbenchJson,
   relativeFromCurrent,
   resolvePreviewGeometry,

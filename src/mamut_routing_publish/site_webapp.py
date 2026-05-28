@@ -487,7 +487,7 @@ def _render_workbench_shell_html(
                     <div class="btn-row">
                         <button id="genGenerateBtn" type="button">Generate Data</button>
                         <button id="genDisplayBtn" type="button">Display on Map</button>
-                        <button id="genFilesBtn" type="button">Write Files</button>
+                        <button id="genFilesBtn" type="button">Download Files</button>
                     </div>
                 </section>
 
@@ -620,7 +620,7 @@ def _render_workbench_shell_html(
                 </div>
             </div>
             <div class="bulk-modal-footer">
-                <button id="genBulkBtn" type="button">Generate All</button>
+                <button id="genBulkBtn" type="button">Generate &amp; Download All</button>
                 <button id="closeBulkModalBtn2" type="button" class="bulk-modal-cancel-btn">Close</button>
             </div>
         </div>
