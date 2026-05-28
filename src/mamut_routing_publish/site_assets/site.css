@@ -155,6 +155,17 @@ code,
   padding: 0.08rem 0.3rem;
 }
 
+/* Inside a fenced code block, the surrounding <pre class="mono-block">
+   already provides the container chrome. The inner <code> is inline by
+   default, so applying the inline-code styles above would re-paint the
+   border/background/padding on every wrapped line segment. Reset them. */
+.context-prose pre code {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
 /* History timeline */
 .history-timeline {
   position: relative;
