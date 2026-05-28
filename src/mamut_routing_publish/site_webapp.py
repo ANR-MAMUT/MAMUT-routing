@@ -480,10 +480,6 @@ def _render_workbench_shell_html(
                         </label>
                         <p class="meta-line">Service times and arrival-time targets are sampled per the chosen TW method, then each window is repaired so depot→customer→depot is feasible.</p>
                     </fieldset>
-                    <label class="field gen-field-common">
-                        <span>Output root</span>
-                        <input id="genOutputRootInput" type="text" value="instances_v2" />
-                    </label>
                     <div class="btn-row">
                         <button id="genGenerateBtn" type="button">Generate Data</button>
                         <button id="genDisplayBtn" type="button">Display on Map</button>

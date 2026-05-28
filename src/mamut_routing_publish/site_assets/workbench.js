@@ -172,7 +172,6 @@ const genPoiList = document.getElementById("genPoiList");
 const genPoiCount = document.getElementById("genPoiCount");
 const genPoiSelectAllBtn = document.getElementById("genPoiSelectAllBtn");
 const genPoiClearBtn = document.getElementById("genPoiClearBtn");
-const genOutputRootInput = document.getElementById("genOutputRootInput");
 const genDisplayBtn = document.getElementById("genDisplayBtn");
 const genGenerateBtn = document.getElementById("genGenerateBtn");
 const genFilesBtn = document.getElementById("genFilesBtn");
@@ -1602,7 +1601,6 @@ function currentGenerationPreviewPayload() {
     clusterDecayMeters: Number.parseFloat(genClusterDecayInput.value) || 800,
     hybridPoiShare: Number.parseFloat(genHybridShareInput.value) || 0.5,
     categories: getSelectedPoiCategories(),
-    outputRoot: genOutputRootInput.value.trim() || "instances_v2",
     problemType: currentProblemType(),
   };
   if (payload.problemType === "VRPTW") {
@@ -2447,7 +2445,6 @@ genFilesBtn.addEventListener("click", async () => {
     ...(cached?.payload || {}),
     ...currentPayload,
   };
-  delete payload.outputRoot;
   const operationId = `generation-download-${Date.now()}`;
   startProgressBar(
     "Preparing Download",
