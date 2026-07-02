@@ -1,0 +1,21 @@
+{
+    "instance_name": "R206",
+    "routes": [
+        [26, 12, 3, 50, 1, 27, 52, 31, 69, 28, 21, 72, 75, 23, 67, 2, 73, 95, 94, 6, 5, 84, 61, 16, 91, 85, 37, 98, 59, 99, 96, 87, 97, 57, 22, 56, 54, 68, 55, 4, 24, 35, 34, 77, 80, 74, 25, 13, 58, 93, 100, 89],
+        [39],
+        [83, 45, 82, 7, 48, 47, 36, 63, 11, 62, 30, 71, 65, 51, 29, 78, 81, 9, 79, 76, 53, 40, 41, 86, 18, 8, 46, 49, 20, 66, 10, 32, 17, 60, 70],
+        [92, 42, 14, 33, 15, 44, 88, 19, 64, 90, 38, 43]
+    ],
+    "cost": 23276.083965129772,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [9648.326067471504, 681.1411967394378, 8013.867701539849, 4932.74899937898],
+        "route_departure_times": [0.0, 39.42940163028106, 21.714796172417685, 853.0016399976186],
+        "legacy_declared_value": 23320.279509542,
+        "legacy_key": "R206-n=102-8f2c5bb8abc628541e98e10a18aaf6c819613c66.json"
+    },
+    "objective_function": "Duration"
+}

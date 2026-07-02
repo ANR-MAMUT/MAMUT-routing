@@ -1,0 +1,20 @@
+{
+    "instance_name": "R204",
+    "routes": [
+        [2, 41, 22, 23, 15, 42, 43, 38, 14, 44, 16, 5, 17, 45, 8, 46, 47, 49, 36, 19, 48, 7, 18, 28],
+        [6, 37, 13, 26, 12, 4, 39, 25, 21, 40],
+        [31, 10, 11, 32, 20, 30, 9, 35, 34, 33, 29, 24, 3, 50, 1, 27]
+    ],
+    "cost": 9551.790788023985,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [4567.340756894917, 2073.849714324979, 2910.6003168040897],
+        "route_departure_times": [1401.8098176862354, 6750.149925074213, 2732.749641874105],
+        "legacy_declared_value": 9567.763292858366,
+        "legacy_key": "R204-n=52-38d9afdaf1523bf6ef2e64ff5370e0c5f05cbee9.json"
+    },
+    "objective_function": "Duration"
+}

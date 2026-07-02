@@ -3,20 +3,23 @@
     "routes": [
         [2, 45, 5, 7, 6, 8, 46, 4, 3, 1],
         [14, 47, 15, 16, 11, 12, 10, 9, 13, 17],
-        [19, 18, 21, 23, 22, 24, 49, 25, 48],
-        [31, 30, 28, 27, 29, 34, 32, 26],
-        [40, 36, 44, 43, 41, 35, 37],
-        [42, 39, 38, 33, 50, 20]
+        [19, 23, 18, 21, 49, 22, 24, 25, 48],
+        [31, 27, 28, 30, 29, 34, 32, 26],
+        [38, 33, 50, 20],
+        [42, 44, 40, 39, 36, 43, 41, 35, 37]
     ],
-    "cost": 11830.263778439577,
+    "cost": 11760.356004964628,
     "metadata": {
         "authors": "Florian Rascoussier (0nyr)",
-        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-07-02",
-        "route_durations": [1998.504732702015, 2193.6670230009095, 1996.6343750871533, 1909.208466461528, 1723.3501896773937, 2008.8989915105792],
-        "route_departure_times": [166.49529129805688, 0.0, 273.6663846652046, 158.66666666666666, 358.0, 0.0],
-        "published_duration_sum": 11830.26377843958
+        "route_durations": [1998.504732702015, 2193.6670230009095, 2000.4343958862016, 1895.833256460546, 1679.1906347396678, 1992.725962175288],
+        "route_departure_times": [166.49529129805688, 0.0, 277.0664478659076, 158.66666666666666, 325.3333333333333, 106.99904899993561],
+        "legacy_declared_value": 11776.16052216325,
+        "legacy_key": "RC106-n=52-f6f6c627dd078186f70880c7b8f083587e5e0ae9.json",
+        "previous_cost": 11830.263778439577,
+        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions"
     },
     "objective_function": "Duration"
 }
