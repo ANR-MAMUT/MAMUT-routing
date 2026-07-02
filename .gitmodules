@@ -1,3 +1,21 @@
 [submodule "MAMUT-routing-lib"]
 	path = MAMUT-routing-lib
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-lib.git
+[submodule "benchmarks/TDVRPTW/Ari2018"]
+	path = benchmarks/TDVRPTW/Ari2018
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018.git
+[submodule "benchmarks/TDVRPTW/Vu2020"]
+	path = benchmarks/TDVRPTW/Vu2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Vu2020.git
+[submodule "benchmarks/TDVRPTW/Rifki2020"]
+	path = benchmarks/TDVRPTW/Rifki2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020.git
+[submodule "benchmarks/TDVRP/Ari2018"]
+	path = benchmarks/TDVRP/Ari2018
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Ari2018.git
+[submodule "benchmarks/TDVRP/Vu2020"]
+	path = benchmarks/TDVRP/Vu2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Vu2020.git
+[submodule "benchmarks/TDVRP/Rifki2020"]
+	path = benchmarks/TDVRP/Rifki2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Rifki2020.git

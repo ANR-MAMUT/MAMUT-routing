@@ -1,6 +1,6 @@
 # MAMUT-routing
 
-Curated CVRP and VRPTW benchmarks, the static benchmark website, and the Julia webapp that visualizes instances and routes — all in one repository.
+Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks, the static benchmark website, and the Julia webapp that visualizes instances and routes — all in one repository.
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
 
@@ -15,7 +15,8 @@ See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and c
 
 | Path | Purpose |
 |---|---|
-| `benchmarks/` | Curated CVRP and VRPTW benchmark instances + BKS, served as the canonical browsable copy. |
+| `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
+| `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Mamut2026 generated benchmarks. |
 | `webapp/` | Julia webapp (Genie) serving the static site and the route-payload API. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
@@ -23,6 +24,26 @@ See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and c
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
 | `MAMUT-routing-lib/` *(submodule)* | Contract/runtime Python library — see [ANR-MAMUT/MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib). |
 | `tests/` | Pytest suite for `mamut_routing_publish`. |
+
+### Benchmark family satellites
+
+The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW and TDVRP) lives directly in this repository. The other TD families are **satellite repositories** mounted as submodules at their family directory; each satellite is self-contained (instances, ATF sidecars, BKS, and a README documenting raw sources, provenance, and the consolidation pipeline recorded in every artifact's `generator` block):
+
+| Submodule | Mounted at |
+|---|---|
+| [MAMUT-routing-TDVRPTW-Ari2018](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018) | `benchmarks/TDVRPTW/Ari2018` |
+| [MAMUT-routing-TDVRPTW-Vu2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Vu2020) | `benchmarks/TDVRPTW/Vu2020` |
+| [MAMUT-routing-TDVRPTW-Rifki2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020) | `benchmarks/TDVRPTW/Rifki2020` |
+| [MAMUT-routing-TDVRP-Ari2018](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Ari2018) | `benchmarks/TDVRP/Ari2018` |
+| [MAMUT-routing-TDVRP-Vu2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Vu2020) | `benchmarks/TDVRP/Vu2020` |
+| [MAMUT-routing-TDVRP-Rifki2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Rifki2020) | `benchmarks/TDVRP/Rifki2020` |
+
+A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
+
+```bash
+git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one family (0.1–0.8 GB each)
+git submodule update --init                                # everything (~2.3 GB of satellite data)
+```
 
 ## Python publishing toolkit (`mamut-routing-publish`)
 
@@ -32,9 +53,11 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 
 #### Python
 ```bash
-# clone with the nested mamut-routing-lib submodule
-git clone --recurse-submodules git@github.com:ANR-MAMUT/MAMUT-routing.git
+# clone with the nested mamut-routing-lib submodule (benchmark family
+# satellites stay empty — opt in per family, see "Benchmark family satellites")
+git clone git@github.com:ANR-MAMUT/MAMUT-routing.git
 cd MAMUT-routing
+git submodule update --init MAMUT-routing-lib
 
 # install (uses the local editable submodule for mamut-routing-lib)
 uv sync
