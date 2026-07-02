@@ -1,0 +1,20 @@
+{
+    "instance_name": "R205",
+    "routes": [
+        [2, 41, 22, 21, 40],
+        [26, 43, 13, 37, 17, 48],
+        [27, 31, 33, 29, 12, 28],
+        [45, 47, 36, 5, 39, 23, 15, 42, 38, 14, 44, 16, 18, 7, 19, 11, 30, 49, 46, 8, 6, 50, 9, 20, 10, 32, 35, 34, 3, 24, 25, 4, 1]
+    ],
+    "cost": 11771.671308479521,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [906.7999019019849, 1713.385234025809, 1312.9512561387874, 7838.534916412939],
+        "route_departure_times": [3058.800362399275, 5824.899799445523, 715.0485398613146, 164.8928532225187],
+        "published_duration_sum": 11771.671308479523
+    },
+    "objective_function": "Duration"
+}

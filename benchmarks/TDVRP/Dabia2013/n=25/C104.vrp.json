@@ -1,0 +1,55 @@
+{
+    "instance_name": "C104",
+    "instance_origin": "Solomon1987",
+    "benchmark_name": "Dabia2013",
+    "num_customers": 25,
+    "num_vehicles": 25,
+    "vehicle_capacity": 200,
+    "coordinates": [
+        [40.0, 50.0],
+        [45.0, 68.0],
+        [45.0, 70.0],
+        [42.0, 66.0],
+        [42.0, 68.0],
+        [42.0, 65.0],
+        [40.0, 69.0],
+        [40.0, 66.0],
+        [38.0, 68.0],
+        [38.0, 70.0],
+        [35.0, 66.0],
+        [35.0, 69.0],
+        [25.0, 85.0],
+        [22.0, 75.0],
+        [22.0, 85.0],
+        [20.0, 80.0],
+        [20.0, 85.0],
+        [18.0, 75.0],
+        [15.0, 75.0],
+        [15.0, 80.0],
+        [30.0, 50.0],
+        [30.0, 52.0],
+        [28.0, 52.0],
+        [28.0, 55.0],
+        [25.0, 50.0],
+        [25.0, 52.0]
+    ],
+    "demands": [0, 10, 30, 10, 10, 10, 20, 20, 20, 10, 10, 10, 20, 30, 10, 40, 40, 20, 20, 10, 10, 20, 20, 10, 10, 40],
+    "service_times": [0.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0, 900.0],
+    "depot": 0,
+    "horizon": [0.0, 12360.0],
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "generated_at": "2026-07-02",
+        "generator": {
+            "name": "populate_td_dabia2013",
+            "version": "1",
+            "source": "Lera-Romero dabia_et_al_2013"
+        },
+        "notes": "IGP (Ichoua et al. 2003) speed model consolidated into arrival-time NDCPWLFs; duplicated end depot merged into depot 0; last speed zone extended beyond the horizon so ATF domains span it."
+    },
+    "td": {
+        "model": "atf-ndcpwlf",
+        "atf_path": "C104.atf.json",
+        "atf_sha256": "dcf4c6ea5458385ab92f24c30feb51c2a462eb6ad9cbf8d873d8b8e82c32e262"
+    }
+}

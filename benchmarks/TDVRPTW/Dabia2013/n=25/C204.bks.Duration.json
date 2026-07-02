@@ -1,0 +1,18 @@
+{
+    "instance_name": "C204",
+    "routes": [
+        [4, 3, 7, 1, 2, 5],
+        [21, 20, 22, 24, 6, 23, 17, 18, 16, 14, 12, 15, 19, 13, 25, 9, 11, 10, 8]
+    ],
+    "cost": 24149.20567655762,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [5837.699441851908, 18311.50623470571],
+        "route_departure_times": [12456.400307199385, 12808.093889134336],
+        "published_duration_sum": 24149.205676557627
+    },
+    "objective_function": "Duration"
+}

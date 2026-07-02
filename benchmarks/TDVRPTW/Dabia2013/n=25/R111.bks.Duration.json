@@ -1,0 +1,20 @@
+{
+    "instance_name": "R111",
+    "routes": [
+        [1, 11, 19, 8, 18, 13],
+        [2, 15, 23, 22, 21, 4, 25, 12],
+        [6, 14, 16, 17, 5],
+        [24, 3, 9, 20, 10, 7]
+    ],
+    "cost": 6053.869456229827,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [1491.6565959541072, 1959.611130318689, 1095.999638501499, 1506.6020914555322],
+        "route_departure_times": [156.34318118938663, 210.38886968131112, 784.7501383729432, 346.6666666666667],
+        "published_duration_sum": 6053.869456229828
+    },
+    "objective_function": "Duration"
+}

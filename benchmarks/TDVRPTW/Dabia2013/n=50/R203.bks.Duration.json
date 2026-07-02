@@ -1,0 +1,22 @@
+{
+    "instance_name": "R203",
+    "routes": [
+        [6, 8, 48, 49, 47, 7, 10, 31],
+        [13, 5, 17],
+        [19, 11, 30, 20, 32, 9, 28],
+        [26, 12, 35, 34, 29, 24, 4, 25, 21],
+        [27, 1, 50, 33, 3, 39, 23, 15, 43, 38, 14, 44, 16, 37, 2, 41, 22, 40],
+        [45, 46, 36, 18, 42]
+    ],
+    "cost": 11271.606364938389,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [1635.9001054519322, 919.2006232814456, 1619.2497906282929, 2134.799630103941, 3540.456215472776, 1421.9999999999998],
+        "route_departure_times": [4524.600370799258, 8000.0, 2860.0004999999996, 6565.200744896997, 996.1436513274906, 567.3333333333335],
+        "published_duration_sum": 11271.606364938389
+    },
+    "objective_function": "Duration"
+}

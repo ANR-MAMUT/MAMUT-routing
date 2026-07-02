@@ -1,0 +1,22 @@
+{
+    "instance_name": "RC107",
+    "routes": [
+        [2, 6, 7, 8, 5, 3, 1, 4, 46, 45],
+        [12, 14, 17, 47, 15, 16, 11, 10, 9, 13],
+        [19, 23, 25, 21, 18, 48, 49, 22, 24],
+        [29, 34, 30, 26, 33, 32],
+        [31, 27, 28, 50, 20],
+        [38, 39, 40, 41, 42, 44, 43, 36, 35, 37]
+    ],
+    "cost": 10614.011179781175,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [1908.9664779841246, 1862.704396781414, 1837.4999915841402, 1581.9163900281912, 1505.3990557022146, 1917.5248677010916],
+        "route_departure_times": [271.3669020158753, 208.8579204059417, 306.6666666666667, 659.3342380983793, 160.60009229948915, 122.0],
+        "published_duration_sum": 10614.011179781177
+    },
+    "objective_function": "Duration"
+}

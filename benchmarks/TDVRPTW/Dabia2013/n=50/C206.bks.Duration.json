@@ -1,0 +1,21 @@
+{
+    "instance_name": "C206",
+    "routes": [
+        [2, 1, 5],
+        [4, 3, 7],
+        [20, 22, 24, 27, 30, 29, 6, 32, 33, 31, 35, 37, 38, 39, 36, 34, 28, 26, 23, 19, 16, 18, 17, 14, 12, 15, 13, 25, 9, 10, 11, 21, 8],
+        [40, 44, 46, 45, 50, 47, 42, 41, 43, 48],
+        [49]
+    ],
+    "cost": 49026.620135722485,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [3116.19013088534, 3308.699509350983, 31675.524449656146, 9654.206789828531, 1271.999256001487],
+        "route_departure_times": [1035.3333333333335, 11386.400307199385, 654.619394516256, 19440.04341079697, 10170.0],
+        "published_duration_sum": 49026.620135722485
+    },
+    "objective_function": "Duration"
+}

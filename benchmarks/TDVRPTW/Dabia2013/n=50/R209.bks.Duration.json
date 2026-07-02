@@ -1,0 +1,21 @@
+{
+    "instance_name": "R209",
+    "routes": [
+        [2, 41, 21, 40],
+        [6, 5, 16, 44, 14, 38, 15, 22, 23, 39, 25, 4, 33, 34, 35, 9, 20, 32, 10, 48],
+        [12, 29, 30, 11, 19, 36, 49, 46, 8, 45, 17, 37, 42, 43, 13],
+        [26, 3, 24, 50, 1],
+        [28, 27, 31, 47, 7, 18]
+    ],
+    "cost": 10111.837201669276,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [780.0994760516382, 3920.835870255165, 3052.7999634071443, 1088.4002652025747, 1269.701626752752],
+        "route_departure_times": [3402.000215999568, 3357.449163216168, 3337.2003965948347, 5855.400349199302, 2944.299108249085],
+        "published_duration_sum": 10111.837201669277
+    },
+    "objective_function": "Duration"
+}

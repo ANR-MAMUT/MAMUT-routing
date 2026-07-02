@@ -1,0 +1,20 @@
+{
+    "instance_name": "C108",
+    "routes": [
+        [3, 7, 5, 8, 10, 11, 9, 6, 4, 2, 1],
+        [17, 18, 13, 19, 15, 14, 16, 12],
+        [20, 24, 25],
+        [23, 22, 21]
+    ],
+    "cost": 24417.629368006114,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [10475.142664379515, 8005.465016194572, 2971.8213293512545, 2965.200358080774],
+        "route_departure_times": [22.00039428458777, 108.0, 849.428953774453, 7043.999690399245],
+        "published_duration_sum": 24417.629368006117
+    },
+    "objective_function": "Duration"
+}

@@ -1,0 +1,20 @@
+{
+    "instance_name": "R103",
+    "routes": [
+        [1, 11, 19, 8, 18, 7, 13],
+        [2, 15, 6, 14, 16, 17, 5],
+        [3, 24, 23, 22, 21, 12, 4, 25],
+        [20, 9, 10]
+    ],
+    "cost": 6551.88506365896,
+    "metadata": {
+        "authors": "Florian Rascoussier (0nyr)",
+        "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "date": "2026-07-02",
+        "route_durations": [1713.9986264349545, 1696.4284511618307, 2140.156345990583, 1001.3016400715919],
+        "route_departure_times": [123.4293073448362, 362.22226666666666, 38.857988978031564, 609.4986402506802],
+        "published_duration_sum": 6551.8850636589605
+    },
+    "objective_function": "Duration"
+}
