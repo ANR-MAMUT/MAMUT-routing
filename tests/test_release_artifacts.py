@@ -13,7 +13,9 @@ from mamut_routing_lib.remote import load_release_manifest
 from mamut_routing_publish.release_artifacts import (
     GITHUB_RELEASE_ASSET_MAX_SIZE_BYTES,
     GITHUB_RELEASE_ASSET_WARNING_SIZE_BYTES,
+    GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES,
     _validate_release_asset_size,
+    _validate_repository_file_size,
     generate_release_artifacts,
 )
 
@@ -267,3 +269,18 @@ def test_validate_release_asset_size_raises_at_2_gib_or_above() -> None:
             "too-large.zip",
             GITHUB_RELEASE_ASSET_MAX_SIZE_BYTES,
         )
+
+
+def test_validate_repository_file_size_raises_at_100_mib_or_above() -> None:
+    with pytest.raises(ValueError, match="100 MiB per-file limit"):
+        _validate_repository_file_size(
+            Path("benchmarks/TDVRPTW/Huge2026/n=1000/huge.atf.json.gz"),
+            GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES,
+        )
+
+
+def test_validate_repository_file_size_accepts_below_100_mib() -> None:
+    _validate_repository_file_size(
+        Path("benchmarks/TDVRPTW/Fine2026/n=100/fine.atf.json.gz"),
+        GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES - 1,
+    )

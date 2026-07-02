@@ -10,7 +10,7 @@ Each instance ships three artifacts per size bucket `n=<customers>`:
 - `<Name>.atf.json` (plain, n < 50) or `<Name>.atf.json.gz` (n ≥ 50) — the canonical ground truth: one arrival-time NDCPWLF per arc of the complete graph, exact consolidation of the raw IGP data. Conventions: breakpoints exactly where departure or arrival crosses a speed-zone boundary; the last zone's speed extends beyond the horizon so every ATF is total on `[0, T]`.
 - `<Name>.bks.Duration.json` — best known solution under the `Duration` objective. Costs are the authoritative output of the pure-Python canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer), total summed in that order. Seeded from the published Lera-Romero et al. (2020) solutions, all re-validated by the checker (146/146 feasible; several contain arrivals exactly on time-window deadlines, which fragile recomputation pipelines misreport as infeasible).
 
-Population pipeline: `tools/populate_td_dabia2013.py` (cross-validates every consolidated ATF against direct Ichoua evaluation and reloads every written artifact through the full validation path).
+Population pipeline: `populate_td_dabia2013` v1, one-shot curation tooling maintained outside this repository (links to the migration scripts will be published with the benchmark paper); it cross-validates every consolidated ATF against direct Ichoua evaluation and reloads every written artifact through the full validation path. The `generator` block of every artifact records the pipeline name and version.
 
 ## Provenance and licensing
 
