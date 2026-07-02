@@ -28,6 +28,8 @@ DEFAULT_RELEASE_ARCHIVE_COMPRESS_LEVEL = 9
 GITHUB_RELEASES_DOCS_URL = "https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases"
 GITHUB_RELEASE_ASSET_WARNING_SIZE_BYTES = int(1.5 * 1024 * 1024 * 1024)
 GITHUB_RELEASE_ASSET_MAX_SIZE_BYTES = 2 * 1024 * 1024 * 1024
+GITHUB_REPOSITORY_LIMITS_DOCS_URL = "https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github"
+GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES = 100 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -123,10 +125,12 @@ def _deterministic_zip_write(
                     if relative_path in seen_paths:
                         continue
                     seen_paths.add(relative_path)
+                    data = file_path.read_bytes()
+                    _validate_repository_file_size(relative_path, len(data))
                     zip_info = zipfile.ZipInfo(relative_path.as_posix(), date_time=_ZIP_TIMESTAMP)
                     zip_info.compress_type = zipfile.ZIP_DEFLATED
                     zip_info.external_attr = 0o644 << 16
-                    archive.writestr(zip_info, file_path.read_bytes())
+                    archive.writestr(zip_info, data)
         hashing_output.flush()
         return hashing_output.hexdigest(), hashing_output.tell()
 
@@ -194,6 +198,15 @@ def _validate_release_asset_size(filename: str, size_bytes: int) -> None:
             f"and is getting close to GitHub's 2 GiB per-asset Releases limit. "
             f"See {GITHUB_RELEASES_DOCS_URL}",
             stacklevel=2,
+        )
+
+
+def _validate_repository_file_size(relative_path: Path, size_bytes: int) -> None:
+    if size_bytes >= GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES:
+        raise ValueError(
+            f"Benchmark file {relative_path.as_posix()} is {size_bytes} bytes, which reaches or exceeds "
+            f"GitHub's 100 MiB per-file limit for repository pushes; it cannot live in the repository "
+            f"and must be split or stored differently. See {GITHUB_REPOSITORY_LIMITS_DOCS_URL}"
         )
 
 
