@@ -42,7 +42,7 @@ A plain `git clone` leaves satellite directories empty (the tooling and the defa
 
 ```bash
 git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one family (0.1–0.8 GB each)
-git submodule update --init                                # everything (~2.3 GB of satellite data)
+git submodule update --init                                # everything (~2 GB of satellite data)
 ```
 
 ## Python publishing toolkit (`mamut-routing-publish`)
