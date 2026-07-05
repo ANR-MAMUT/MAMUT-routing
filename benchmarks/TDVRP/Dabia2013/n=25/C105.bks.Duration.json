@@ -1,0 +1,20 @@
+{
+    "instance_name": "C105",
+    "routes": [
+        [21, 22, 25, 23, 24, 10, 9, 4, 2, 3, 1, 7],
+        [20, 18, 17, 19, 12, 14, 16, 15, 13],
+        [6, 11, 8, 5]
+    ],
+    "cost": 24201.926133225992,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=42, time_limit=120.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [11415.583348818085, 8867.743183106722, 3918.5996013011845],
+        "route_departure_times": [0.0, 3708.0, 3708.0],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 24201.926133225992,
+        "validated_num_routes": 3,
+        "date": "2026-07-04T21:36:57"
+    },
+    "objective_function": "Duration"
+}

@@ -1,0 +1,22 @@
+{
+    "instance_name": "C104",
+    "routes": [
+        [21, 27, 19, 15, 12, 16, 14, 17, 18],
+        [20, 23, 7, 5, 3, 2, 1, 9, 11, 4, 6, 8],
+        [10, 22, 25, 28, 13, 29, 32, 48, 45, 42],
+        [24, 26, 30, 36, 39, 34, 35, 37, 38, 33, 31],
+        [46, 40, 49, 43, 41, 47, 50, 44]
+    ],
+    "cost": 49331.2257909098,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=42, time_limit=300.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [8974.592557890652, 11446.564542103826, 10071.383671541931, 10863.82805626361, 7974.85696310978],
+        "route_departure_times": [3708.0, 0.0, 0.0, 944.7431763900122, 3708.0],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 49331.2257909098,
+        "validated_num_routes": 5,
+        "date": "2026-07-04T21:36:58"
+    },
+    "objective_function": "Duration"
+}

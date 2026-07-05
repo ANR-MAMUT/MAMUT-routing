@@ -1,0 +1,22 @@
+{
+    "instance_name": "RC105",
+    "routes": [
+        [50, 28, 26, 27, 31, 34, 30, 29, 33, 32],
+        [38, 39, 40, 35, 36, 37, 41, 43, 44, 42],
+        [10, 11, 12, 14, 17, 47, 15, 16, 13, 9],
+        [24, 22, 20, 49, 19, 23, 25, 21, 48, 18],
+        [2, 6, 7, 5, 3, 1, 4, 45, 46, 8]
+    ],
+    "cost": 9635.923016162158,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1618, time_limit=300.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [2296.375703280742, 1854.8337020861586, 1834.9566341598106, 1885.3567247600658, 1764.400251875381],
+        "route_departure_times": [0.0, 238.66667666666166, 878.0434090402063, 724.6433223400312, 823.1005414765823],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 9635.923016162158,
+        "validated_num_routes": 5,
+        "date": "2026-07-04T21:37:00"
+    },
+    "objective_function": "Duration"
+}

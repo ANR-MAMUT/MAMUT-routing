@@ -1,0 +1,18 @@
+{
+    "instance_name": "R203",
+    "routes": [
+        [27, 28, 26, 12, 3, 29, 24, 25, 4, 39, 23, 22, 41, 2, 13, 37, 16, 44, 14, 38, 43, 15, 42, 18, 7, 1, 50, 33, 34, 9, 35, 20, 30, 31, 10, 32, 48, 19, 11, 36, 47, 49, 46, 45, 8, 17, 5, 6, 40, 21]
+    ],
+    "cost": 9654.639587475873,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1010, time_limit=300.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [9654.639587475873],
+        "route_departure_times": [185.2396821723364],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 9654.639587475873,
+        "validated_num_routes": 1,
+        "date": "2026-07-04T21:36:59"
+    },
+    "objective_function": "Duration"
+}

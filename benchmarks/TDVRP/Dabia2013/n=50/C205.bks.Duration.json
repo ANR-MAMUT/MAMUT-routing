@@ -1,0 +1,19 @@
+{
+    "instance_name": "C205",
+    "routes": [
+        [21, 22, 20, 24, 27, 29, 30, 26, 23, 25, 13, 19, 17, 18, 16, 14, 12, 15, 9, 10, 11, 5, 2, 1, 7, 3, 4, 43, 42, 41, 45, 50, 47, 48, 46],
+        [8, 6, 32, 33, 36, 34, 39, 38, 37, 35, 31, 28, 44, 40, 49]
+    ],
+    "cost": 48700.67514286058,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1010, time_limit=300.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [33774.98254920335, 14925.692593657228],
+        "route_departure_times": [0.0, 1854.8573461218682],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 48700.67514286058,
+        "validated_num_routes": 2,
+        "date": "2026-07-04T21:36:58"
+    },
+    "objective_function": "Duration"
+}

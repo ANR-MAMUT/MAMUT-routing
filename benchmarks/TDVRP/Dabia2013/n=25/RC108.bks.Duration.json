@@ -1,0 +1,20 @@
+{
+    "instance_name": "RC108",
+    "routes": [
+        [10, 11, 12, 14, 17, 16, 15, 9, 13],
+        [2, 4, 5, 3, 1, 8, 6, 7],
+        [24, 22, 20, 18, 21, 23, 25, 19]
+    ],
+    "cost": 4663.279680958661,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=42, time_limit=120.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [1625.54232936515, 1504.1826682602527, 1533.5546833332585],
+        "route_departure_times": [18.857191836594836, 0.0, 146.44531666674126],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 4663.279680958661,
+        "validated_num_routes": 3,
+        "date": "2026-07-04T21:36:58"
+    },
+    "objective_function": "Duration"
+}

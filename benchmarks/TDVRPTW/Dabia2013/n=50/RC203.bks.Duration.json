@@ -1,20 +1,19 @@
 {
     "instance_name": "RC203",
     "routes": [
-        [2, 46, 45, 5, 3, 1, 7, 16, 47, 14, 12, 11, 15, 20, 24, 19, 48, 18, 21, 22, 9, 6, 8, 37, 43, 32, 34, 29, 31, 28, 26, 50, 35, 25],
-        [42, 36, 39, 33, 27, 23, 30, 38, 40, 41, 49, 10, 4, 13, 17],
-        [44]
+        [2, 45, 3, 5, 1, 46, 7, 16, 14, 12, 47, 15, 11, 44, 38, 40, 41, 6, 8, 21, 48, 18, 19, 24, 20, 34, 31, 29, 32, 26, 28, 50, 35, 37, 43, 25],
+        [42, 36, 39, 33, 27, 23, 30, 9, 22, 49, 10, 4, 17, 13]
     ],
-    "cost": 16980.14260265184,
+    "cost": 16208.932155080056,
     "metadata": {
-        "authors": "Florian Rascoussier (0nyr)",
-        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=3141, time_limit=300.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "date": "2026-07-02",
-        "route_durations": [8681.740588600203, 7099.902689801915, 1198.4993242497212],
-        "route_departure_times": [242.09541687023759, 536.6668114280817, 2801.000411000411],
-        "legacy_declared_value": 16994.179650783695,
-        "legacy_key": "RC203-n=52-a892ccee19ff2f0445d7bf834630b6e180fc9460.json"
+        "route_durations": [8980.09932275903, 7228.832832321027],
+        "route_departure_times": [420.702272164854, 536.6668114280817],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 16208.932155080056,
+        "validated_num_routes": 2,
+        "date": "2026-07-04T21:42:08"
     },
     "objective_function": "Duration"
 }

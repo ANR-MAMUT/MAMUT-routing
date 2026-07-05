@@ -1,0 +1,18 @@
+{
+    "instance_name": "RC204",
+    "routes": [
+        [2, 6, 7, 8, 5, 3, 1, 4, 12, 14, 17, 16, 15, 9, 13, 11, 10, 24, 22, 20, 18, 21, 25, 23, 19]
+    ],
+    "cost": 4275.654701673407,
+    "metadata": {
+        "source": "kayros 0.0.1.dev0 TD-ACO (seed=123, time_limit=120.0s)",
+        "validated_by": "mamut-routing-lib td Duration checker",
+        "route_durations": [4275.654701673407],
+        "route_departure_times": [2880.0],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 4275.654701673407,
+        "validated_num_routes": 1,
+        "date": "2026-07-04T21:36:58"
+    },
+    "objective_function": "Duration"
+}
