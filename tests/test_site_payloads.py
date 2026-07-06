@@ -617,6 +617,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert [entry["objective_function"] for entry in objectives_payload["explainers"]] == [
         "HierarchicalVehicleCost",
         "MonoCost",
+        "Duration",
     ]
 
     project_payload = json.loads((payload_root / "project" / "index.json").read_text(encoding="utf-8"))

@@ -927,7 +927,7 @@ function renderHome(payload) {
           ${renderHomeLinkTile("Benchmarks", "Browse curated CVRP and VRPTW families, variants, places, sizes, and instance artifacts.", payload.benchmarks_route_path, "Browse Benchmarks")}
           ${renderHomeLinkTile("Workbench", "Visualize published instances, inspect uploaded files, and generate OSM-backed previews.", payload.workbench_route_path, "Open Workbench")}
           ${renderHomeLinkTile("ANR Project", "Understand how this benchmark and generation work sits inside the MAMUT research project.", payload.project_route_path, "Open Project")}
-          ${renderHomeLinkTile("Objective Semantics", "Check how HierarchicalVehicleCost and MonoCost should be interpreted before comparing results.", payload.objectives_route_path, "Read Objectives")}
+          ${renderHomeLinkTile("Objective Semantics", "Check how HierarchicalVehicleCost, MonoCost, and Duration should be interpreted before comparing results.", payload.objectives_route_path, "Read Objectives")}
           ${renderHomeLinkTile("Publication History", "Track the repository snapshot, source commit, and release notes for this static publication.", payload.history_route_path, "Open History")}
         </div>
       </section>
@@ -1695,6 +1695,7 @@ async function renderInstancePage(payload, options = {}) {
           ${payload.artifact_links.vrp_path ? `<li><a href="${artifactHref(payload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
           ${payload.artifact_links.meta_path ? `<li><a href="${artifactHref(payload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
+          ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
       renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
@@ -2236,6 +2237,7 @@ function renderWorkbenchArtifactsCard(instancePayload) {
       ${instancePayload.artifact_links.vrp_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
       ${instancePayload.artifact_links.meta_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
       ${instancePayload.artifact_links.manifest_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
+      ${instancePayload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.atf_json_path)}">${escapeHtml(instancePayload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
     </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(instancePayload.snapshot.published_at)} from commit ${escapeHtml(instancePayload.snapshot.source_commit)}</div>`,
   );
 }
