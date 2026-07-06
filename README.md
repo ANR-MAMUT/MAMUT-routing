@@ -11,6 +11,8 @@ This repository is part of the
 an academic research project advancing the state of the art in combinatorial optimization for logistics and transportation problems.
 See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and contributor information.
 
+The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-time-function sidecars and checker-validated best-known solutions) are the reference data of [KAYROS](https://github.com/0nyr/kayros), the MAMUT time-dependent VRP solver built on this repository's exact Duration checker.
+
 ## Layout
 
 | Path | Purpose |
