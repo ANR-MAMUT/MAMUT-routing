@@ -19,6 +19,8 @@ from mamut_routing_lib.artifacts import (
 )
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
+from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
+from mamut_routing_lib.td.checker import compute_route_duration
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
@@ -228,6 +230,32 @@ class SiteArtifactLinks(BaseModel):
     atf_json_path: str | None = None
 
 
+class TDScheduleStop(BaseModel):
+    """One customer visit of a TD route schedule.
+
+    Times are forward point evaluations of the canonical arrival-time
+    functions at the checker's earliest optimal depot departure ``t*_r``;
+    the authoritative route duration is the checker's ``Δ*_r``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    node: int
+    arrival: float
+    wait: float
+    service_start: float
+    departure: float
+
+
+class TDRouteSchedule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    departure_time: float
+    duration: float
+    return_arrival: float
+    stops: list[TDScheduleStop]
+
+
 class BKSPageEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -241,6 +269,7 @@ class BKSPageEntry(BaseModel):
     validated_num_routes: int | None = None
     license: str | None = None
     license_url: str | None = None
+    td_schedules: list[TDRouteSchedule] | None = None
 
 
 class InstancePageSummary(BaseModel):
@@ -989,12 +1018,71 @@ def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> di
     return routes
 
 
-def _build_bks_entries(output_repo_dir: Path, instance_path: Path, bks_paths: list[Path] | None = None) -> list[BKSPageEntry]:
+def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> list[TDRouteSchedule]:
+    """Per-stop schedules of a TD BKS, in the BKS's stored route order.
+
+    Each route is dispatched at the checker's earliest optimal depot departure
+    ``t*_r`` (and ``duration`` is the checker's ``Δ*_r``); the per-stop times
+    are forward point evaluations of the canonical arrival-time functions from
+    that departure.
+    """
+    depot = instance.depot
+    time_windows = getattr(instance, "time_windows", None)
+    schedules: list[TDRouteSchedule] = []
+    for route in routes:
+        evaluation = compute_route_duration(instance, atfs, route)
+        if not evaluation.feasible or evaluation.departure_time is None or evaluation.duration is None:
+            raise ValueError(f"BKS route {route} is time-infeasible under the canonical checker")
+        current = evaluation.departure_time
+        previous = depot
+        stops: list[TDScheduleStop] = []
+        for vertex in route:
+            arrival = atfs.arcs[(previous, vertex)].evaluate(current)
+            earliest = float(time_windows[vertex][0]) if time_windows is not None else arrival
+            service_start = max(arrival, earliest)
+            departure = service_start + float(instance.service_times[vertex])
+            stops.append(
+                TDScheduleStop(
+                    node=vertex,
+                    arrival=arrival,
+                    wait=service_start - arrival,
+                    service_start=service_start,
+                    departure=departure,
+                )
+            )
+            current = departure
+            previous = vertex
+        return_arrival = atfs.arcs[(previous, depot)].evaluate(current)
+        schedules.append(
+            TDRouteSchedule(
+                departure_time=evaluation.departure_time,
+                duration=evaluation.duration,
+                return_arrival=return_arrival,
+                stops=stops,
+            )
+        )
+    return schedules
+
+
+def _build_bks_entries(
+    output_repo_dir: Path,
+    instance_path: Path,
+    bks_paths: list[Path] | None = None,
+    *,
+    td_instance=None,
+    td_atfs=None,
+) -> list[BKSPageEntry]:
     entries: list[BKSPageEntry] = []
     for bks_path in (bks_paths if bks_paths is not None else _discover_bks_paths(instance_path)):
         bks = load_bks(bks_path)
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
+        td_schedules = None
+        if td_instance is not None and td_atfs is not None and bks.objective_function == ObjectiveFunction.DURATION:
+            try:
+                td_schedules = _build_td_schedules(td_instance, td_atfs, bks.routes)
+            except Exception as exc:
+                warnings.warn(f"Unable to derive the TD schedule for {bks_path}: {exc}", stacklevel=2)
         entries.append(
             BKSPageEntry(
                 objective_function=bks.objective_function,
@@ -1007,6 +1095,7 @@ def _build_bks_entries(output_repo_dir: Path, instance_path: Path, bks_paths: li
                 validated_num_routes=bks.metadata.get("validated_num_routes"),
                 license=license_value,
                 license_url=license_url_value,
+                td_schedules=td_schedules,
             )
         )
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function))
@@ -1081,7 +1170,20 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         artifact_links,
         bks_paths,
     )
-    bks_entries = _build_bks_entries(output_repo_dir, discovered_item.instance_path, bks_paths)
+    td_atfs = None
+    td_block = getattr(instance, "td", None)
+    if td_block is not None and bks_paths:
+        atf_sidecar = get_atf_path_for_instance(discovered_item.instance_path, getattr(td_block, "atf_path", None))
+        # The sha256 gate lives in the population/verification tooling; payload
+        # generation only needs the functions themselves.
+        td_atfs = load_instance_atfs(atf_sidecar)
+    bks_entries = _build_bks_entries(
+        output_repo_dir,
+        discovered_item.instance_path,
+        bks_paths,
+        td_instance=instance if td_atfs is not None else None,
+        td_atfs=td_atfs,
+    )
 
     return _ResolvedSiteInstance(
         locator=BenchmarkLocator(

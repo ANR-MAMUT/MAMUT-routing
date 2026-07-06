@@ -1640,6 +1640,42 @@ function renderWorkbenchVisualizeSourceCard(instanceRoute) {
   );
 }
 
+function formatScheduleTime(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+  return value.toFixed(2);
+}
+
+function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex) {
+  const schedules = selectedEntry?.td_schedules;
+  if (!Array.isArray(schedules) || schedules.length === 0) return "";
+  const routeIndex = Math.min(Math.max(selectedRouteIndex, 0), schedules.length - 1);
+  const schedule = schedules[routeIndex];
+  const timeWindows = Array.isArray(instanceData?.time_windows) ? instanceData.time_windows : null;
+  const serviceTimes = Array.isArray(instanceData?.service_times) ? instanceData.service_times : null;
+  const options = schedules
+    .map((entry, index) => `<option value="${index}"${index === routeIndex ? " selected" : ""}>Route ${index + 1} · ${entry.stops.length} clients · Δ* ${formatScheduleTime(entry.duration)}</option>`)
+    .join("");
+  const twHeader = timeWindows ? "<th>Time window</th>" : "";
+  const rows = [];
+  rows.push(`<tr><td class="table-cell-mono">depot</td>${timeWindows ? "<td></td>" : ""}<td></td><td></td><td></td><td class="table-cell-num">${formatScheduleTime(schedule.departure_time)}</td></tr>`);
+  for (const stop of schedule.stops) {
+    const tw = timeWindows ? `<td class="table-cell-mono">[${formatScheduleTime(Number(timeWindows[stop.node]?.[0]))}, ${formatScheduleTime(Number(timeWindows[stop.node]?.[1]))}]</td>` : "";
+    const service = serviceTimes ? formatScheduleTime(Number(serviceTimes[stop.node])) : "";
+    rows.push(`<tr><td class="table-cell-mono">${stop.node}</td>${tw}<td class="table-cell-num">${formatScheduleTime(stop.arrival)}</td><td class="table-cell-num">${stop.wait > 0 ? formatScheduleTime(stop.wait) : ""}</td><td class="table-cell-num">${service}</td><td class="table-cell-num">${formatScheduleTime(stop.departure)}</td></tr>`);
+  }
+  rows.push(`<tr><td class="table-cell-mono">depot</td>${timeWindows ? "<td></td>" : ""}<td class="table-cell-num">${formatScheduleTime(schedule.return_arrival)}</td><td></td><td></td><td></td></tr>`);
+  return `
+    <section class="mini-card">
+      <h3>Schedule</h3>
+      <div class="meta-line">Checker-derived schedule: the route is dispatched at its earliest optimal depot departure t* = ${formatScheduleTime(schedule.departure_time)} and achieves the optimal duration Δ* = ${formatScheduleTime(schedule.duration)}.</div>
+      <div class="inline-actions" style="margin:0.6rem 0"><select data-schedule-route>${options}</select></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Stop</th>${twHeader}<th>Arrival</th><th>Wait</th><th>Service</th><th>Departure</th></tr></thead>
+        <tbody>${rows.join("")}</tbody>
+      </table></div>
+    </section>`;
+}
+
 async function renderInstancePage(payload, options = {}) {
   const inWorkbench = options.inWorkbench === true;
   const pageTitle = inWorkbench ? `Workbench: ${payload.title}` : payload.title;
@@ -1663,6 +1699,7 @@ async function renderInstancePage(payload, options = {}) {
   let selectedIndex = 0;
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+  let selectedScheduleRoute = 0;
 
   const renderSelectedState = () => {
     const asideCards = [
@@ -1739,6 +1776,7 @@ async function renderInstancePage(payload, options = {}) {
           <h3>Route Legend</h3>
           ${routeLegend}
         </section>
+        ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute)}
       </div>`;
 
     state.aside.querySelectorAll("[data-bks-index]").forEach((button) => {
@@ -1746,8 +1784,13 @@ async function renderInstancePage(payload, options = {}) {
         selectedIndex = Number(button.dataset.bksIndex);
         selectedEntry = payload.bks_entries[selectedIndex] || null;
         selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+        selectedScheduleRoute = 0;
         renderSelectedState();
       });
+    });
+    state.stage.querySelector("[data-schedule-route]")?.addEventListener("change", (event) => {
+      selectedScheduleRoute = Number(event.target.value) || 0;
+      renderSelectedState();
     });
     setStatus(selectedEntry ? `Showing ${selectedEntry.objective_function}` : `Loaded ${payload.title}`);
   };
