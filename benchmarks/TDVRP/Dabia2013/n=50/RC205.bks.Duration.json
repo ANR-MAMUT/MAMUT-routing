@@ -1,18 +1,18 @@
 {
     "instance_name": "RC205",
     "routes": [
-        [2, 6, 7, 8, 46, 4, 45, 5, 3, 1, 43, 44, 42, 38, 39, 40, 37, 36, 35, 41, 50, 31, 29, 30, 32, 34, 28, 27, 26, 33, 19, 48, 18, 21, 25, 23, 24, 22, 20, 49, 13, 9, 10, 11, 12, 14, 17, 47, 15, 16]
+        [2, 6, 7, 8, 46, 4, 45, 5, 3, 1, 43, 44, 42, 41, 40, 35, 36, 37, 38, 39, 34, 32, 30, 28, 26, 27, 31, 29, 33, 50, 18, 48, 23, 25, 21, 49, 19, 20, 22, 24, 9, 10, 11, 12, 14, 17, 47, 15, 16, 13]
     ],
-    "cost": 8210.372977620256,
+    "cost": 8105.826942185708,
     "metadata": {
-        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1010, time_limit=300.0s)",
+        "source": "kayros 0.2.0.dev0 TD-ACO (seed=5772, time_limit=300.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "route_durations": [8210.372977620256],
-        "route_departure_times": [145.4765218528837],
+        "route_durations": [8105.826942185708],
+        "route_departure_times": [173.14314001951433],
         "authors": "Florian Rascoussier (0nyr)",
-        "validated_cost": 8210.372977620256,
+        "validated_cost": 8105.826942185708,
         "validated_num_routes": 1,
-        "date": "2026-07-04T21:37:00"
+        "date": "2026-07-06T05:02:32"
     },
     "objective_function": "Duration"
 }

@@ -1,19 +1,19 @@
 {
     "instance_name": "C201",
     "routes": [
-        [21, 22, 20, 24, 27, 29, 30, 26, 23, 25, 13, 19, 17, 18, 16, 14, 12, 15, 9, 10, 11, 5, 2, 1, 7, 3, 4, 43, 42, 41, 45, 50, 47, 48, 46],
-        [8, 6, 32, 33, 36, 34, 39, 38, 37, 35, 31, 28, 44, 40, 49]
+        [21, 25, 23, 26, 28, 34, 36, 39, 38, 37, 35, 31, 33, 32, 6, 50, 45, 44, 40, 49, 46, 41, 42, 47, 43, 48],
+        [2, 1, 4, 3, 7, 5, 8, 10, 11, 9, 15, 12, 14, 16, 19, 17, 18, 13, 30, 29, 27, 24, 22, 20]
     ],
-    "cost": 48700.67514286058,
+    "cost": 47836.01190885545,
     "metadata": {
-        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1010, time_limit=300.0s)",
+        "source": "kayros 0.2.0.dev0 TD-ACO (seed=123, time_limit=300.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "route_durations": [33774.98254920335, 14925.692593657228],
-        "route_departure_times": [0.0, 1854.8573461218682],
+        "route_durations": [24865.097635576174, 22970.914273279275],
+        "route_departure_times": [826.2164159380562, 10296.300747146677],
         "authors": "Florian Rascoussier (0nyr)",
-        "validated_cost": 48700.67514286058,
+        "validated_cost": 47836.01190885545,
         "validated_num_routes": 2,
-        "date": "2026-07-04T21:36:58"
+        "date": "2026-07-06T05:02:29"
     },
     "objective_function": "Duration"
 }

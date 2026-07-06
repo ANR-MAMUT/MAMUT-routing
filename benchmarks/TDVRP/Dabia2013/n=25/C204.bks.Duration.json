@@ -1,18 +1,18 @@
 {
     "instance_name": "C204",
     "routes": [
-        [21, 22, 20, 24, 6, 23, 25, 13, 19, 17, 18, 16, 14, 12, 15, 9, 10, 11, 5, 2, 1, 7, 3, 4, 8]
+        [24, 6, 23, 25, 13, 15, 12, 14, 16, 19, 17, 18, 9, 10, 11, 4, 3, 7, 1, 2, 5, 8, 21, 20, 22]
     ],
-    "cost": 24273.47124606811,
+    "cost": 24048.897464079724,
     "metadata": {
-        "source": "kayros 0.0.1.dev0 TD-ACO (seed=1010, time_limit=120.0s)",
+        "source": "kayros 0.2.0.dev0 TD-ACO (seed=2718, time_limit=120.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "route_durations": [24273.47124606811],
-        "route_departure_times": [9154.0],
+        "route_durations": [24048.897464079724],
+        "route_departure_times": [1428.666689166656],
         "authors": "Florian Rascoussier (0nyr)",
-        "validated_cost": 24273.47124606811,
+        "validated_cost": 24048.897464079724,
         "validated_num_routes": 1,
-        "date": "2026-07-04T21:36:57"
+        "date": "2026-07-06T05:02:28"
     },
     "objective_function": "Duration"
 }

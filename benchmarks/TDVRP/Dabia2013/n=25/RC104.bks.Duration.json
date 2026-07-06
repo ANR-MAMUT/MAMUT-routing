@@ -2,19 +2,19 @@
     "instance_name": "RC104",
     "routes": [
         [10, 11, 12, 14, 17, 16, 15, 9, 13],
-        [2, 4, 5, 3, 1, 8, 6, 7],
-        [24, 22, 20, 18, 21, 23, 25, 19]
+        [24, 22, 20, 18, 21, 25, 23, 19],
+        [2, 4, 1, 3, 5, 8, 6, 7]
     ],
-    "cost": 4663.279680958661,
+    "cost": 4617.717234501117,
     "metadata": {
-        "source": "kayros 0.0.1.dev0 TD-ACO (seed=42, time_limit=120.0s)",
+        "source": "kayros 0.2.0.dev0 TD-ACO (seed=1010, time_limit=120.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "route_durations": [1625.54232936515, 1504.1826682602527, 1533.5546833332585],
-        "route_departure_times": [18.857191836594836, 0.0, 146.44531666674126],
+        "route_durations": [1625.54232936515, 1529.9327261350427, 1462.2421790009246],
+        "route_departure_times": [18.857191836594836, 146.66666666666663, 0.0],
         "authors": "Florian Rascoussier (0nyr)",
-        "validated_cost": 4663.279680958661,
+        "validated_cost": 4617.717234501117,
         "validated_num_routes": 3,
-        "date": "2026-07-04T21:36:58"
+        "date": "2026-07-06T05:02:28"
     },
     "objective_function": "Duration"
 }

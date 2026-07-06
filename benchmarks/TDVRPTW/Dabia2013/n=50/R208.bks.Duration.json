@@ -1,19 +1,19 @@
 {
     "instance_name": "R208",
     "routes": [
-        [15, 23, 44, 38, 9],
-        [27, 28, 50, 1, 30, 20, 32, 10, 31, 7, 48, 19, 11, 36, 47, 46, 45, 8, 18, 17, 5, 6, 37, 42, 43, 14, 16, 41, 22, 21, 40, 2, 26, 12, 3, 29, 24, 4, 39, 25, 13, 33, 34, 35, 49]
+        [28, 50, 1, 30, 11, 19, 36, 49, 47, 46, 48, 7, 18, 8, 45, 17, 5, 37, 42, 22, 41, 2, 13],
+        [26, 23, 15, 43, 38, 14, 44, 16, 6, 27, 31, 10, 32, 20, 9, 35, 34, 33, 29, 24, 3, 12, 4, 39, 25, 21, 40]
     ],
-    "cost": 12199.509131515104,
+    "cost": 9245.02050272076,
     "metadata": {
-        "authors": "Florian Rascoussier (0nyr)",
-        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "source": "kayros 0.2.0.dev0 TD-ACO (seed=789, time_limit=300.0s)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "date": "2026-07-02",
-        "route_durations": [2783.4181617956683, 9416.090969719435],
-        "route_departure_times": [889.3333333333333, 360.2394078874059],
-        "legacy_declared_value": 12217.294690312821,
-        "legacy_key": "R208-n=52-4a584ee3b7abab6a1bb591da5a64847b0ecc66cd.json"
+        "route_durations": [4046.429074858378, 5198.591427862382],
+        "route_departure_times": [3000.0, 2768.0011799982008],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 9245.02050272076,
+        "validated_num_routes": 2,
+        "date": "2026-07-06T05:08:27"
     },
     "objective_function": "Duration"
 }
