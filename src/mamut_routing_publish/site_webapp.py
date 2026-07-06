@@ -123,10 +123,10 @@ def _render_shell_html(
         ]
     )
     tagline_by_nav = {
-        "home": "Open VRPTW benchmark catalog, provenance, and routing workbench.",
+        "home": "Open benchmark catalog (CVRP, VRPTW, TDVRPTW, TDVRP), provenance, and routing workbench.",
         "benchmarks": "Lists of problems and benchmark families with instance and BKS data.",
         "project": "Research context for the MAMUT ANR project and its participants.",
-        "objectives": "Reference of objective functions used to compare VRPTW solutions.",
+        "objectives": "Reference of objective functions used to compare routing solutions.",
         "history": "Snapshot ledger tracking catalog updates and benchmark changes.",
     }
     tagline_text = tagline_by_nav.get(active_nav, "")

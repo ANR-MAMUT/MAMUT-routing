@@ -929,7 +929,7 @@ function renderHome(payload) {
           <p>Direct paths to the public catalog, viewer, contract notes, and release provenance.</p>
         </div>
         <div class="home-link-grid">
-          ${renderHomeLinkTile("Benchmarks", "Browse curated CVRP and VRPTW families, variants, places, sizes, and instance artifacts.", payload.benchmarks_route_path, "Browse Benchmarks")}
+          ${renderHomeLinkTile("Benchmarks", "Browse curated CVRP, VRPTW, and time-dependent TDVRPTW/TDVRP families, variants, places, sizes, and instance artifacts.", payload.benchmarks_route_path, "Browse Benchmarks")}
           ${renderHomeLinkTile("Workbench", "Visualize published instances, inspect uploaded files, and generate OSM-backed previews.", payload.workbench_route_path, "Open Workbench")}
           ${renderHomeLinkTile("ANR Project", "Understand how this benchmark and generation work sits inside the MAMUT research project.", payload.project_route_path, "Open Project")}
           ${renderHomeLinkTile("Objective Semantics", "Check how HierarchicalVehicleCost, MonoCost, and Duration should be interpreted before comparing results.", payload.objectives_route_path, "Read Objectives")}
@@ -1048,7 +1048,7 @@ function renderBenchmarksIndex(payload) {
   state.aside.innerHTML = [
     renderCard(
       "Browse Benchmarks",
-      `<p>This static publication separates CVRP and VRPTW at the top level, then preserves family and variant structure inside each problem class.</p>${renderStatGrid([
+      `<p>This static publication separates the problem classes — CVRP, VRPTW, and the time-dependent TDVRPTW/TDVRP — at the top level, then preserves family and variant structure inside each class.</p>${renderStatGrid([
         ["Snapshot", payload.snapshot.snapshot_id],
         ["Published", payload.snapshot.published_at],
         ["Commit", payload.snapshot.source_commit],

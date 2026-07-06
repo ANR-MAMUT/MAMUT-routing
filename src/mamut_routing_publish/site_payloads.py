@@ -1796,7 +1796,7 @@ def _build_home_page_payload(
         title="MAMUT-routing",
         subtitle="Benchmark distribution, provenance, and routing workbench.",
         hero_summary=(
-            "Explore curated CVRP and VRPTW benchmark families, inspect instance artifacts, and open the same instances in the shared workbench shell."
+            "Explore curated CVRP, VRPTW, and time-dependent TDVRPTW/TDVRP benchmark families, inspect instance artifacts (including canonical arrival-time functions), and open the same instances in the shared workbench shell."
         ),
         latest_publication_summary=history_summary,
         counts=site_counts,
