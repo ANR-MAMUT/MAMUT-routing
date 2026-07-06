@@ -148,7 +148,13 @@ code,
   text-underline-offset: 0.18em;
 }
 
-.context-prose code {
+code {
+  overflow-wrap: anywhere;
+}
+
+.context-prose code,
+.explainer-grid code,
+.plain-list code {
   background: var(--mono-bg);
   border: 1px solid var(--line);
   border-radius: 0.35rem;

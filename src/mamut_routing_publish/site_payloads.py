@@ -20,7 +20,7 @@ from mamut_routing_lib.artifacts import (
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
-from mamut_routing_lib.td.checker import compute_route_duration
+from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
@@ -256,6 +256,31 @@ class TDRouteSchedule(BaseModel):
     stops: list[TDScheduleStop]
 
 
+class TDRouteFunctionEntry(BaseModel):
+    """Checker-exact route ready-time function ``δ_r`` of one BKS route.
+
+    ``xs``/``ys`` are the breakpoints of ``δ_r`` over the feasible depot
+    departure domain; the duration PWLF is ``δ_r(t) − t`` and the checker's
+    optimum is ``(departure_time, duration)``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    departure_time: float
+    duration: float
+    xs: list[float]
+    ys: list[float]
+
+
+class TDRouteFunctionsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payload_kind: Literal["td_route_functions"] = "td_route_functions"
+    objective_function: ObjectiveFunction
+    route_path: str
+    routes: list[TDRouteFunctionEntry]
+
+
 class BKSPageEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -270,6 +295,7 @@ class BKSPageEntry(BaseModel):
     license: str | None = None
     license_url: str | None = None
     td_schedules: list[TDRouteSchedule] | None = None
+    route_functions_path: str | None = None
 
 
 class InstancePageSummary(BaseModel):
@@ -647,6 +673,7 @@ class _ResolvedSiteInstance(BaseModel):
     derived_problem_routes: dict[str, str] = Field(default_factory=dict)
     source_problem_routes: dict[str, str] = Field(default_factory=dict)
     bks_entries: list[BKSPageEntry] = Field(default_factory=list)
+    td_route_functions: list[TDRouteFunctionsPayload] = Field(default_factory=list)
 
 
 def _now_utc_iso() -> str:
@@ -1018,22 +1045,25 @@ def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> di
     return routes
 
 
-def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> list[TDRouteSchedule]:
-    """Per-stop schedules of a TD BKS, in the BKS's stored route order.
+def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[TDRouteSchedule], list[TDRouteFunctionEntry]]:
+    """Per-stop schedules + route ready-time functions of a TD BKS, in the BKS's stored route order.
 
     Each route is dispatched at the checker's earliest optimal depot departure
-    ``t*_r`` (and ``duration`` is the checker's ``Δ*_r``); the per-stop times
-    are forward point evaluations of the canonical arrival-time functions from
-    that departure.
+    ``t*_r`` (and ``duration`` is the checker's ``Δ*_r``, both from the route
+    ready-time function ``δ_r`` computed by the checker fold); the per-stop
+    times are forward point evaluations of the canonical arrival-time
+    functions from that departure.
     """
     depot = instance.depot
     time_windows = getattr(instance, "time_windows", None)
     schedules: list[TDRouteSchedule] = []
+    functions: list[TDRouteFunctionEntry] = []
     for route in routes:
-        evaluation = compute_route_duration(instance, atfs, route)
-        if not evaluation.feasible or evaluation.departure_time is None or evaluation.duration is None:
+        delta = compute_route_ready_time_function(instance, atfs, route)
+        if delta.is_empty():
             raise ValueError(f"BKS route {route} is time-infeasible under the canonical checker")
-        current = evaluation.departure_time
+        duration, departure_time = delta.min_shifted_image()
+        current = departure_time
         previous = depot
         stops: list[TDScheduleStop] = []
         for vertex in route:
@@ -1055,13 +1085,25 @@ def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> list[TDRoute
         return_arrival = atfs.arcs[(previous, depot)].evaluate(current)
         schedules.append(
             TDRouteSchedule(
-                departure_time=evaluation.departure_time,
-                duration=evaluation.duration,
+                departure_time=departure_time,
+                duration=duration,
                 return_arrival=return_arrival,
                 stops=stops,
             )
         )
-    return schedules
+        functions.append(
+            TDRouteFunctionEntry(
+                departure_time=departure_time,
+                duration=duration,
+                xs=list(delta.xs),
+                ys=list(delta.ys),
+            )
+        )
+    return schedules, functions
+
+
+def _route_functions_filename(objective_function: ObjectiveFunction) -> str:
+    return f"route-functions.{objective_function.value}.json"
 
 
 def _build_bks_entries(
@@ -1071,16 +1113,28 @@ def _build_bks_entries(
     *,
     td_instance=None,
     td_atfs=None,
-) -> list[BKSPageEntry]:
+    route_path: str | None = None,
+) -> tuple[list[BKSPageEntry], list[TDRouteFunctionsPayload]]:
     entries: list[BKSPageEntry] = []
+    function_payloads: list[TDRouteFunctionsPayload] = []
     for bks_path in (bks_paths if bks_paths is not None else _discover_bks_paths(instance_path)):
         bks = load_bks(bks_path)
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
         td_schedules = None
+        route_functions_path = None
         if td_instance is not None and td_atfs is not None and bks.objective_function == ObjectiveFunction.DURATION:
             try:
-                td_schedules = _build_td_schedules(td_instance, td_atfs, bks.routes)
+                td_schedules, function_entries = _build_td_schedules(td_instance, td_atfs, bks.routes)
+                if route_path is not None:
+                    route_functions_path = f"{route_path}{_route_functions_filename(bks.objective_function)}"
+                    function_payloads.append(
+                        TDRouteFunctionsPayload(
+                            objective_function=bks.objective_function,
+                            route_path=route_path,
+                            routes=function_entries,
+                        )
+                    )
             except Exception as exc:
                 warnings.warn(f"Unable to derive the TD schedule for {bks_path}: {exc}", stacklevel=2)
         entries.append(
@@ -1096,9 +1150,10 @@ def _build_bks_entries(
                 license=license_value,
                 license_url=license_url_value,
                 td_schedules=td_schedules,
+                route_functions_path=route_functions_path,
             )
         )
-    return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function))
+    return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
 
 
 def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteInstance:
@@ -1177,12 +1232,13 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         # The sha256 gate lives in the population/verification tooling; payload
         # generation only needs the functions themselves.
         td_atfs = load_instance_atfs(atf_sidecar)
-    bks_entries = _build_bks_entries(
+    bks_entries, td_route_functions = _build_bks_entries(
         output_repo_dir,
         discovered_item.instance_path,
         bks_paths,
         td_instance=instance if td_atfs is not None else None,
         td_atfs=td_atfs,
+        route_path=route_path,
     )
 
     return _ResolvedSiteInstance(
@@ -1224,6 +1280,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         derived_problem_routes=derived_problem_routes,
         source_problem_routes=source_problem_routes,
         bks_entries=bks_entries,
+        td_route_functions=td_route_functions,
     )
 
 
@@ -2067,7 +2124,7 @@ def _build_objectives_page_payload(
             title="Duration",
             description="Time-dependent duration-minimization objective: minimize the sum of route durations, where the depot departure time of each route is a decision variable and travel times vary with departure time (FIFO arrival-time functions).",
             interpretation_notes=[
-                "Costs are the authoritative output of the canonical checker (mamut_routing_lib.td.check_td_solution): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
+                "Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
                 "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
@@ -3136,6 +3193,12 @@ def generate_site_payloads(
         for resolved in resolved_items:
             instance_payload = _build_instance_page_payload(resolved, generated_at, snapshot)
             written_paths.append(_write_payload(site_output, resolved.route_path, instance_payload, payload_root))
+            for functions_payload in resolved.td_route_functions:
+                functions_path = _route_payload_path(site_output, resolved.route_path, payload_root).with_name(
+                    _route_functions_filename(functions_payload.objective_function)
+                )
+                save_json_to_file(functions_payload.model_dump(mode="json"), functions_path)
+                written_paths.append(functions_path)
             instance_pages_written += 1
             task.update(detail=resolved.display_name)
 

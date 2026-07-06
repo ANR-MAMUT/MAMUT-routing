@@ -363,6 +363,11 @@ function costSpan(value, className = "badge-cost") {
   return `<span class="${className}">${escapeHtml(formatCost(value))}</span>`;
 }
 
+// Escape, then turn `backtick spans` into inline <code> elements.
+function formatInlineCode(text) {
+  return escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
 function isHierarchicalObjective(entry) {
   return entry?.objective_function === "HierarchicalVehicleCost";
 }
@@ -1685,7 +1690,7 @@ async function fetchInstanceAtfArcs(atfArtifactPath) {
   return promise;
 }
 
-function renderArcFunctionChart(chartId, title, xs, ys, color) {
+function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
   const width = 420;
   const height = 260;
   const pad = { left: 56, right: 14, top: 14, bottom: 34 };
@@ -1698,6 +1703,17 @@ function renderArcFunctionChart(chartId, title, xs, ys, color) {
   const px = (x) => pad.left + ((x - xMin) / xSpan) * (width - pad.left - pad.right);
   const py = (y) => height - pad.bottom - ((y - yMin) / ySpan) * (height - pad.top - pad.bottom);
   const points = xs.map((x, k) => `${px(x).toFixed(1)},${py(ys[k]).toFixed(1)}`).join(" ");
+  let markerSvg = "";
+  if (options.marker) {
+    const m = options.marker;
+    const mx = px(m.x);
+    const my = py(m.y);
+    markerSvg = `
+        <line x1="${pad.left}" y1="${my.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="${m.color}" stroke-width="1" stroke-dasharray="4 3" />
+        <line x1="${mx.toFixed(1)}" y1="${height - pad.bottom}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="${m.color}" stroke-width="1" stroke-dasharray="4 3" />
+        <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="4" fill="${m.color}" stroke="#ffffff" stroke-width="1.5"><title>${escapeHtml(m.label)}</title></circle>
+        <text x="${Math.min(mx + 7, width - pad.right - 4).toFixed(1)}" y="${Math.max(my - 7, pad.top + 10).toFixed(1)}" font-size="10.5" fill="${m.color}">${escapeHtml(m.label)}</text>`;
+  }
   const yTicks = [yMin, (yMin + yMax) / 2, yMax];
   const xTicks = [xMin, (xMin + xMax) / 2, xMax];
   const grid = yTicks
@@ -1721,7 +1737,7 @@ function renderArcFunctionChart(chartId, title, xs, ys, color) {
         <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#00000030" stroke-width="1" />
         ${yLabels}${xLabels}
         <text x="${(pad.left + width - pad.right) / 2}" y="${height - 4}" text-anchor="middle" font-size="10.5" fill="#6b7280">departure time t</text>
-        <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />
+        <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />${markerSvg}
         <line class="arc-crosshair" x1="0" y1="${pad.top}" x2="0" y2="${height - pad.bottom}" stroke="#00000060" stroke-width="1" style="display:none" />
         <circle class="arc-hover-dot" r="3.5" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="display:none" />
         <rect class="arc-hover-zone" x="${pad.left}" y="${pad.top}" width="${width - pad.left - pad.right}" height="${height - pad.top - pad.bottom}" fill="transparent" />
@@ -1818,7 +1834,34 @@ function formatScheduleTime(value) {
   return value.toFixed(2);
 }
 
-function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex) {
+function routeFunctionsHref(routeFunctionsPath) {
+  const normalized = routeFunctionsPath.startsWith("/") ? routeFunctionsPath : `/${routeFunctionsPath}`;
+  return relativeFromCurrent(`${resolvePayloadStaticRoot()}${normalized}`, { directory: false });
+}
+
+function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex) {
+  if (routeFunctionsStatus === "loading") {
+    return `<div class="meta-line" style="margin-top:0.8rem">Loading the route ready-time function…</div>`;
+  }
+  if (routeFunctionsStatus === "error") {
+    return `<div class="meta-line" style="margin-top:0.8rem">The route function payload could not be loaded.</div>`;
+  }
+  const entry = routeFunctions?.routes?.[routeIndex];
+  if (!entry) return "";
+  const durations = entry.ys.map((y, k) => y - entry.xs[k]);
+  return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-top:0.8rem">
+        ${renderArcFunctionChart("route-arr", "Arrival time at depot δ(t)", entry.xs, entry.ys, PALETTE[0], {
+          marker: { x: entry.xs[0], y: entry.ys[0], color: "#0891b2", label: `EAT ${formatScheduleTime(entry.ys[0])}` },
+        })}
+        ${renderArcFunctionChart("route-dur", "Duration Δ(t) = δ(t) − t", entry.xs, durations, PALETTE[1], {
+          marker: { x: entry.departure_time, y: entry.duration, color: "#16a34a", label: `MDT (${formatScheduleTime(entry.departure_time)}, ${formatScheduleTime(entry.duration)})` },
+        })}
+      </div>
+      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, checker fold). EAT = earliest arrival back at the depot; MDT = the checker's optimal dispatch (t* = ${formatScheduleTime(entry.departure_time)}, Δ* = ${formatScheduleTime(entry.duration)}).</div>`;
+}
+
+function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex, routeFunctions, routeFunctionsStatus) {
   const schedules = selectedEntry?.td_schedules;
   if (!Array.isArray(schedules) || schedules.length === 0) return "";
   const routeIndex = Math.min(Math.max(selectedRouteIndex, 0), schedules.length - 1);
@@ -1842,7 +1885,8 @@ function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex
       <h3>Schedule</h3>
       <div class="meta-line">Checker-derived schedule: the route is dispatched at its earliest optimal depot departure t* = ${formatScheduleTime(schedule.departure_time)} and achieves the optimal duration Δ* = ${formatScheduleTime(schedule.duration)}.</div>
       <div class="inline-actions" style="margin:0.6rem 0"><select data-schedule-route>${options}</select></div>
-      <div class="table-wrap"><table>
+      ${renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex)}
+      <div class="table-wrap" style="margin-top:0.8rem"><table>
         <thead><tr><th>Stop</th>${twHeader}<th>Arrival</th><th>Wait</th><th>Service</th><th>Departure</th></tr></thead>
         <tbody>${rows.join("")}</tbody>
       </table></div>
@@ -1874,6 +1918,8 @@ async function renderInstancePage(payload, options = {}) {
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
   let selectedScheduleRoute = 0;
   let arcState = null;
+  let routeFunctionsData = null;
+  let routeFunctionsStatus = "idle";
   const supportsArcFunctions = Boolean(payload.artifact_links.atf_json_path);
 
   const renderSelectedState = () => {
@@ -1953,8 +1999,23 @@ async function renderInstancePage(payload, options = {}) {
           ${routeLegend}
         </section>
         ${renderArcFunctionsCard(arcState)}
-        ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute)}
+        ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute, routeFunctionsData, routeFunctionsStatus)}
       </div>`;
+
+    if (selectedEntry?.route_functions_path && routeFunctionsStatus === "idle") {
+      routeFunctionsStatus = "loading";
+      fetchJsonMemo(routeFunctionsHref(selectedEntry.route_functions_path))
+        .then((data) => {
+          routeFunctionsData = data;
+          routeFunctionsStatus = "ready";
+          renderSelectedState();
+        })
+        .catch((error) => {
+          console.warn("Unable to load the route functions payload", error);
+          routeFunctionsStatus = "error";
+          renderSelectedState();
+        });
+    }
 
     state.aside.querySelectorAll("[data-bks-index]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -1962,9 +2023,19 @@ async function renderInstancePage(payload, options = {}) {
         selectedEntry = payload.bks_entries[selectedIndex] || null;
         selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
         selectedScheduleRoute = 0;
+        routeFunctionsData = null;
+        routeFunctionsStatus = "idle";
         renderSelectedState();
       });
     });
+    if (routeFunctionsStatus === "ready") {
+      const entry = routeFunctionsData?.routes?.[Math.min(selectedScheduleRoute, (routeFunctionsData?.routes?.length || 1) - 1)];
+      if (entry) {
+        const durations = entry.ys.map((y, k) => y - entry.xs[k]);
+        attachArcChartHover(state.stage, "route-arr", entry.xs, entry.ys, (t, v) => `depart t = ${formatScheduleTime(t)} → arrival δ(t) = ${formatScheduleTime(v)}`);
+        attachArcChartHover(state.stage, "route-dur", entry.xs, durations, (t, v) => `depart t = ${formatScheduleTime(t)} → duration Δ(t) = ${formatScheduleTime(v)}`);
+      }
+    }
     state.stage.querySelector("[data-schedule-route]")?.addEventListener("change", (event) => {
       selectedScheduleRoute = Number(event.target.value) || 0;
       renderSelectedState();
@@ -3579,7 +3650,7 @@ function renderObjectives(payload) {
   );
   state.stage.innerHTML = `<div class="explainer-grid">${payload.explainers
     .map(
-      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${escapeHtml(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`).join("")}</ul></article>`,
+      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${formatInlineCode(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${formatInlineCode(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`).join("")}</ul></article>`,
     )
     .join("")}</div>`;
   setStatus(`Loaded ${payload.explainers.length} objective guides`);
