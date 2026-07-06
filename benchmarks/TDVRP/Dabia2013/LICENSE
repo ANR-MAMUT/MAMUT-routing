@@ -1,0 +1,13 @@
+SPDX-License-Identifier: MIT
+
+To the extent MAMUT-routing holds the relevant rights, the MAMUT-routing
+curation artifacts in this directory are distributed under the MIT License in
+the repository root.
+
+This family curates the time-dependent VRP (TDVRP) variant — the same material
+with time windows removed — of the benchmark originating from Solomon (1987),
+the time-dependent extension of Dabia et al. (2013) under the Ichoua et al.
+(2003) travel-time model, and the instance distribution of Lera-Romero et al.
+(2020). This license notice does not claim to relicense third-party benchmark
+definitions or third-party best-known solution sources beyond the rights held
+by MAMUT-routing contributors.
