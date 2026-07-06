@@ -94,3 +94,85 @@ The VRPTW `Mamut2026` family is meant to complement, not replace, the historical
 Licensing note: because this family is derived from the OSM-based `Mamut2026` CVRP layer, the OSM-derived VRPTW instances, sidecars, route-rendering artifacts, and related benchmark data are distributed under the [Open Data Commons Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/) where applicable, with attribution to OpenStreetMap and its contributors.
 
 The current family contains instances alongside heuristic BKS for both classical objectives: a `MonoCost` BKS and a `HierarchicalVehicleCost` BKS.
+
+### `Dabia2013` (TDVRPTW)
+
+`Dabia2013` is the MAMUT-routing curation of the classic Duration-Minimization time-dependent VRPTW benchmark introduced by [Dabia et al. 2013](https://doi.org/10.1287/trsc.1120.0445). It reuses the Solomon 1987 instances (25, 50, and 100 customers) and adds time dependency through the Ichoua--Gendreau--Potvin (IGP, 2003) travel-time model: piecewise-constant speeds per time zone and per arc speed profile, which yield FIFO piecewise-linear arrival-time functions. The raw JSON sources are those distributed with the open-source solver of [Lera-Romero et al. 2020](https://doi.org/10.1002/net.21937).
+
+The MAMUT-routing curation replaces the historic textual formats with an explicit contract. Each instance ships the instance JSON (depot index 0, no duplicated end depot), a canonical arrival-time-function (ATF) sidecar giving one exact non-decreasing continuous piecewise-linear arrival-time function per arc of the complete graph, and a `Duration` BKS file. The ATFs are consolidated exactly from the raw IGP data: breakpoints are placed exactly where departure or arrival crosses a speed-zone boundary, each breakpoint is re-evaluated by the exact forward Ichoua loop, and the last zone's speed extends beyond the horizon so every ATF is total on the full time horizon.
+
+The evaluation contract is defined by the canonical pure-Python checker (`mamut_routing_lib.td.check_td_solution`): route durations are computed by exact IEEE-754 double-precision composition of arrival-time and vertex ready-time functions, with no epsilon thresholds anywhere, each route dispatched at its optimal depot departure time, and the solution cost summed over routes in canonical order (sorted by first customer). BKS costs are always the checker's output.
+
+Initial BKS were seeded from the solutions published with Lera-Romero et al. (2020) — all re-validated by the checker (several contain arrivals exactly on time-window deadlines, which fragile recomputation pipelines misreport as infeasible) — completed and since improved by [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home); see the family changelog.
+
+Licensing note: MAMUT-routing-authored curation artifacts for this family are distributed under the [MIT License](https://mit-license.org/) where MAMUT-routing holds the relevant rights. The underlying benchmark definitions (Solomon 1987; Dabia et al. 2013; the Lera-Romero et al. 2020 distribution) remain third-party material and are not relicensed by this curation.
+
+As of the current MAMUT-routing tree, this family contains 168 instances over 3 sizes (56 Solomon-derived instances each at 25, 50, and 100 customers), each with a `Duration` BKS.
+
+### `Dabia2013` (TDVRP)
+
+The TDVRP layer of `Dabia2013` is the same benchmark material with the time windows removed: same Solomon-derived customers, demands, capacities, service times, and the same canonical IGP arrival-time functions (the ATF sidecars are time-window-independent and therefore shared bit-for-bit with the TDVRPTW layer). The objective is unchanged — `Duration` minimization with per-route dispatch-time optimization under the canonical checker contract.
+
+Dropping the time windows isolates the time-dependent routing core of the problem: solvers face the same time-varying travel times without the pruning power that tight Solomon time windows provide, which changes both heuristic and exact-method behavior (typically longer routes and much larger feasible neighborhoods). No historic solutions exist for this variant; all BKS were produced by [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home) and are heuristic references, not optimality certificates.
+
+Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party benchmark definitions not relicensed.
+
+As of the current MAMUT-routing tree, this family contains 168 instances over 3 sizes, each with a `Duration` BKS.
+
+### `Ari2018` (TDVRPTW)
+
+`Ari2018` is a satellite family curated from the classic time-dependent TSPTW benchmark generator of the Arigliano et al. lineage: symmetric distance matrices, integer time windows, and IGP time-dependent travel speeds with 73 speed zones and 3 speed profiles shared by all arcs, parameterized by congestion depth (Delta in {70, 80, 90, 95, 98}), traffic pattern (A/B), time-window width and class, at sizes 15 to 40 customers.
+
+The MAMUT-routing family is deliberately **not** the raw TD-TSPTW benchmark: it is the VRP variant curated by Onyr (2024--2026). Demands, vehicle capacities, fleet sizes, and gaussian service times were generated once by the legacy TDVRPTW-benchmarks pipeline and are pinned verbatim (recorded per instance in `metadata.legacy_attribute_source`); the raw Arigliano time windows are kept verbatim. Results on this family are therefore not comparable with published TD-TSPTW results on the underlying raw files.
+
+The family ships a deterministic curated subset of 160 instances out of the 4800-instance full factorial: one per structural cell (size, Delta, pattern, TW width), candidates holding a legacy best-known solution first, remaining ties decided by ascending SHA-256 of the canonical instance name. Since the raw data has no coordinates, display coordinates are a deterministic stress-layout embedding of the symmetric raw distance matrix (embedding quality recorded per instance). ATF sidecars are exact IGP consolidations cross-validated against direct Ichoua evaluation; the `Duration` checker contract is identical to the other TD families.
+
+Licensing note: MAMUT-authored curation artifacts are distributed under the [MIT License](https://mit-license.org/) (family-root LICENSE in the satellite repository); the underlying Arigliano-generator benchmark material remains third-party and is not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 160 curated instances over 4 sizes (15, 20, 30, 40 customers), each with a `Duration` BKS.
+
+### `Ari2018` (TDVRP)
+
+The TDVRP layer of `Ari2018` is the same curated 160-instance subset with the time windows removed: same demands, capacities, fleet sizes, service times, and the same shared IGP arrival-time-function sidecars. The `Duration` objective and canonical checker contract are unchanged. No legacy solutions exist for this variant; all BKS come from [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+
+Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party material not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 160 curated instances over 4 sizes, each with a `Duration` BKS.
+
+### `Vu2020` (TDVRPTW)
+
+`Vu2020` extends the same Arigliano-generator time-dependent model (identical IGP structure: 73 speed zones, 3 shared speed profiles) to the larger sizes used by [Vu et al. 2020](https://doi.org/10.1287/trsc.2019.0911): 59, 79, and 99 customers, with congestion depth Delta in {70, 80, 90, 98}, traffic patterns A/B, and absolute time-window widths from 40 to 180. Instance names keep the `Vu-` prefix while the recorded `instance_origin` is `Ari2018`, since both families share the same generator.
+
+Like `Ari2018`, this family is the VRP variant curated by Onyr (2024--2026): demands, capacities, fleet sizes and gaussian service times pinned verbatim from the legacy TDVRPTW-benchmarks pipeline, raw time windows kept verbatim (two raw files have customer windows ending after the depot due date; they are kept — the unusable tail is cut by ATF-domain restriction at check time). It is not comparable with published TD-TSPTW results on the raw files. The family ships a deterministic curated subset of 168 instances out of the 840-instance full factorial, one per structural cell, with stress-layout display coordinates (near-exact for these sizes) and exact IGP-consolidated ATF sidecars under the canonical `Duration` checker contract.
+
+Licensing note: MAMUT-authored curation artifacts are distributed under the [MIT License](https://mit-license.org/) (family-root LICENSE in the satellite repository); the underlying Arigliano-generator benchmark material at Vu et al. (2020) sizes remains third-party and is not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 168 curated instances over 3 sizes (59, 79, 99 customers), each with a `Duration` BKS.
+
+### `Vu2020` (TDVRP)
+
+The TDVRP layer of `Vu2020` is the same curated 168-instance subset with the time windows removed, sharing the arrival-time-function sidecars bit-for-bit with the TDVRPTW layer under the same `Duration` checker contract. At these sizes (59--99 customers) the variant provides the largest capacitated time-dependent instances of the current TD collection without time-window pruning. No legacy solutions exist; all BKS come from [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+
+Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party material not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 168 curated instances over 3 sizes, each with a `Duration` BKS.
+
+### `Rifki2020` (TDVRPTW)
+
+`Rifki2020` is the real-world family of the TD collection, built from the time-dependent travel times of [Rifki, Chiabaut & Solnon 2020](https://doi.org/10.1016/j.trd.2020.102408): shortest travel times computed on the Lyon road network from a realistic traffic simulation built on real-world data. The family pins the 12-minute temporal granularity (K = 60 steps of 720 s over a 12 h horizon) — a deliberate choice documented in the family README: it halves per-arc breakpoint weight versus the finest published granularity while remaining an equally authentic independent aggregation of the same simulation.
+
+The defining preprocessing of this family is FIFO restoration. The raw data gives piecewise-constant travel times that violate FIFO at every boundary where travel time decreases; the canonical ATFs apply the arrival-time lower envelope (the exact form of the classic Malandraki & Daskin 1992 transformation), which keeps upward jumps as genuine vertical steps of the arrival-time functions. This makes `Rifki2020` the stress-test family for solver numerics: unlike the smooth IGP families, its ATFs contain exact vertical steps.
+
+Vehicle attributes are deliberately not the original distribution's time-window files (degenerate for benchmarking: clustered near the horizon start, many identical, uniform service times, no demands or fleet data): time windows, gaussian service times, demands, capacities and fleet sizes are the values generated once by Onyr's legacy pipeline (2024), pinned verbatim and recorded per instance. The real road network has no natural planar coordinates, so display coordinates are a deterministic stress-layout embedding of the time-averaged travel-time matrix (Kruskal stress about 0.05--0.12, recorded per instance); the checker never reads them. Results are not comparable with results on the original [RCS20] setting.
+
+Licensing note: MAMUT-authored curation artifacts are distributed under the [MIT License](https://mit-license.org/) (family-root LICENSE in the satellite repository); the underlying Lyon travel-time data of Rifki, Chiabaut & Solnon (2020) remains third-party and is not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 180 instances over 6 sizes (10 to 60 customers, 30 instances each), each with a `Duration` BKS.
+
+### `Rifki2020` (TDVRP)
+
+The TDVRP layer of `Rifki2020` is the same 180-instance family with the time windows removed: same real Lyon envelope-FIFO arrival-time functions (shared bit-for-bit with the TDVRPTW layer), same curated demands, capacities, fleet sizes and service times, same `Duration` checker contract. It combines real-world time dependency — including genuine vertical steps in the arrival-time functions — with the unpruned search spaces of the no-time-window setting. No legacy solutions exist; all BKS come from [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+
+Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party data not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 180 instances over 6 sizes, each with a `Duration` BKS.

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 from typing import Literal
+import warnings
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -63,6 +64,8 @@ HOME_PREVIEW_SEEDS: tuple[tuple[str, str, str | None, str | None, str], ...] = (
     ("CVRP", "Mamut2026", "euclidean", "brest", "MonoCost"),
     ("VRPTW", "Mamut2026", "fastest", "brest", "HierarchicalVehicleCost"),
     ("VRPTW", "Mamut2026", "fastest", "london", "HierarchicalVehicleCost"),
+    ("TDVRPTW", "Dabia2013", None, None, "Duration"),
+    ("TDVRPTW", "Rifki2020", None, None, "Duration"),
 )
 
 HOME_PREVIEW_BUNDLE_FILENAME = "home-preview-bundle.json"
@@ -222,6 +225,7 @@ class SiteArtifactLinks(BaseModel):
     vrp_path: str | None = None
     meta_path: str | None = None
     manifest_path: str | None = None
+    atf_json_path: str | None = None
 
 
 class BKSPageEntry(BaseModel):
@@ -727,6 +731,7 @@ def _objective_sort_key(value: ObjectiveFunction) -> tuple[int, str]:
     order = {
         ObjectiveFunction.HIERARCHICAL_VEHICLE_COST: 0,
         ObjectiveFunction.MONO_COST: 1,
+        ObjectiveFunction.DURATION: 2,
     }
     return (order.get(value, 99), value.value)
 
@@ -959,9 +964,19 @@ def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: 
     relative_raw_path = (
         raw_vrp_path.relative_to(output_repo_dir).as_posix() if raw_vrp_path.exists() else None
     )
+    # TD instances reference their canonical ATF sidecar through the ``td`` block
+    # (``atf_path`` is relative to the instance file; storage may be gzipped).
+    atf_json_path: str | None = None
+    td_block = getattr(instance, "td", None)
+    atf_name = td_block.get("atf_path") if isinstance(td_block, dict) else getattr(td_block, "atf_path", None)
+    if atf_name:
+        candidate = instance_path.parent / atf_name
+        if candidate.is_file():
+            atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
     return SiteArtifactLinks(
         vrp_json_path=instance_path.relative_to(output_repo_dir).as_posix(),
         vrp_path=relative_raw_path,
+        atf_json_path=atf_json_path,
     )
 
 
@@ -1556,7 +1571,7 @@ def _build_instance_page_payload(
 
 
 def _sorted_problem_types(items: list[_ResolvedSiteInstance]) -> list[ProblemType]:
-    order = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1}
+    order = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1, ProblemType.TDVRPTW: 2, ProblemType.TDVRP: 3}
     return sorted({item.locator.problem_type for item in items}, key=lambda value: (order.get(value, 99), value.value))
 
 
@@ -1566,6 +1581,10 @@ def _sorted_benchmark_names(items: list[_ResolvedSiteInstance]) -> list[Benchmar
         BenchmarkName.DIMACS_2021: 1,
         BenchmarkName.ORTEC_2022: 2,
         BenchmarkName.MAMUT_2026: 3,
+        BenchmarkName.DABIA_2013: 4,
+        BenchmarkName.ARI_2018: 5,
+        BenchmarkName.VU_2020: 6,
+        BenchmarkName.RIFKI_2020: 7,
     }
     return sorted({item.locator.benchmark_name for item in items}, key=lambda value: (order.get(value, 99), value.value))
 
@@ -1866,12 +1885,16 @@ def _build_objective_related_routes(
     for item in items:
         grouped_items.setdefault((item.locator.problem_type, item.locator.benchmark_name), []).append(item)
 
-    problem_order = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1}
+    problem_order = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1, ProblemType.TDVRPTW: 2, ProblemType.TDVRP: 3}
     benchmark_order = {
         BenchmarkName.SINTEF_2008: 0,
         BenchmarkName.DIMACS_2021: 1,
         BenchmarkName.ORTEC_2022: 2,
         BenchmarkName.MAMUT_2026: 3,
+        BenchmarkName.DABIA_2013: 4,
+        BenchmarkName.ARI_2018: 5,
+        BenchmarkName.VU_2020: 6,
+        BenchmarkName.RIFKI_2020: 7,
     }
     entries: list[SubrouteEntry] = []
     for problem_type, benchmark_name in sorted(
@@ -1935,6 +1958,17 @@ def _build_objectives_page_payload(
                 "DIMACS-style references, the Ortec2022 (EURO Meets NeurIPS 2022) family, and all current CVRP Mamut2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.MONO_COST),
+        ),
+        ObjectiveExplainer(
+            objective_function=ObjectiveFunction.DURATION,
+            short_label="DUR",
+            title="Duration",
+            description="Time-dependent duration-minimization objective: minimize the sum of route durations, where the depot departure time of each route is a decision variable and travel times vary with departure time (FIFO arrival-time functions).",
+            interpretation_notes=[
+                "Costs are the authoritative output of the canonical checker (mamut_routing_lib.td.check_td_solution): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
+                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
+            ],
+            related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
         ),
     ]
     return ObjectivesPagePayload(
@@ -2476,10 +2510,19 @@ def _resolve_instances(
         return []
 
     resolved_items: list[_ResolvedSiteInstance | None] = [None] * len(discovered_instances)
+    failures: list[tuple[str, Exception]] = []
+
+    def record_failure(item, exc: Exception) -> None:
+        identifier = getattr(item, "instance_id", None) or getattr(item, "instance_name", None) or str(getattr(item, "instance_path", item))
+        failures.append((str(identifier), exc))
+
     with (reporter.task("resolve instances", len(discovered_instances)) if reporter else _NullProgressTask()) as task:
         if resolved_jobs == 1:
             for index, item in enumerate(discovered_instances):
-                resolved_items[index] = _resolve_instance(output_repo, item)
+                try:
+                    resolved_items[index] = _resolve_instance(output_repo, item)
+                except Exception as exc:
+                    record_failure(item, exc)
                 task.update(detail=getattr(item, "instance_name", None))
         else:
             with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
@@ -2489,8 +2532,19 @@ def _resolve_instances(
                 }
                 for future in as_completed(futures):
                     index, item = futures[future]
-                    resolved_items[index] = future.result()
+                    try:
+                        resolved_items[index] = future.result()
+                    except Exception as exc:
+                        record_failure(item, exc)
                     task.update(detail=getattr(item, "instance_name", None))
+    if failures:
+        if reporter is not None:
+            for identifier, exc in failures:
+                reporter.phase("instance resolution failed (skipped)", instance=identifier, error=f"{type(exc).__name__}: {exc}")
+            reporter.phase("instances skipped due to resolution errors", skipped=len(failures), resolved=len(discovered_instances) - len(failures))
+        else:
+            details = "; ".join(f"{identifier}: {type(exc).__name__}: {exc}" for identifier, exc in failures[:5])
+            warnings.warn(f"Skipped {len(failures)} instance(s) that failed to resolve: {details}", stacklevel=2)
     return [item for item in resolved_items if item is not None]
 
 
