@@ -176,3 +176,23 @@ The TDVRP layer of `Rifki2020` is the same 180-instance family with the time win
 Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party data not relicensed.
 
 As of the current MAMUT-routing tree, this satellite family contains 180 instances over 6 sizes, each with a `Duration` BKS.
+
+### `Lera2026` (TDVRPTW)
+
+`Lera2026` does for time-dependent routing what Gehring & Homberger (1999) did for Solomon's testbed: it scales the classic IGP time-dependent model of [Ichoua, Gendreau & Potvin 2003](https://doi.org/10.1016/S0377-2217(02)00147-9) from 100 to 200–1000 customers. Base data are the Gehring & Homberger VRPTW instances exactly as curated in the `Sintef2008` family (five sizes, 60 instances each); travel speeds are the IGP 2003 Table 1 matrices (3 arc categories, average speed ≈ 1) placed in the Dabia et al. (2013) five-period skeleton (rush at 20–30% and 70–80% of the horizon), with seeded symmetric arc categories. The family name honours Gonzalo Lera-Romero — purely honorific, distinct from the Lera-Romero BPC solver lineage. The Solomon-based IGP testbed at n ≤ 100 lives in `Dabia2013`.
+
+The family has two tiers: the canonical `S2` core (rush slowdown a = 2, all 300 bases — every G&H instance has exactly one canonical TD twin) and the `S1`/`S3` intensity ladder (a = 1.5 and a = 4 on the deterministic subset `_1`, `_5`, `_10` of each class, 90 bases per scenario, sharing the S2 category assignment — a controlled congestion ladder on identical geometry). 480 instances total.
+
+Two family-defining caveats. First, storage: this is the first `igp-profile` family — no committed ATF sidecars (an n=1000 sidecar would weigh ~60–90 MB gzipped); instead each instance ships its compact IGP specification plus an arc-category sidecar, and the canonical arrival-time functions materialize deterministically on load, pinned by the same storage-independent `atf_sha256` a sidecar would carry. Second, a minimal time-window repair: G&H deadlines assume unit speed, so raw TD ports leave customers unreachable by any route; deadlines are lifted to the earliest time-dependent arrival and the depot deadline to the worst singleton return (periods anchor to the original horizon, so repairs never change travel times), with magnitudes recorded per instance. Results are therefore not comparable with static VRPTW literature.
+
+Licensing note: MAMUT-authored curation artifacts are distributed under the [MIT License](https://mit-license.org/) (family-root LICENSE in the satellite repository); the underlying Gehring & Homberger instance definitions remain third-party and are not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 480 instances over 5 sizes (200 to 1000 customers) in three scenario subsets.
+
+### `Lera2026` (TDVRP)
+
+The TDVRP layer of `Lera2026` is the same 480-instance family with the time windows removed: same compact `igp-profile` travel-time specification (both sha256 values shared verbatim with the TDVRPTW layer), same demands, capacities, fleet sizes, service times and repaired horizon, same `Duration` checker contract. At 200–1000 customers with no time-window pruning, it is by far the largest-scale family of the TD collection. All BKS come from [KAYROS](https://github.com/0nyr/kayros) heuristic runs on [Grid5000](https://www.grid5000.fr/w/Grid5000:Home).
+
+Licensing note: as for the TDVRPTW layer — MAMUT-authored curation artifacts under the [MIT License](https://mit-license.org/), underlying third-party data not relicensed.
+
+As of the current MAMUT-routing tree, this satellite family contains 480 instances over 5 sizes in three scenario subsets.

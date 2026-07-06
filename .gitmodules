@@ -19,3 +19,9 @@
 [submodule "benchmarks/TDVRP/Rifki2020"]
 	path = benchmarks/TDVRP/Rifki2020
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Rifki2020.git
+[submodule "benchmarks/TDVRPTW/Lera2026"]
+	path = benchmarks/TDVRPTW/Lera2026
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Lera2026.git
+[submodule "benchmarks/TDVRP/Lera2026"]
+	path = benchmarks/TDVRP/Lera2026
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Lera2026.git
