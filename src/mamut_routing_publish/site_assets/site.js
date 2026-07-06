@@ -1425,6 +1425,7 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
     const routeCoordinates = cachedCoordinates || sequence.map((nodeIndex) => normalizeGeometryPoint(nodeCoordinates[nodeIndex])).filter(Boolean);
     return {
       routeIndex,
+      sequence,
       coordinates: routeCoordinates,
       source: cachedCoordinates ? "cached_road" : "straight_line",
       stopCount: route.length,
@@ -1495,16 +1496,35 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
       return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title><circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" fill="${isDepot ? '#b83a06' : '#111111'}" opacity="${isDepot ? 1 : 0.8}" /></g>`;
     })
     .join("");
+  let arcHitTargets = "";
+  if (options.interactiveArcs) {
+    arcHitTargets = previewGeometry.routeLines
+      .filter((routeLine) => routeLine.source === "straight_line")
+      .map((routeLine) => {
+        const projectedRoute = projectCoordinates(routeLine.coordinates, width, height, projectionBounds);
+        const segments = [];
+        for (let k = 0; k + 1 < routeLine.sequence.length; k += 1) {
+          const a = projectedRoute[k];
+          const b = projectedRoute[k + 1];
+          if (!a || !b) continue;
+          segments.push(
+            `<line class="arc-hit" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="transparent" stroke-width="14" stroke-linecap="round" data-arc-from="${routeLine.sequence[k]}" data-arc-to="${routeLine.sequence[k + 1]}" data-arc-route="${routeLine.routeIndex}"><title>Arc ${routeLine.sequence[k]} → ${routeLine.sequence[k + 1]} · click to plot its travel-time functions</title></line>`,
+          );
+        }
+        return segments.join("");
+      })
+      .join("");
+  }
   const geometryCaption = previewGeometry.hasCachedRoadRoutes
     ? `Cached-road preview from sidecar geometry (${String(options.metricVariant || "road").toLowerCase()})`
     : "Straight-line preview from canonical coordinates";
   return `
     <div class="viewer-toolbar">
       <div>${badgeHtml(previewGeometry.geometryNoteHtml, true)}</div>
-      <div class="meta-line">${escapeHtml(geometryCaption)}</div>
+      <div class="meta-line">${escapeHtml(geometryCaption)}${options.interactiveArcs ? " · click an arc to plot its ATF/TTF" : ""}</div>
     </div>
     <div class="viewer-frame">
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Routing preview">${routePaths}${nodes}</svg>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Routing preview">${routePaths}${nodes}${arcHitTargets}</svg>
     </div>`;
 }
 
@@ -1640,6 +1660,159 @@ function renderWorkbenchVisualizeSourceCard(instanceRoute) {
   );
 }
 
+const ATF_SIDECAR_CACHE = new Map();
+
+async function fetchInstanceAtfArcs(atfArtifactPath) {
+  if (ATF_SIDECAR_CACHE.has(atfArtifactPath)) return ATF_SIDECAR_CACHE.get(atfArtifactPath);
+  const promise = (async () => {
+    const response = await fetch(artifactHref(atfArtifactPath));
+    if (!response.ok) throw new Error(`Unable to fetch the ATF sidecar (${response.status})`);
+    let payload;
+    if (atfArtifactPath.endsWith(".gz")) {
+      if (typeof DecompressionStream === "undefined") {
+        throw new Error("This browser cannot decompress the gzipped ATF sidecar (DecompressionStream unavailable).");
+      }
+      payload = await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).json();
+    } else {
+      payload = await response.json();
+    }
+    const arcs = new Map();
+    for (const [i, j, xs, ys] of payload.arcs || []) arcs.set(`${i},${j}`, { xs, ys });
+    return { arcs, horizon: payload.horizon };
+  })();
+  ATF_SIDECAR_CACHE.set(atfArtifactPath, promise);
+  promise.catch(() => ATF_SIDECAR_CACHE.delete(atfArtifactPath));
+  return promise;
+}
+
+function renderArcFunctionChart(chartId, title, xs, ys, color) {
+  const width = 420;
+  const height = 260;
+  const pad = { left: 56, right: 14, top: 14, bottom: 34 };
+  const xMin = xs[0];
+  const xMax = xs[xs.length - 1];
+  const yMin = Math.min(...ys);
+  const yMax = Math.max(...ys);
+  const ySpan = yMax - yMin || 1;
+  const xSpan = xMax - xMin || 1;
+  const px = (x) => pad.left + ((x - xMin) / xSpan) * (width - pad.left - pad.right);
+  const py = (y) => height - pad.bottom - ((y - yMin) / ySpan) * (height - pad.top - pad.bottom);
+  const points = xs.map((x, k) => `${px(x).toFixed(1)},${py(ys[k]).toFixed(1)}`).join(" ");
+  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
+  const grid = yTicks
+    .map((t) => `<line x1="${pad.left}" y1="${py(t).toFixed(1)}" x2="${width - pad.right}" y2="${py(t).toFixed(1)}" stroke="#00000018" stroke-width="1" />`)
+    .join("");
+  const yLabels = yTicks
+    .map((t) => `<text x="${pad.left - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#6b7280">${formatScheduleTime(t)}</text>`)
+    .join("");
+  const xLabels = xTicks
+    .map((t, k) => {
+      const anchor = k === 0 ? "start" : k === xTicks.length - 1 ? "end" : "middle";
+      return `<text x="${px(t).toFixed(1)}" y="${height - pad.bottom + 16}" text-anchor="${anchor}" font-size="10.5" fill="#6b7280">${formatScheduleTime(t)}</text>`;
+    })
+    .join("");
+  return `
+    <div class="arc-chart" data-arc-chart="${chartId}">
+      <div class="meta-line" style="margin-bottom:0.2rem">${escapeHtml(title)}</div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}" style="width:100%;height:auto">
+        ${grid}
+        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#00000030" stroke-width="1" />
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#00000030" stroke-width="1" />
+        ${yLabels}${xLabels}
+        <text x="${(pad.left + width - pad.right) / 2}" y="${height - 4}" text-anchor="middle" font-size="10.5" fill="#6b7280">departure time t</text>
+        <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />
+        <line class="arc-crosshair" x1="0" y1="${pad.top}" x2="0" y2="${height - pad.bottom}" stroke="#00000060" stroke-width="1" style="display:none" />
+        <circle class="arc-hover-dot" r="3.5" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="display:none" />
+        <rect class="arc-hover-zone" x="${pad.left}" y="${pad.top}" width="${width - pad.left - pad.right}" height="${height - pad.top - pad.bottom}" fill="transparent" />
+      </svg>
+      <div class="meta-line arc-hover-readout" style="min-height:1.2em"></div>
+    </div>`;
+}
+
+function evaluateNdcpwlf(xs, ys, x) {
+  // Mirrors NDCPWLF.evaluate (bisect_left): an exact hit on a vertical step
+  // returns the smallest value, matching the canonical checker convention.
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[xs.length - 1]) return ys[xs.indexOf(xs[xs.length - 1])];
+  let low = 0;
+  let high = xs.length - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (xs[mid] < x) low = mid;
+    else high = mid;
+  }
+  if (xs[high] === x) {
+    while (high > 0 && xs[high - 1] === x) high -= 1;
+    return ys[high];
+  }
+  const ratio = (x - xs[low]) / (xs[high] - xs[low]);
+  return ys[low] + ratio * (ys[high] - ys[low]);
+}
+
+function attachArcChartHover(container, chartId, xs, ys, formatReadout) {
+  const chart = container.querySelector(`[data-arc-chart="${chartId}"]`);
+  if (!chart) return;
+  const svg = chart.querySelector("svg");
+  const zone = chart.querySelector(".arc-hover-zone");
+  const crosshair = chart.querySelector(".arc-crosshair");
+  const dot = chart.querySelector(".arc-hover-dot");
+  const readout = chart.querySelector(".arc-hover-readout");
+  const viewBox = svg.viewBox.baseVal;
+  const pad = { left: 56, right: 14, top: 14, bottom: 34 };
+  const xMin = xs[0];
+  const xMax = xs[xs.length - 1];
+  const yMin = Math.min(...ys);
+  const yMax = Math.max(...ys);
+  const ySpan = yMax - yMin || 1;
+  const xSpan = xMax - xMin || 1;
+  zone.addEventListener("mousemove", (event) => {
+    const rect = svg.getBoundingClientRect();
+    const sx = ((event.clientX - rect.left) / rect.width) * viewBox.width;
+    const dataX = xMin + ((sx - pad.left) / (viewBox.width - pad.left - pad.right)) * xSpan;
+    const clamped = Math.min(Math.max(dataX, xMin), xMax);
+    const value = evaluateNdcpwlf(xs, ys, clamped);
+    const px = pad.left + ((clamped - xMin) / xSpan) * (viewBox.width - pad.left - pad.right);
+    const py = viewBox.height - pad.bottom - ((value - yMin) / ySpan) * (viewBox.height - pad.top - pad.bottom);
+    crosshair.setAttribute("x1", px);
+    crosshair.setAttribute("x2", px);
+    crosshair.style.display = "";
+    dot.setAttribute("cx", px);
+    dot.setAttribute("cy", py);
+    dot.style.display = "";
+    readout.textContent = formatReadout(clamped, value);
+  });
+  zone.addEventListener("mouseleave", () => {
+    crosshair.style.display = "none";
+    dot.style.display = "none";
+    readout.textContent = "";
+  });
+}
+
+function renderArcFunctionsCard(arcState) {
+  if (!arcState) return "";
+  if (arcState.status === "loading") {
+    return `<section class="mini-card"><h3>Arc Functions</h3><div class="meta-line">Loading the ATF sidecar…</div></section>`;
+  }
+  if (arcState.status === "error") {
+    return `<section class="mini-card"><h3>Arc Functions</h3><div class="empty-state">${escapeHtml(arcState.message)}</div></section>`;
+  }
+  const { from, to, xs, ys } = arcState;
+  const ttf = ys.map((y, k) => y - xs[k]);
+  const minTtf = Math.min(...ttf);
+  const maxTtf = Math.max(...ttf);
+  const steps = xs.filter((x, k) => k > 0 && x === xs[k - 1]).length;
+  return `
+    <section class="mini-card">
+      <h3>Arc Functions · ${from} → ${to}</h3>
+      <div class="meta-line">Canonical arrival-time function α(t) of arc ${from} → ${to} and its derived travel-time function τ(t) = α(t) − t. ${xs.length} breakpoints${steps > 0 ? ` (including ${steps} vertical step${steps === 1 ? "" : "s"})` : ""}; travel time ranges from ${formatScheduleTime(minTtf)} to ${formatScheduleTime(maxTtf)}.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-top:0.6rem">
+        ${renderArcFunctionChart("atf", "Arrival time α(t)", xs, ys, PALETTE[0])}
+        ${renderArcFunctionChart("ttf", "Travel time τ(t) = α(t) − t", xs, ttf, PALETTE[1])}
+      </div>
+    </section>`;
+}
+
 function formatScheduleTime(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
   return value.toFixed(2);
@@ -1700,6 +1873,8 @@ async function renderInstancePage(payload, options = {}) {
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
   let selectedScheduleRoute = 0;
+  let arcState = null;
+  const supportsArcFunctions = Boolean(payload.artifact_links.atf_json_path);
 
   const renderSelectedState = () => {
     const asideCards = [
@@ -1771,11 +1946,13 @@ async function renderInstancePage(payload, options = {}) {
           metricVariant: payload.summary.metric_variant,
           viewerRenderMode: payload.summary.viewer_render_mode,
           roadCacheStatus: payload.summary.road_cache_status,
+          interactiveArcs: supportsArcFunctions,
         })}
         <section class="mini-card">
           <h3>Route Legend</h3>
           ${routeLegend}
         </section>
+        ${renderArcFunctionsCard(arcState)}
         ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute)}
       </div>`;
 
@@ -1792,6 +1969,31 @@ async function renderInstancePage(payload, options = {}) {
       selectedScheduleRoute = Number(event.target.value) || 0;
       renderSelectedState();
     });
+    if (supportsArcFunctions) {
+      state.stage.querySelectorAll(".arc-hit").forEach((segment) => {
+        segment.style.cursor = "pointer";
+        segment.addEventListener("click", async () => {
+          const from = Number(segment.dataset.arcFrom);
+          const to = Number(segment.dataset.arcTo);
+          arcState = { status: "loading", from, to };
+          renderSelectedState();
+          try {
+            const sidecar = await fetchInstanceAtfArcs(payload.artifact_links.atf_json_path);
+            const arc = sidecar.arcs.get(`${from},${to}`);
+            if (!arc) throw new Error(`Arc ${from} → ${to} is missing from the ATF sidecar.`);
+            arcState = { status: "ready", from, to, xs: arc.xs, ys: arc.ys };
+          } catch (error) {
+            arcState = { status: "error", from, to, message: String(error?.message || error) };
+          }
+          renderSelectedState();
+        });
+      });
+      if (arcState?.status === "ready") {
+        const ttf = arcState.ys.map((y, k) => y - arcState.xs[k]);
+        attachArcChartHover(state.stage, "atf", arcState.xs, arcState.ys, (t, v) => `t = ${formatScheduleTime(t)} → arrival α(t) = ${formatScheduleTime(v)}`);
+        attachArcChartHover(state.stage, "ttf", arcState.xs, ttf, (t, v) => `t = ${formatScheduleTime(t)} → travel time τ(t) = ${formatScheduleTime(v)}`);
+      }
+    }
     setStatus(selectedEntry ? `Showing ${selectedEntry.objective_function}` : `Loaded ${payload.title}`);
   };
 
