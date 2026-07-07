@@ -613,6 +613,241 @@ def release_build_cmd(
     _emit_summary(summary)
 
 
+# ---------------------------------------------------------------------------
+# workbench — generation stages (OSM → CVRP base → TD bridge → TDVRP/TDVRPTW)
+# ---------------------------------------------------------------------------
+
+METHOD_TAGS = {"poi_categories": "poi", "parametric_attach": "par", "hybrid": "hyb"}
+
+
+def _find_base_meta(repo_dir: Path, city_slug: str, base_name: str) -> Path:
+    matches = sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob(f"*/{base_name}_meta.json"))
+    if not matches:
+        raise typer.BadParameter(
+            f"no stage-1 meta found for base '{base_name}' under instances_v2/osm/{city_slug}/ "
+            "(run 'workbench generate-base' first)"
+        )
+    return matches[0]
+
+
+def _build_one_td_cell(
+    repo_dir: Path,
+    city_slug: str,
+    base_name: str,
+    model: str,
+    intensity: str,
+    out_root: Path,
+    *,
+    sample_step: float,
+    tolerance: float,
+    generated_at: Optional[str],
+    force: bool,
+):
+    from mamut_routing_publish.td_generation import (
+        build_td_instance_pair,
+        load_bridge_graph,
+        load_bridge_nodes,
+        load_bridge_speeds,
+    )
+
+    bridge_dir = repo_dir / "instances_v2" / "td-bridge" / city_slug
+    nodes_path = bridge_dir / f"nodes-{base_name}.json"
+    speeds_path = bridge_dir / f"speeds-{model}-{intensity}.json"
+    for required in (bridge_dir / "graph.json", speeds_path, nodes_path):
+        if not required.exists():
+            raise typer.BadParameter(
+                f"missing bridge file {required} (run 'workbench traffic-sim' with the right options first)"
+            )
+    meta_path = _find_base_meta(repo_dir, city_slug, base_name)
+    meta = json.loads(meta_path.read_text())
+    manifest = json.loads((meta_path.parent / f"{base_name}_manifest.json").read_text())
+    method_tag = METHOD_TAGS.get(str(meta.get("method", "")), "gen")
+
+    graph = load_bridge_graph(bridge_dir / "graph.json")
+    speeds = load_bridge_speeds(speeds_path, graph)
+    nodes = load_bridge_nodes(nodes_path)
+    return build_td_instance_pair(
+        graph=graph,
+        speeds=speeds,
+        nodes=nodes,
+        meta=meta,
+        vehicle_capacity=int(manifest["capacity"]),
+        place=city_slug,
+        method=method_tag,
+        out_root=out_root,
+        sample_step=sample_step,
+        simplify_tolerance=tolerance,
+        generated_at=generated_at,
+        force=force,
+    )
+
+
+workbench_app = typer.Typer(
+    help=(
+        "Workbench generation stages: fetch a city OSM extract, generate stage-1 CVRP "
+        "bases, run the traffic stage (TD bridge), and build TDVRP/TDVRPTW instances "
+        "of the road-graph td model."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(workbench_app, name="workbench")
+
+
+@workbench_app.command("fetch-city")
+def workbench_fetch_city_cmd(
+    city: Annotated[str, typer.Argument(help="City name for Nominatim geocoding.")],
+    country: Annotated[str, typer.Option(help="Optional country qualifier.")] = "",
+    max_radius_km: Annotated[float, typer.Option(help="Clamp the bbox to this radius around its center (0 = no clamp; use for megacities like Tokyo).")] = 0.0,
+    padding_km: Annotated[float, typer.Option(help="Expand the bbox by this margin.")] = 0.0,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Download a city OSM extract into osmdata/ via Overpass."""
+    from mamut_routing_publish.td_generation import julia_driver
+
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    result = julia_driver.fetch_city(
+        repo_dir, city=city, country=country, max_radius_km=max_radius_km, padding_km=padding_km
+    )
+    typer.echo(json.dumps(result, indent=2))
+
+
+@workbench_app.command("generate-base")
+def workbench_generate_base_cmd(
+    city: Annotated[str, typer.Argument(help="City name (osmdata/<City>.osm must exist).")],
+    n: Annotated[int, typer.Option(help="Number of customers.")] = 100,
+    method: Annotated[str, typer.Option(help="Customer sampling: poi_categories | parametric_attach | hybrid.")] = "hybrid",
+    seed: Annotated[int, typer.Option(help="Generation seed.")] = 42,
+    osm_path: Annotated[Optional[str], typer.Option(help="Explicit OSM file path (default osmdata/<City>.osm).")] = None,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Generate one stage-1 CVRP base instance (three metric variants + meta/manifest)."""
+    from mamut_routing_publish.td_generation import julia_driver
+
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    result = julia_driver.generate_base(
+        repo_dir, city=city, n_customers=n, method=method, seed=seed, osm_path=osm_path
+    )
+    typer.echo(json.dumps(result, indent=2))
+
+
+@workbench_app.command("traffic-sim")
+def workbench_traffic_sim_cmd(
+    city: Annotated[str, typer.Argument(help="City name (osmdata/<City>.osm must exist).")],
+    model: Annotated[Optional[list[str]], typer.Option(help="Traffic models (default: bpr and wave).")] = None,
+    intensity: Annotated[Optional[list[str]], typer.Option(help="Intensities (default: light, moderate, heavy).")] = None,
+    seed: Annotated[int, typer.Option(help="Traffic simulation seed.")] = 42,
+    nodes_for: Annotated[Optional[list[str]], typer.Option(help="Stage-1 base names to export node maps for (repeatable).")] = None,
+    all_bases: Annotated[bool, typer.Option("--all-bases", help="Export node maps for every stage-1 base of this city.")] = False,
+    force: Annotated[bool, typer.Option(help="Recompute speed files even if present.")] = False,
+    osm_path: Annotated[Optional[str], typer.Option(help="Explicit OSM file path.")] = None,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Run the traffic stage: per-edge hourly speed profiles + TD bridge export."""
+    from mamut_routing_publish.td_generation import julia_driver
+
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    city_slug = city.strip().lower().replace(" ", "_").replace("-", "_")
+    resolved_osm = osm_path or f"osmdata/{city}.osm"
+    meta_paths: list[str] = []
+    if all_bases:
+        meta_paths = [
+            str(path.relative_to(repo_dir))
+            for path in sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob("*/*_meta.json"))
+        ]
+    elif nodes_for:
+        meta_paths = [str(_find_base_meta(repo_dir, city_slug, base).relative_to(repo_dir)) for base in nodes_for]
+    result = julia_driver.export_bridge(
+        repo_dir,
+        osm_path=resolved_osm,
+        city_slug=city_slug,
+        models=model,
+        intensities=intensity,
+        seed=seed,
+        meta_paths=meta_paths,
+        force=force,
+    )
+    typer.echo(json.dumps({"bridge_dir": result, "node_maps": len(meta_paths)}, indent=2))
+
+
+@workbench_app.command("build-td")
+def workbench_build_td_cmd(
+    city: Annotated[str, typer.Argument(help="City slug (bridge under instances_v2/td-bridge/<city>).")],
+    base: Annotated[Optional[list[str]], typer.Option(help="Stage-1 base names (repeatable; default: every base with a node map).")] = None,
+    model: Annotated[Optional[list[str]], typer.Option(help="Traffic models (default: every model with a speeds file).")] = None,
+    intensity: Annotated[Optional[list[str]], typer.Option(help="Intensities (default: every intensity with a speeds file).")] = None,
+    out_root: Annotated[Path, typer.Option(help="Output benchmarks root (satellite mount or scratch).")] = Path("benchmarks"),
+    sample_step: Annotated[float, typer.Option(help="Departure-grid spacing (s) of the road-graph materialization.")] = 60.0,
+    tolerance: Annotated[float, typer.Option(help="Simplify tolerance (s) of the road-graph materialization.")] = 1.0,
+    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata (default: today).")] = None,
+    force: Annotated[bool, typer.Option(help="Rebuild cells whose instance files already exist.")] = False,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Build TDVRP + TDVRPTW twin instances for (base × model × intensity) cells."""
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    bridge_dir = repo_dir / "instances_v2" / "td-bridge" / city
+    if not bridge_dir.exists():
+        raise typer.BadParameter(f"no TD bridge at {bridge_dir}")
+    bases = base or sorted(p.name[len("nodes-"):-len(".json")] for p in bridge_dir.glob("nodes-*.json"))
+    combos = sorted(
+        tuple(p.name[len("speeds-"):-len(".json")].split("-", 1))
+        for p in bridge_dir.glob("speeds-*.json")
+    )
+    if model:
+        combos = [c for c in combos if c[0] in set(model)]
+    if intensity:
+        combos = [c for c in combos if c[1] in set(intensity)]
+    if not bases or not combos:
+        raise typer.BadParameter("nothing to build: no node maps or no matching speed files in the bridge")
+
+    built = skipped = 0
+    started = time.perf_counter()
+    for base_name in bases:
+        for cell_model, cell_intensity in combos:
+            result = _build_one_td_cell(
+                repo_dir, city, base_name, cell_model, cell_intensity,
+                out_root if out_root.is_absolute() else repo_dir / out_root,
+                sample_step=sample_step, tolerance=tolerance,
+                generated_at=generated_at, force=force,
+            )
+            if result is None:
+                skipped += 1
+                continue
+            built += 1
+            typer.echo(
+                f"built {result.instance_name}: road {result.num_road_vertices}v/"
+                f"{result.num_road_edges}e, sidecar {result.sidecar_bytes_gz / 1e3:.0f} KB gz, "
+                f"{result.build_seconds:.1f}s"
+            )
+    typer.echo(f"done: {built} built, {skipped} kept (already present) in {_format_duration(time.perf_counter() - started)}")
+
+
+@workbench_app.command("td-validate")
+def workbench_td_validate_cmd(
+    root: Annotated[Path, typer.Argument(help="Directory tree holding TD instances (*.vrp.json).")],
+    verify_sha256: Annotated[bool, typer.Option(help="Verify sidecar and materialized-ATF digests.")] = True,
+) -> None:
+    """Full-load validation sweep over every TD instance under a directory."""
+    from mamut_routing_lib.td import load_td_instance
+
+    paths = sorted(root.rglob("*.vrp.json"))
+    if not paths:
+        raise typer.BadParameter(f"no *.vrp.json under {root}")
+    failures = 0
+    started = time.perf_counter()
+    for path in paths:
+        try:
+            load_td_instance(path, verify_sha256=verify_sha256)
+        except Exception as error:  # noqa: BLE001 - report and continue the sweep
+            failures += 1
+            typer.echo(f"FAIL {path}: {error}", err=True)
+    typer.echo(
+        f"validated {len(paths) - failures}/{len(paths)} instances in "
+        f"{_format_duration(time.perf_counter() - started)}"
+    )
+    if failures:
+        raise typer.Exit(code=1)
+
+
 def _entrypoint() -> None:  # pragma: no cover - thin wrapper
     app()
 

@@ -1413,7 +1413,21 @@ function fetch_and_store_city_osm(payload; operation_id::String="")
     mkpath(osm_dir)
     outpath = joinpath(osm_dir, "$(safe_city).osm")
 
+    max_radius_km = Float64(getv(payload, :maxRadiusKm, 0.0))
+
     minlat, minlon, maxlat, maxlon = fetch_city_bbox(city; country=country)
+    if max_radius_km > 0
+        # Clamp oversized administrative bboxes (e.g. Tokyo spans islands) to
+        # a square of max_radius_km around the bbox center.
+        center_lat = (minlat + maxlat) / 2
+        center_lon = (minlon + maxlon) / 2
+        clamp_dlat = max_radius_km / 111.0
+        clamp_dlon = max_radius_km / max(1e-6, 111.0 * cosd(center_lat))
+        minlat = max(minlat, center_lat - clamp_dlat)
+        maxlat = min(maxlat, center_lat + clamp_dlat)
+        minlon = max(minlon, center_lon - clamp_dlon)
+        maxlon = min(maxlon, center_lon + clamp_dlon)
+    end
     if padding_km > 0
         dlat = padding_km / 111.0
         mean_lat = (minlat + maxlat) / 2
