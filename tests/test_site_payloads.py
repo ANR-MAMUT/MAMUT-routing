@@ -12,7 +12,13 @@ from mamut_routing_lib.enums import ObjectiveFunction
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
 from mamut_routing_publish.cli import app
-from mamut_routing_publish.site_payloads import derive_historical_taxonomy, generate_site_payloads
+from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
+from mamut_routing_publish.site_payloads import (
+    _TD_SCHEDULE_DOMAIN_TOL,
+    _evaluate_on_domain,
+    derive_historical_taxonomy,
+    generate_site_payloads,
+)
 from mamut_routing_publish.site_webapp import generate_site_webapp
 
 
@@ -1686,3 +1692,27 @@ def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Pat
     serial_payload = json.loads((serial_repo_dir / "dist" / "site-payloads" / "benchmarks" / "index.json").read_text())
     parallel_payload = json.loads((parallel_repo_dir / "dist" / "site-payloads" / "benchmarks" / "index.json").read_text())
     assert serial_payload == parallel_payload
+
+
+def test_evaluate_on_domain_absorbs_horizon_ulp_overshoot() -> None:
+    # An arc ATF over the departure axis [0, horizon]; horizon = 1501 as on the
+    # real horizon-tight instances that motivated the clamp.
+    horizon = 1501.0
+    fn = NDCPWLF([0.0, horizon], [10.0, 1600.0])
+
+    # Interior points are untouched -- identical to a plain evaluate.
+    assert _evaluate_on_domain(fn, 750.0) == fn.evaluate(750.0)
+
+    # A departure time a few ULP past the horizon (the observed failure mode)
+    # is clamped onto the boundary and returns the boundary image, not a raise.
+    overshoot = horizon + 5e-13
+    assert overshoot > horizon  # genuinely out of domain by rounding drift
+    assert _evaluate_on_domain(fn, overshoot) == fn.evaluate(horizon)
+
+    # Symmetric dust clamp at the lower edge.
+    assert _evaluate_on_domain(fn, -5e-13) == fn.evaluate(0.0)
+
+    # A genuine out-of-domain time (far beyond the dust tolerance) still raises
+    # loudly -- the clamp must not mask a real infeasibility.
+    with pytest.raises(PWLFError):
+        _evaluate_on_domain(fn, horizon + 10 * _TD_SCHEDULE_DOMAIN_TOL)
