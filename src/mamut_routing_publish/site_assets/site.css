@@ -1332,6 +1332,36 @@ a.vrp-link:focus-visible {
   cursor: help;
 }
 
+/* Check-badge icon marking a proven-optimal BKS (badge + objective chips). */
+.optimal-badge-icon {
+  width: 1.05em;
+  height: 1.05em;
+  display: inline-block;
+  vertical-align: -0.15em;
+}
+
+[data-theme="dark"] .optimal-badge-icon {
+  filter: invert(1);
+}
+
+/* Proven-optimal BKS chip in instance lists: light green, icon-marked. */
+a.bks-link-chip.optimal {
+  background: color-mix(in srgb, #2e9e5b 16%, transparent);
+  border-color: color-mix(in srgb, #2e9e5b 45%, var(--line));
+}
+
+a.bks-link-chip.optimal:hover,
+a.bks-link-chip.optimal:focus-visible {
+  background: #2e9e5b;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+a.bks-link-chip.optimal:hover .optimal-badge-icon,
+a.bks-link-chip.optimal:focus-visible .optimal-badge-icon {
+  filter: invert(1);
+}
+
 .badge-cost,
 .stat-cost,
 .change-cost-value {
