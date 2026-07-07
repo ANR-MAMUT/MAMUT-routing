@@ -380,6 +380,20 @@ function routesStatValue(entry) {
   return String(entry.num_routes);
 }
 
+// Extra stat-grid rows for a BKS entry carrying a structured optimality proof
+// (entry.optimality mirrors the mamut-routing-lib OptimalityMetadata object).
+// The badge tooltip carries the certificate wording — the honest statement of
+// what the proof does and does not cover.
+function optimalityStatRows(entry) {
+  const proof = entry?.optimality;
+  if (!proof?.proven) return [];
+  const title = [proof.certificate, proof.campaign].filter(Boolean).join(" — ");
+  const detail = [proof.prover, proof.date].filter(Boolean).join(", ");
+  const badge = `<span class="badge optimal" title="${escapeHtml(title)}">proven optimal</span>`;
+  const meta = detail ? ` <span class="meta-line">${escapeHtml(detail)}</span>` : "";
+  return [["Optimality", { html: `${badge}${meta}` }]];
+}
+
 function bksLinkChip(formatted, artifactPath, objective) {
   if (!artifactPath) {
     return badgeWithTitleHtml(formatted.labelHtml, formatted.title);
@@ -1964,7 +1978,7 @@ async function renderInstancePage(payload, options = {}) {
           ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
-      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -2547,6 +2561,7 @@ function renderWorkbenchSelectedObjectiveCard(selectedEntry) {
       ["Objective", selectedEntry.objective_function],
       ["Routes", routesStatValue(selectedEntry)],
       ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }],
+      ...optimalityStatRows(selectedEntry),
       ["Method", selectedEntry.method || "n/a"],
       ["Authors", selectedEntry.authors || "n/a"],
     ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div>`,

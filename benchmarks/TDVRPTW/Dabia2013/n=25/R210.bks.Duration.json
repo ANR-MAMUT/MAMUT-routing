@@ -13,7 +13,20 @@
         "date": "2026-07-02",
         "route_durations": [2294.90126945406, 2242.7987880608, 1963.7985124019756],
         "route_departure_times": [2579.9999999999995, 6513.600772798454, 2860.0004999999996],
-        "published_duration_sum": 6501.498569916836
+        "published_duration_sum": 6501.498569916836,
+        "optimality": {
+            "proven": true,
+            "prover": "kayros 0.3.0 lera BPC (HiGHS LP backend)",
+            "certificate": "optimal under checker-exact route costs and standard LP/pricing tolerances, completeness modulo Lera epsilon dominance",
+            "date": "2026-07-07",
+            "arithmetic": "checker-exact-routes",
+            "proven_optimum": 6501.498569916836,
+            "dual_bound": 6501.498569916835,
+            "wall_time_s": 18.28,
+            "time_limit_s": 600.0,
+            "checker": "mamut-routing-lib 0.3.0 td Duration checker",
+            "campaign": "2026-07-07 certification sweep: every Dabia2013/Ari2018/Rifki2020 instance solved by kayros 0.3.0 lera BPC (HiGHS), time limit 600 s, warm-started from the stored best-known solution"
+        }
     },
     "objective_function": "Duration"
 }
