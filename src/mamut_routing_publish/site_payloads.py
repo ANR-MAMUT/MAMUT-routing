@@ -1470,6 +1470,7 @@ PROJECT_PAGE_SOURCES = [
     _ProjectPageSource(slug="legal-mentions", source="legal_mentions.md"),
     _ProjectPageSource(slug="authors", source="AUTHORS.md"),
     _ProjectPageSource(slug="citing", source="citing.md"),
+    _ProjectPageSource(slug="glossary", source="glossary.md"),
     _ProjectPageSource(slug="faq", source="faq.md"),
     _ProjectPageSource(slug="related-projects", source="related_projects.md"),
     _ProjectPageSource(slug="funding", source="funding.md"),

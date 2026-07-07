@@ -417,12 +417,20 @@ function renderCard(title, body) {
 }
 
 function renderMarkdownInline(value) {
-  return escapeHtml(value)
+  // Protect inline-code spans first so their contents (e.g. `t*`, snake_case)
+  // are never touched by the emphasis passes below.
+  const codeSpans = [];
+  let text = escapeHtml(value).replace(/`([^`]+)`/g, (_match, code) => {
+    codeSpans.push(code);
+    return `@@CODE${codeSpans.length - 1}@@`;
+  });
+  text = text
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, label, href) => {
       return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
     })
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return text.replace(/@@CODE(\d+)@@/g, (_match, index) => `<code>${codeSpans[Number(index)]}</code>`);
 }
 
 function renderMarkdownBlocks(markdown) {
