@@ -196,3 +196,21 @@ The TDVRP layer of `Lera2026` is the same 480-instance family with the time wind
 Licensing note: as for the TDVRPTW layer — MAMUT-routing-authored artifacts under the [MIT License](https://mit-license.org/), underlying third-party material not relicensed.
 
 The family currently contains 480 instances over 5 sizes in three scenario subsets.
+
+### `Mamut2026` (TDVRPTW)
+
+The time-dependent layer of the workbench-generated `Mamut2026` family: TDVRPTW instances whose congestion is derived from real city road networks rather than from the classic category-times-profile constructions of the literature (for that lineage see `Dabia2013` and `Lera2026`). Depot and customers are sampled on the OpenStreetMap road graph of a real city — Lyon, Paris, San-Francisco, Hong-Kong and Tokyo (central extracts) — by point-of-interest or hybrid sampling, and every edge of the network carries an hourly speed profile over a 24-hour day. Two synthetic traffic models produce those profiles, and both ship as instances (the model tag is part of every instance name): `bpr` simulates a commuter population whose morning, lunch and evening trips load the network, converting hourly flows to speeds through the Bureau of Public Roads volume-delay function with road-class capacities; `wave` imposes a bimodal rush-hour speed dip scaled by road class, distance to the city center and a seeded per-edge jitter. Each model comes in three intensities (light, moderate, heavy), so rush-hour congestion emerges from the network structure: arterial corridors slow down at peak — under the heavy commuter scenario the median arc takes about three times longer at 08:00 than at 03:00 — while side streets mostly keep free flow, and the best path between two customers can change with the departure time.
+
+Per-arc travel times are the exact result of driving the fastest free-flow path through the time-varying edge speeds. They are stored as a compact road-graph specification — the trimmed subgraph of the city network that the instance actually uses, with its speed profiles — rather than as explicit arrival-time-function files: the arrival-time functions are rebuilt deterministically whenever an instance is loaded (a pinned shortest-path rule fixes one canonical path per arc, exact per-edge arrival functions are sampled exactly along it, and the samples are decimated with a recorded tolerance), and a recorded SHA-256 fingerprint guarantees that every rebuild reproduces the canonical functions bit for bit. Time windows are synthesized by a time-dependent variant of the workbench's route-centered method and repaired to time-dependent feasibility, so every customer is individually serveable within the day. Sizes range from 10 to 1000 customers; the small sizes are exact-solver-friendly, the large ones stress heuristics on genuinely road-network-shaped time dependence.
+
+Licensing note: the road networks derive from OpenStreetMap, and the benchmark data of this family is distributed under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) with attribution to [OpenStreetMap and its contributors](https://www.openstreetmap.org/copyright).
+
+The family targets 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models and 3 intensities.
+
+### `Mamut2026` (TDVRP)
+
+The TDVRP layer of the time-dependent `Mamut2026` family is the same instance set with the time windows removed: same road-graph travel-time specification (identical, bit for bit, to the TDVRPTW layer), same demands, capacities and service times, same `Duration` evaluation contract. Without time-window pruning, the large city instances expose the raw combinatorics of routing under road-network congestion.
+
+Licensing note: as for the TDVRPTW layer — OpenStreetMap-derived benchmark data under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) with attribution to OpenStreetMap and its contributors.
+
+The family targets 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models and 3 intensities.
