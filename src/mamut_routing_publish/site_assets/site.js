@@ -38,6 +38,7 @@ const WGS84_E2 = WGS84_F * (2 - WGS84_F);
 const MAMUT_PROJECT_LOGO_PATH = "/webapp/logos/logo_anr_mamut.png";
 const GITHUB_BENCHMARKS_ROOT = "https://github.com/ANR-MAMUT/MAMUT-routing/tree/main/benchmarks";
 const GITHUB_ICON_PATH = "/webapp/icons/GitHub_Invertocat_Black.svg";
+const OPTIMAL_BADGE_ICON_PATH = "/webapp/icons/check-badge-svgrepo-com.svg";
 const FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"]);
 const PROJECT_PARTICIPANT_LOGOS = [
   { label: "ANR", src: "/webapp/logos/ANR-logo-2021-noir.png", wide: true, href: "https://anr.fr/en/" },
@@ -389,18 +390,24 @@ function optimalityStatRows(entry) {
   if (!proof?.proven) return [];
   const title = [proof.certificate, proof.campaign].filter(Boolean).join(" — ");
   const detail = [proof.prover, proof.date].filter(Boolean).join(", ");
-  const badge = `<span class="badge optimal" title="${escapeHtml(title)}">proven optimal</span>`;
+  const badge = `<span class="badge optimal" title="${escapeHtml(title)}">${optimalBadgeIconHtml()}proven optimal</span>`;
   const meta = detail ? ` <span class="meta-line">${escapeHtml(detail)}</span>` : "";
   return [["Optimality", { html: `${badge}${meta}` }]];
 }
 
-function bksLinkChip(formatted, artifactPath, objective) {
+// Check-badge icon marking a BKS that carries a structured optimality proof.
+function optimalBadgeIconHtml() {
+  return `<img class="optimal-badge-icon" src="${siteAssetHref(OPTIMAL_BADGE_ICON_PATH)}" alt="" aria-hidden="true" />`;
+}
+
+function bksLinkChip(formatted, artifactPath, objective, optimalityProven = false) {
+  const iconHtml = optimalityProven ? optimalBadgeIconHtml() : "";
   if (!artifactPath) {
-    return badgeWithTitleHtml(formatted.labelHtml, formatted.title);
+    return badgeWithTitleHtml(`${iconHtml}${formatted.labelHtml}`, formatted.title);
   }
   const href = artifactHref(artifactPath);
-  const title = `Open BKS JSON · ${objective}`;
-  return `<a class="bks-link-chip" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${formatted.labelHtml}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span></a>`;
+  const title = `${optimalityProven ? "Proven optimal — open" : "Open"} BKS JSON · ${objective}`;
+  return `<a class="bks-link-chip${optimalityProven ? " optimal" : ""}" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${iconHtml}${formatted.labelHtml}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span></a>`;
 }
 
 function formatObjectiveBadge(entry) {
@@ -842,7 +849,7 @@ function renderInstanceRows(items) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function);
+          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function, entry.optimality_proven);
         })
         .join("");
       const objectiveCell = objectiveBadges
@@ -895,7 +902,7 @@ function renderInstanceGroups(items) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function);
+          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function, entry.optimality_proven);
         })
         .join("");
       const objectiveCell = objectiveBadges

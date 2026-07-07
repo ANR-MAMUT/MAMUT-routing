@@ -112,6 +112,9 @@ class ObjectiveAvailability(BaseModel):
     cost: int | float | None = None
     num_routes: int | None = None
     artifact_path: str
+    # True when the BKS carries a structured optimality proof, so instance
+    # lists can badge proven-optimal entries at a glance.
+    optimality_proven: bool = False
 
 
 class BreadcrumbItem(BaseModel):
@@ -1328,6 +1331,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
                 cost=entry.cost,
                 num_routes=num_routes,
                 artifact_path=entry.artifact_path,
+                optimality_proven=bool(entry.optimality and entry.optimality.get("proven")),
             )
         )
     return availability
