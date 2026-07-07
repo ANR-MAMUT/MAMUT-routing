@@ -1110,6 +1110,19 @@ function fetch_city_bbox(city::String; country::String="")
     )
 end
 
+function fetch_city_center(city::String; country::String="")
+    # Geocode point of the place itself — NOT the bbox center: administrative
+    # bboxes can include remote exclaves (Tokyo Metropolis spans Pacific
+    # islands, so its bbox center lies in open ocean).
+    q = isempty(strip(country)) ? city : "$(city), $(country)"
+    url = "https://nominatim.openstreetmap.org/search?q=$(HTTP.escapeuri(q))&format=json&limit=1"
+    resp = HTTP.get(url, ["User-Agent" => "OSM-CVRP-gen/1.0"])
+    resp.status == 200 || error("Geocode failed: HTTP $(resp.status)")
+    data = JSON3.read(String(resp.body))
+    isempty(data) && error("No result found for '$q'")
+    return parse(Float64, String(data[1]["lat"])), parse(Float64, String(data[1]["lon"]))
+end
+
 const OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -1417,16 +1430,16 @@ function fetch_and_store_city_osm(payload; operation_id::String="")
 
     minlat, minlon, maxlat, maxlon = fetch_city_bbox(city; country=country)
     if max_radius_km > 0
-        # Clamp oversized administrative bboxes (e.g. Tokyo spans islands) to
-        # a square of max_radius_km around the bbox center.
-        center_lat = (minlat + maxlat) / 2
-        center_lon = (minlon + maxlon) / 2
+        # Clamp oversized administrative bboxes to a square of max_radius_km
+        # around the geocode point of the place (not the bbox center: Tokyo's
+        # administrative bbox spans Pacific islands, its center is open sea).
+        center_lat, center_lon = fetch_city_center(city; country=country)
         clamp_dlat = max_radius_km / 111.0
         clamp_dlon = max_radius_km / max(1e-6, 111.0 * cosd(center_lat))
-        minlat = max(minlat, center_lat - clamp_dlat)
-        maxlat = min(maxlat, center_lat + clamp_dlat)
-        minlon = max(minlon, center_lon - clamp_dlon)
-        maxlon = min(maxlon, center_lon + clamp_dlon)
+        minlat = center_lat - clamp_dlat
+        maxlat = center_lat + clamp_dlat
+        minlon = center_lon - clamp_dlon
+        maxlon = center_lon + clamp_dlon
     end
     if padding_km > 0
         dlat = padding_km / 111.0
