@@ -202,6 +202,37 @@ _OUTPUT_REPO_DIR_HELP = (
 )
 
 
+@site_app.command("materialize-atf")
+def site_materialize_atf_cmd(
+    output_repo_dir: Annotated[
+        Optional[Path],
+        typer.Option("--output-repo-dir", help=_OUTPUT_REPO_DIR_HELP),
+    ] = None,
+    max_n: Annotated[
+        int,
+        typer.Option(
+            "--max-n",
+            help="Materialize ATF sidecars only for igp-profile instances with at most this many customers (an n=1000 sidecar weighs ~82 MB gzipped).",
+        ),
+    ] = 400,
+    jobs: Annotated[
+        Optional[int],
+        typer.Option("--jobs", help="Parallel materialization workers (default: cores - 2)."),
+    ] = None,
+) -> None:
+    """Materialize igp-profile ATF sidecars into dist/atf-cache (git-ignored).
+
+    Run before `site build` so the arc-click viewer and BKS schedule tables
+    have sidecars for igp-profile families (Lera2026). Incremental: existing
+    cache files are reused; TDVRPTW/TDVRP twins share one file.
+    """
+    from mamut_routing_publish.atf_cache import materialize_atf_cache
+
+    repo_dir = _resolve_repo_dir(output_repo_dir)
+    summary = materialize_atf_cache(repo_dir, max_customers=max_n, jobs=jobs)
+    typer.echo(json.dumps(summary.as_dict(), indent=1))
+
+
 @site_app.command("payloads")
 def site_payloads_cmd(
     output_repo_dir: Annotated[
