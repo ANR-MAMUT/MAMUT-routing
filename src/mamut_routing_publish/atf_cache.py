@@ -1,7 +1,8 @@
-"""Build-time ATF sidecar cache for igp-profile families (Lera2026).
+"""Build-time ATF sidecar cache for materialized-td-model families.
 
-igp-profile instances ship no committed ATF sidecar (an n=1000 Lera2026
-sidecar weighs ~82 MB gzipped; the family would be tens of GB). The site
+Covers the compact td models that ship no committed ATF sidecar:
+``igp-profile`` (Lera2026) and ``road-graph`` (Mamut2026 TD). An n=1000
+sidecar weighs tens of MB gzipped; the families would be tens of GB. The site
 still wants real sidecars — the arc-click viewer fetches one per instance,
 and BKS schedule tables need the arrival-time functions — so the publisher
 materializes them at build time into ``dist/atf-cache/`` (git-ignored, kept
@@ -29,19 +30,22 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mamut_routing_lib.td import TD_IGP_MODEL, load_td_instance, save_instance_atfs
+from mamut_routing_lib.td import TD_IGP_MODEL, TD_ROAD_MODEL, load_td_instance, save_instance_atfs
 
 ATF_CACHE_RELATIVE = Path("dist") / "atf-cache"
 DEFAULT_MAX_CUSTOMERS = 400
+
+#: td models whose ATFs are materialized on load (no committed sidecar).
+MATERIALIZED_TD_MODELS = frozenset({TD_IGP_MODEL, TD_ROAD_MODEL})
 
 
 def atf_cache_path(output_repo_dir: Path, benchmark_name: str, instance_name: str) -> Path:
     return output_repo_dir / ATF_CACHE_RELATIVE / benchmark_name / f"{instance_name}.atf.json.gz"
 
 
-def _is_igp_instance_payload(td_block) -> bool:
+def _is_materialized_instance_payload(td_block) -> bool:
     model = td_block.get("model") if isinstance(td_block, dict) else getattr(td_block, "model", None)
-    return model == TD_IGP_MODEL
+    return model in MATERIALIZED_TD_MODELS
 
 
 def _materialize_one(instance_path_str: str, cache_path_str: str) -> str:
@@ -71,7 +75,7 @@ def materialize_atf_cache(
     max_customers: int = DEFAULT_MAX_CUSTOMERS,
     jobs: int | None = None,
 ) -> ATFCacheSummary:
-    """Materialize sidecars for every igp-profile instance with n <= max_customers.
+    """Materialize sidecars for every materialized-model instance with n <= max_customers.
 
     Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
     one cache entry. Existing cache files are reused (deterministic content).
@@ -91,7 +95,7 @@ def materialize_atf_cache(
             except (OSError, ValueError):
                 continue
             td_block = payload.get("td")
-            if not isinstance(td_block, dict) or not _is_igp_instance_payload(td_block):
+            if not isinstance(td_block, dict) or not _is_materialized_instance_payload(td_block):
                 continue
             if int(payload.get("num_customers", 0)) > max_customers:
                 over_cap.add(str(payload["instance_name"]))
