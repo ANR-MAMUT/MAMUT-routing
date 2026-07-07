@@ -1060,6 +1060,31 @@ def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> di
     return routes
 
 
+# Forward point-evaluation of a TD schedule (below) walks the route arc by arc,
+# accumulating IEEE-754 rounding at every stop (arrival + wait + service time).
+# A route that saturates the planning horizon can therefore present a departure
+# time a few ULP past an arc ATF's domain edge -- observed as ``horizon + ~5e-13``
+# on horizon-tight instances. The ATF value *at* the boundary is well-defined
+# (it is ``ys[-1]``), so a time that overshoots a domain edge by no more than
+# this dust tolerance is clamped back onto the edge before evaluation. This keeps
+# the per-stop schedule table rendering for such instances, while a genuine
+# out-of-domain time (orders of magnitude larger than rounding drift) still
+# raises. Display-only: the exact solution checker and the deliberately
+# epsilon-free NDCPWLF core are left untouched.
+_TD_SCHEDULE_DOMAIN_TOL = 1e-6
+
+
+def _evaluate_on_domain(fn, x: float) -> float:
+    """``fn.evaluate(x)``, absorbing ULP-scale overshoot at either domain edge."""
+    hi = fn.max_domain
+    lo = fn.min_domain
+    if hi < x <= hi + _TD_SCHEDULE_DOMAIN_TOL:
+        x = hi
+    elif lo - _TD_SCHEDULE_DOMAIN_TOL <= x < lo:
+        x = lo
+    return fn.evaluate(x)
+
+
 def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[TDRouteSchedule], list[TDRouteFunctionEntry]]:
     """Per-stop schedules + route ready-time functions of a TD BKS, in the BKS's stored route order.
 
@@ -1082,7 +1107,7 @@ def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[T
         previous = depot
         stops: list[TDScheduleStop] = []
         for vertex in route:
-            arrival = atfs.arcs[(previous, vertex)].evaluate(current)
+            arrival = _evaluate_on_domain(atfs.arcs[(previous, vertex)], current)
             earliest = float(time_windows[vertex][0]) if time_windows is not None else arrival
             service_start = max(arrival, earliest)
             departure = service_start + float(instance.service_times[vertex])
@@ -1097,7 +1122,7 @@ def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[T
             )
             current = departure
             previous = vertex
-        return_arrival = atfs.arcs[(previous, depot)].evaluate(current)
+        return_arrival = _evaluate_on_domain(atfs.arcs[(previous, depot)], current)
         schedules.append(
             TDRouteSchedule(
                 departure_time=departure_time,
