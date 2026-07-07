@@ -257,7 +257,10 @@ function td_bridge_seed(base_seed::Int, model::String, intensity::String)
 end
 
 function td_write_json(path::String, payload)
-    tmp = path * ".tmp"
+    # Per-process tmp name: concurrent exporters targeting the same city
+    # directory (e.g. one per intensity on a shared filesystem) must not
+    # rename each other's tmp file away.
+    tmp = path * ".tmp.$(getpid())"
     open(tmp, "w") do io
         JSON3.write(io, payload)
     end
