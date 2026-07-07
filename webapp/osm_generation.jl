@@ -1552,14 +1552,26 @@ function build_generation_selection(payload)
         cust_poi_lon = lon[1:length(cust_vertices)]
         cust_sources = src[1:length(cust_vertices)]
         if length(cust_vertices) < n_customers
-            rem_vertices, rem_src = select_customers_parametric(md, vertex_ll, depot_vertex, n_customers - length(cust_vertices), customer_mode, n_seeds, decay_m, rng)
-            append!(cust_vertices, rem_vertices)
-            for vtx in rem_vertices
-                latv, lonv = vertex_ll[vtx]
-                push!(cust_poi_lat, latv)
-                push!(cust_poi_lon, lonv)
+            # Parametric top-up must not duplicate POI-chosen vertices (a
+            # duplicate becomes two customers on the same graph vertex).
+            chosen = Set(cust_vertices)
+            push!(chosen, depot_vertex)
+            attempts = 0
+            while length(cust_vertices) < n_customers && attempts < 20
+                need = n_customers - length(cust_vertices)
+                rem_vertices, rem_src = select_customers_parametric(md, vertex_ll, depot_vertex, need + 32, customer_mode, n_seeds, decay_m, rng)
+                for (vtx, src) in zip(rem_vertices, rem_src)
+                    vtx in chosen && continue
+                    push!(chosen, vtx)
+                    push!(cust_vertices, vtx)
+                    latv, lonv = vertex_ll[vtx]
+                    push!(cust_poi_lat, latv)
+                    push!(cust_poi_lon, lonv)
+                    push!(cust_sources, src)
+                    length(cust_vertices) >= n_customers && break
+                end
+                attempts += 1
             end
-            append!(cust_sources, rem_src)
         end
     elseif method == "parametric_attach"
         v, src = select_customers_parametric(md, vertex_ll, depot_vertex, n_customers, customer_mode, n_seeds, decay_m, rng)
