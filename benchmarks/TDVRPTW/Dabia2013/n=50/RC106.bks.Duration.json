@@ -3,23 +3,21 @@
     "routes": [
         [2, 45, 5, 7, 6, 8, 46, 4, 3, 1],
         [14, 47, 15, 16, 11, 12, 10, 9, 13, 17],
-        [19, 23, 18, 21, 49, 22, 24, 25, 48],
+        [19, 18, 21, 23, 22, 24, 49, 25, 48],
         [31, 27, 28, 30, 29, 34, 32, 26],
         [38, 33, 50, 20],
         [42, 44, 40, 39, 36, 43, 41, 35, 37]
     ],
-    "cost": 11760.356004964628,
+    "cost": 11756.555984165578,
     "metadata": {
-        "authors": "Florian Rascoussier (0nyr)",
-        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "source": "kayros 0.3.0 lera BPC exact solve (HiGHS backend, TL 600s, warm-started from the previous BKS) \u2014 proven optimal under checker-exact route costs and standard LP/pricing tolerances, completeness modulo Lera epsilon dominance",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "date": "2026-07-02",
-        "route_durations": [1998.504732702015, 2193.6670230009095, 2000.4343958862016, 1895.833256460546, 1679.1906347396678, 1992.725962175288],
-        "route_departure_times": [166.49529129805688, 0.0, 277.0664478659076, 158.66666666666666, 325.3333333333333, 106.99904899993561],
-        "legacy_declared_value": 11776.16052216325,
-        "legacy_key": "RC106-n=52-f6f6c627dd078186f70880c7b8f083587e5e0ae9.json",
-        "previous_cost": 11830.263778439577,
-        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions"
+        "route_durations": [1998.504732702015, 2193.6670230009095, 1996.6343750871533, 1895.833256460546, 1679.1906347396678, 1992.725962175288],
+        "route_departure_times": [166.49529129805688, 0.0, 273.6663846652046, 158.66666666666666, 325.3333333333333, 106.99904899993561],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 11756.555984165578,
+        "validated_num_routes": 6,
+        "date": "2026-07-07T10:30:28"
     },
     "objective_function": "Duration"
 }
