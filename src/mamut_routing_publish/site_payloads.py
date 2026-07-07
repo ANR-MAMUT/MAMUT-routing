@@ -20,6 +20,8 @@ from mamut_routing_lib.artifacts import (
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
+
+from mamut_routing_publish.atf_cache import atf_cache_path
 from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
 
@@ -1022,11 +1024,17 @@ def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: 
     )
     # TD instances reference their canonical ATF sidecar through the ``td`` block
     # (``atf_path`` is relative to the instance file; storage may be gzipped).
+    # igp-profile instances have no committed sidecar: the link points at the
+    # build-time materialization under dist/atf-cache when one exists.
     atf_json_path: str | None = None
     td_block = getattr(instance, "td", None)
     atf_name = td_block.get("atf_path") if isinstance(td_block, dict) else getattr(td_block, "atf_path", None)
     if atf_name:
         candidate = instance_path.parent / atf_name
+        if candidate.is_file():
+            atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
+    elif td_block is not None:
+        candidate = atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name)
         if candidate.is_file():
             atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
     return SiteArtifactLinks(
@@ -1228,10 +1236,17 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     td_atfs = None
     td_block = getattr(instance, "td", None)
     if td_block is not None and bks_paths:
-        atf_sidecar = get_atf_path_for_instance(discovered_item.instance_path, getattr(td_block, "atf_path", None))
         # The sha256 gate lives in the population/verification tooling; payload
         # generation only needs the functions themselves.
-        td_atfs = load_instance_atfs(atf_sidecar)
+        atf_name = getattr(td_block, "atf_path", None)
+        if atf_name is not None:
+            td_atfs = load_instance_atfs(get_atf_path_for_instance(discovered_item.instance_path, atf_name))
+        else:
+            # igp-profile: use the build-time cache when materialized (above the
+            # size cap the page renders without schedule tables).
+            cache_sidecar = atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name)
+            if cache_sidecar.is_file():
+                td_atfs = load_instance_atfs(cache_sidecar)
     bks_entries, td_route_functions = _build_bks_entries(
         output_repo_dir,
         discovered_item.instance_path,

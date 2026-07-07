@@ -1,0 +1,119 @@
+"""Build-time ATF sidecar cache for igp-profile families (Lera2026).
+
+igp-profile instances ship no committed ATF sidecar (an n=1000 Lera2026
+sidecar weighs ~82 MB gzipped; the family would be tens of GB). The site
+still wants real sidecars — the arc-click viewer fetches one per instance,
+and BKS schedule tables need the arrival-time functions — so the publisher
+materializes them at build time into ``dist/atf-cache/`` (git-ignored, kept
+out of ``benchmarks/``) for instances up to a size cap.
+
+Two structural facts keep the cache small and correct:
+
+- The TDVRPTW/TDVRP twins of an instance share byte-identical ATF content
+  (same ``atf_sha256``), so the cache stores ONE file per (benchmark,
+  instance name), shared by both problem types.
+- Materialization is deterministic and pinned by the instance's recorded
+  ``atf_sha256``; a cached file whose recorded-name exists is trusted
+  as-is (regeneration would produce the same bytes), so rebuilds are
+  incremental.
+
+Above the size cap the viewer simply has no sidecar link (a 28-82 MB
+download per arc click is no favour to anyone) and schedule tables are
+skipped for those pages.
+"""
+
+from __future__ import annotations
+
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from mamut_routing_lib.td import TD_IGP_MODEL, load_td_instance, save_instance_atfs
+
+ATF_CACHE_RELATIVE = Path("dist") / "atf-cache"
+DEFAULT_MAX_CUSTOMERS = 400
+
+
+def atf_cache_path(output_repo_dir: Path, benchmark_name: str, instance_name: str) -> Path:
+    return output_repo_dir / ATF_CACHE_RELATIVE / benchmark_name / f"{instance_name}.atf.json.gz"
+
+
+def _is_igp_instance_payload(td_block) -> bool:
+    model = td_block.get("model") if isinstance(td_block, dict) else getattr(td_block, "model", None)
+    return model == TD_IGP_MODEL
+
+
+def _materialize_one(instance_path_str: str, cache_path_str: str) -> str:
+    """Worker: full load (materializes + verifies both sha256) then write."""
+    loaded = load_td_instance(instance_path_str)
+    save_instance_atfs(loaded.atfs, Path(cache_path_str))
+    return cache_path_str
+
+
+@dataclass
+class ATFCacheSummary:
+    materialized: list[str] = field(default_factory=list)
+    reused: list[str] = field(default_factory=list)
+    skipped_over_cap: int = 0
+
+    def as_dict(self) -> dict:
+        return {
+            "materialized": len(self.materialized),
+            "reused": len(self.reused),
+            "skipped_over_cap": self.skipped_over_cap,
+        }
+
+
+def materialize_atf_cache(
+    output_repo_dir: Path,
+    *,
+    max_customers: int = DEFAULT_MAX_CUSTOMERS,
+    jobs: int | None = None,
+) -> ATFCacheSummary:
+    """Materialize sidecars for every igp-profile instance with n <= max_customers.
+
+    Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
+    one cache entry. Existing cache files are reused (deterministic content).
+    """
+    import json
+
+    summary = ATFCacheSummary()
+    tasks: dict[str, str] = {}  # cache path -> instance path (first variant found)
+    over_cap: set[str] = set()
+    for problem_type in ("TDVRPTW", "TDVRP"):
+        root = output_repo_dir / "benchmarks" / problem_type
+        if not root.is_dir():
+            continue
+        for instance_path in sorted(root.rglob("*.vrp.json")):
+            try:
+                payload = json.loads(instance_path.read_text())
+            except (OSError, ValueError):
+                continue
+            td_block = payload.get("td")
+            if not isinstance(td_block, dict) or not _is_igp_instance_payload(td_block):
+                continue
+            if int(payload.get("num_customers", 0)) > max_customers:
+                over_cap.add(str(payload["instance_name"]))
+                summary.skipped_over_cap = len(over_cap)
+                continue
+            cache_path = atf_cache_path(
+                output_repo_dir, str(payload["benchmark_name"]), str(payload["instance_name"])
+            )
+            key = str(cache_path)
+            if key in tasks or key in summary.reused:
+                continue
+            if cache_path.is_file():
+                summary.reused.append(key)
+                continue
+            tasks[key] = str(instance_path)
+
+    if tasks:
+        with ProcessPoolExecutor(max_workers=jobs or max(1, (os.cpu_count() or 4) - 2)) as pool:
+            futures = {
+                pool.submit(_materialize_one, instance_path, cache_path): cache_path
+                for cache_path, instance_path in tasks.items()
+            }
+            for future in as_completed(futures):
+                summary.materialized.append(future.result())
+    return summary
