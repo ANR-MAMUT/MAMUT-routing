@@ -7,7 +7,7 @@ from enum import Enum
 import os
 from pathlib import Path
 import re
-from typing import Literal
+from typing import Any, Literal
 import warnings
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -298,6 +298,10 @@ class BKSPageEntry(BaseModel):
     license_url: str | None = None
     td_schedules: list[TDRouteSchedule] | None = None
     route_functions_path: str | None = None
+    # Structured optimality proof from the BKS metadata (see the
+    # OptimalityMetadata model in mamut-routing-lib), passed through verbatim
+    # so the site can badge proven-optimal solutions.
+    optimality: dict[str, Any] | None = None
 
 
 class InstancePageSummary(BaseModel):
@@ -1129,6 +1133,7 @@ def _build_bks_entries(
         bks = load_bks(bks_path)
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
+        optimality_value = bks.metadata.get("optimality") if isinstance(bks.metadata, dict) else None
         td_schedules = None
         route_functions_path = None
         if td_instance is not None and td_atfs is not None and bks.objective_function == ObjectiveFunction.DURATION:
@@ -1159,6 +1164,7 @@ def _build_bks_entries(
                 license_url=license_url_value,
                 td_schedules=td_schedules,
                 route_functions_path=route_functions_path,
+                optimality=optimality_value,
             )
         )
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
