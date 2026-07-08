@@ -1,24 +1,30 @@
-"""TD-aware synthesis of service times and time windows.
+"""Stage-2 (VRPTW) synthesis of service times and time windows (v2, Stream 12').
 
-Port of the workbench VRPTW stage's ``route_centered`` method
-(``webapp/site_api.jl``) with time-dependent pricing: the nearest-neighbour
-tour and the simulated visit times are computed on the materialized
-arrival-time functions instead of a static matrix, and the feasibility
-bounds used by the repair are the TD ones (earliest arrival from the depot
-departing at the horizon start; latest service start that still reaches the
-depot by the horizon end through the time-dependent return leg).
+The single implementation of the family's name-seeded synthesis
+(language-boundary tier 2): windows are route-centered over the **static
+free-flow fastest** travel times of the base, seeded from the **base name**,
+so one service-time set and one TW set exist per base and are shared verbatim
+by the VRPTW instance and every TDVRPTW subinstance. The v1 per-variant,
+TD-anchored synthesis is retired: anchoring windows on each traffic variant's
+own arrivals partially cancelled the traffic effect the family is built to
+measure.
 
-All randomness comes from ``random.Random`` seeded per instance, so the
-synthesis is deterministic; the resulting windows are shipped data (never
-re-derived at load time).
+Values are integer seconds (exact in binary64). Feasibility bounds at free
+flow: a window ``[e, l]`` guarantees ``l >= t_0i`` (a vehicle leaving the
+depot at the horizon start reaches the customer by ``l``) and
+``l + s_i + t_i0 <= horizon end`` (starting service at ``l`` returns in
+time). Stage 3 (``build-td``) then audits these windows under every traffic
+overlay and applies the minimal shared deadline lift, which only relaxes
+deadlines, so free-flow feasibility is preserved.
+
+All randomness comes from ``random.Random`` seeded per base; the windows are
+shipped data, never re-derived at load time.
 """
 
 from __future__ import annotations
 
-from bisect import bisect_right
+import math
 from random import Random
-
-from mamut_routing_lib.td import InstanceATFs, NDCPWLF
 
 HORIZON_START = 0.0
 HORIZON_END = 86400.0
@@ -33,33 +39,26 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return lo if value < lo else hi if value > hi else value
 
 
-def synthesize_service_times(rng: Random, num_customers: int) -> list[float]:
-    """Gaussian service times, mean ~1% of the horizon (VRPTW-stage semantics)."""
+def synthesize_service_times(rng: Random, num_customers: int) -> list[int]:
+    """Gaussian integer service times, mean ~1% of the horizon."""
     horizon = HORIZON_END - HORIZON_START
     mean_ratio = _clamp(rng.gauss(0.0, 1.0) * SERVICE_MEAN_RATIO_STD + SERVICE_MEAN_RATIO, 0.001, 0.2)
     mean_service = horizon * mean_ratio
-    upper = max(1.0, float(int(mean_service * 2)))
-    service_times = [0.0]
+    upper = max(1, int(mean_service * 2))
+    service_times = [0]
     for _ in range(num_customers):
         sampled = rng.gauss(0.0, 1.0) * (mean_service / 2.0) + mean_service
-        service_times.append(_clamp(float(round(sampled)), 1.0, upper))
+        service_times.append(int(_clamp(float(round(sampled)), 1.0, float(upper))))
     return service_times
 
 
-def _travel(atfs: InstanceATFs, i: int, j: int, clock: float) -> float:
-    """TD travel time i -> j departing at ``clock`` (clamped into the horizon:
-    past-horizon departures reuse the last-piece travel time, which the
-    extended-speed construction makes the late-night steady state)."""
-    atf = atfs.arcs[(i, j)]
-    departure = _clamp(clock, atf.xs[0], atf.xs[-1])
-    return atf.evaluate(departure) - departure
-
-
-def nearest_neighbour_visit_times(atfs: InstanceATFs, service_times: list[float]) -> list[float]:
-    """Greedy TD nearest-neighbour tour from the depot at the horizon start;
-    returns the simulated arrival time at each node (depot: horizon start).
-    Ties break on the smallest node index."""
-    num_nodes = atfs.num_customers + 1
+def nearest_neighbour_visit_times(
+    fastest: list[list[float]], service_times: list[int]
+) -> list[float]:
+    """Greedy nearest-neighbour tour over the static fastest times from the
+    depot at the horizon start; returns the simulated arrival time at each
+    node (depot: horizon start). Ties break on the smallest node index."""
+    num_nodes = len(fastest)
     arrivals = [HORIZON_START] * num_nodes
     visited = [False] * num_nodes
     visited[0] = True
@@ -71,7 +70,7 @@ def nearest_neighbour_visit_times(atfs: InstanceATFs, service_times: list[float]
         for j in range(1, num_nodes):
             if visited[j]:
                 continue
-            travel = _travel(atfs, current, j, clock)
+            travel = fastest[current][j]
             if travel < best_travel:
                 best_travel = travel
                 best = j
@@ -83,49 +82,31 @@ def nearest_neighbour_visit_times(atfs: InstanceATFs, service_times: list[float]
     return arrivals
 
 
-def latest_departure_at_or_below(atf: NDCPWLF, arrival_bound: float) -> float:
-    """Largest departure ``x`` in the ATF domain with ``atf(x) <= arrival_bound``."""
-    if atf.ys[0] > arrival_bound:
-        raise ValueError(f"arrival bound {arrival_bound} unreachable (min arrival {atf.ys[0]})")
-    k = bisect_right(atf.ys, arrival_bound) - 1
-    if k >= atf.num_breakpoints() - 1:
-        return atf.xs[-1]
-    x_lo, x_hi = atf.xs[k], atf.xs[k + 1]
-    y_lo, y_hi = atf.ys[k], atf.ys[k + 1]
-    if x_lo == x_hi or y_hi == y_lo:
-        return x_lo
-    return x_lo + (arrival_bound - y_lo) / (y_hi - y_lo) * (x_hi - x_lo)
-
-
 def synthesize_time_windows(
     rng: Random,
-    atfs: InstanceATFs,
-    service_times: list[float],
+    fastest: list[list[float]],
+    service_times: list[int],
     visit_times: list[float],
-) -> list[tuple[float, float]]:
-    """Route-centered windows repaired to TD feasibility bounds.
-
-    Every customer window ``[e, l]`` guarantees individual feasibility: a
-    vehicle leaving the depot at the horizon start arrives no later than
-    ``l`` (``l >= alpha_0i(start)``), and starting service at ``l`` still
-    reaches the depot by the horizon end through the TD return leg.
-    """
+) -> list[tuple[int, int]]:
+    """Route-centered integer windows repaired to the free-flow feasibility bounds."""
     horizon = HORIZON_END - HORIZON_START
-    num_nodes = atfs.num_customers + 1
-    windows: list[tuple[float, float]] = [(HORIZON_START, HORIZON_END)]
+    num_nodes = len(fastest)
+    windows: list[tuple[int, int]] = [(int(HORIZON_START), int(HORIZON_END))]
     for i in range(1, num_nodes):
-        earliest_arrival = atfs.arcs[(0, i)].evaluate(HORIZON_START)
-        latest_return_departure = latest_departure_at_or_below(atfs.arcs[(i, 0)], HORIZON_END)
-        latest_service_start = latest_return_departure - service_times[i]
-        if latest_service_start < earliest_arrival:
+        earliest_arrival = fastest[0][i]
+        latest_service_start = HORIZON_END - fastest[i][0] - service_times[i]
+        lo = math.ceil(earliest_arrival)
+        hi = math.floor(latest_service_start)
+        if hi < lo:
             raise ValueError(
-                f"customer {i} cannot be served within the horizon: earliest arrival "
-                f"{earliest_arrival}, latest feasible service start {latest_service_start}"
+                f"customer {i} cannot be served within the horizon at free flow: "
+                f"earliest arrival {earliest_arrival}, latest feasible service start "
+                f"{latest_service_start}"
             )
         width_ratio = _clamp(rng.gauss(0.0, 1.0) * TW_WIDTH_RATIO_STD + TW_WIDTH_RATIO_MEAN, 0.01, 1.0)
         width = max(1.0, float(round(horizon * width_ratio)))
         center = visit_times[i]
-        latest = _clamp(float(round(center + width / 2.0)), earliest_arrival, latest_service_start)
-        earliest = _clamp(float(round(center - width / 2.0)), HORIZON_START, latest)
+        latest = int(_clamp(float(round(center + width / 2.0)), float(lo), float(hi)))
+        earliest = int(_clamp(float(round(center - width / 2.0)), HORIZON_START, float(latest)))
         windows.append((earliest, latest))
     return windows

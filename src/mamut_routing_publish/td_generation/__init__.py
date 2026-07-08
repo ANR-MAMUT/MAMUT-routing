@@ -1,9 +1,11 @@
-"""Workbench stage 3: TDVRP/TDVRPTW instance generation.
+"""Mamut2026 collection generation (v2, Stream 12').
 
 Consumes the TD bridge exported by ``webapp/td_traffic.jl`` (city road graph
-+ per-edge hourly speed profiles + per-instance node maps) and stage-1 CVRP
-artifacts, and emits ``road-graph`` td-model instances (TDVRP + TDVRPTW
-twins) conforming to the TD benchmark standard.
+with coordinates and free-flow limits + per-edge hourly speed profiles +
+per-instance node maps) plus the stage-1 sampling intermediates, and
+publishes the whole family into a marker-rooted collection tree: slim CVRP /
+VRPTW instances, shared ``geo`` / ``road`` / ``traffic`` / ``distances``
+sidecars, and the TDVRP/TDVRPTW twins of the ``road-graph`` v2 td model.
 """
 
 from mamut_routing_publish.td_generation.bridge import (
@@ -14,29 +16,54 @@ from mamut_routing_publish.td_generation.bridge import (
     load_bridge_nodes,
     load_bridge_speeds,
 )
-from mamut_routing_publish.td_generation.build import (
+from mamut_routing_publish.td_generation.family import (
     DEFAULT_EXTENSION_END,
     DEFAULT_SAMPLE_STEP,
-    DEFAULT_SIMPLIFY_TOLERANCE,
     TD_HORIZON,
-    BuiltInstancePair,
-    build_td_instance_pair,
+    TD_INTENSITIES,
+    TD_MODELS,
+    BuiltBase,
+    BuiltTDBase,
+    build_base,
+    build_td,
+    derive_vrptw,
+    ensure_collection_root,
+    sampling_seed,
+    simplify_tolerance_for,
 )
-from mamut_routing_publish.td_generation.naming import td_instance_dir, td_instance_name
+from mamut_routing_publish.td_generation.naming import (
+    FAMILY,
+    METHOD_TAGS,
+    base_instance_name,
+    subinstance_name,
+    td_instance_dir,
+    td_instance_name,
+)
 
 __all__ = [
     "BridgeGraph",
     "BridgeNodes",
     "BridgeSpeeds",
-    "BuiltInstancePair",
+    "BuiltBase",
+    "BuiltTDBase",
     "DEFAULT_EXTENSION_END",
     "DEFAULT_SAMPLE_STEP",
-    "DEFAULT_SIMPLIFY_TOLERANCE",
+    "FAMILY",
+    "METHOD_TAGS",
     "TD_HORIZON",
-    "build_td_instance_pair",
+    "TD_INTENSITIES",
+    "TD_MODELS",
+    "base_instance_name",
+    "build_base",
+    "build_td",
+    "derive_vrptw",
+    "ensure_collection_root",
     "load_bridge_graph",
     "load_bridge_nodes",
     "load_bridge_speeds",
+    "sampling_seed",
+    "simplify_tolerance_for",
+    "subinstance_name",
     "td_instance_dir",
     "td_instance_name",
 ]

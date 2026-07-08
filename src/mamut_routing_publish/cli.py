@@ -618,75 +618,150 @@ def release_build_cmd(
 # ---------------------------------------------------------------------------
 
 METHOD_TAGS = {"poi_categories": "poi", "parametric_attach": "par", "hybrid": "hyb"}
+DEFAULT_SIZES = [10, 25, 50, 100, 500, 1000]
+DEFAULT_METHODS = ["poi_categories", "hybrid"]
 
 
-def _find_base_meta(repo_dir: Path, city_slug: str, base_name: str) -> Path:
-    matches = sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob(f"*/{base_name}_meta.json"))
-    if not matches:
-        raise typer.BadParameter(
-            f"no stage-1 meta found for base '{base_name}' under instances_v2/osm/{city_slug}/ "
-            "(run 'workbench generate-base' first)"
+def _city_slug(city: str) -> str:
+    return city.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _method_tag(method: str) -> str:
+    if method not in METHOD_TAGS:
+        raise typer.BadParameter(f"unknown sampling method {method!r}; known: {sorted(METHOD_TAGS)}")
+    return METHOD_TAGS[method]
+
+
+def _find_stage1_meta(repo_dir: Path, city_slug: str, n: int, method: str, seed: int) -> Path | None:
+    """Locate the stage-1 meta of a (city, n, method, seed) sampling run.
+
+    Metas being written by concurrent sampling tasks (Julia writes them
+    non-atomically) parse as partial JSON; they are skipped: a concurrent
+    writer is never writing the meta this call is looking for.
+    """
+    for meta_path in sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob("*/*_meta.json")):
+        try:
+            params = json.loads(meta_path.read_text()).get("generation_params", {})
+        except (ValueError, OSError):
+            continue
+        if (
+            int(params.get("n_customers", -1)) == n
+            and str(params.get("method", "")) == method
+            and int(params.get("seed", -1)) == seed
+        ):
+            return meta_path
+    return None
+
+
+def _bridge_dir(repo_dir: Path, city_slug: str) -> Path:
+    return repo_dir / "instances_v2" / "td-bridge" / city_slug
+
+
+def _resolve_out_root(repo_dir: Path, out_root: Path) -> Path:
+    return out_root if out_root.is_absolute() else repo_dir / out_root
+
+
+def _stage1_and_bridge_for_base(
+    repo_dir: Path, city: str, n: int, method: str, *, osm_path: Optional[str], force_stage1: bool
+) -> Path:
+    """Ensure the Julia stage-1 sampling + graph/node bridge export exist for
+    one base; returns the stage-1 meta path. Julia writes intermediates only."""
+    from mamut_routing_publish.td_generation import base_instance_name, julia_driver, sampling_seed
+
+    city_slug = _city_slug(city)
+    tag = _method_tag(method)
+    base = base_instance_name(city_slug, n, tag)
+    seed = sampling_seed(base)
+    meta_path = _find_stage1_meta(repo_dir, city_slug, n, method, seed)
+    if meta_path is None or force_stage1:
+        result = julia_driver.generate_base(
+            repo_dir, city=city, n_customers=n, method=method, seed=seed, osm_path=osm_path
         )
-    return matches[0]
+        typer.echo(f"stage-1 sampled {result['base_name']} (seed {seed})")
+        meta_path = _find_stage1_meta(repo_dir, city_slug, n, method, seed)
+        if meta_path is None:
+            raise RuntimeError(f"stage-1 meta not found after sampling for {base}")
+    return meta_path
 
 
-def _build_one_td_cell(
+def _export_graph_and_nodes(
+    repo_dir: Path, city: str, meta_paths: list[Path], *, osm_path: Optional[str], seed: int
+) -> None:
+    """Bridge export without speed files: graph.json + node maps only."""
+    from mamut_routing_publish.td_generation import julia_driver
+
+    julia_driver.export_bridge(
+        repo_dir,
+        osm_path=osm_path or f"osmdata/{city}.osm",
+        city_slug=_city_slug(city),
+        models=[],
+        seed=seed,
+        meta_paths=[str(path.relative_to(repo_dir)) for path in meta_paths],
+    )
+
+
+def _load_bridge_for_base(repo_dir: Path, city_slug: str, stage1_base: str):
+    from mamut_routing_publish.td_generation import load_bridge_graph, load_bridge_nodes
+
+    bridge_dir = _bridge_dir(repo_dir, city_slug)
+    graph_path = bridge_dir / "graph.json"
+    nodes_path = bridge_dir / f"nodes-{stage1_base}.json"
+    for required in (graph_path, nodes_path):
+        if not required.exists():
+            raise typer.BadParameter(f"missing bridge file {required}")
+    graph = load_bridge_graph(graph_path)
+    nodes = load_bridge_nodes(nodes_path)
+    return graph, nodes
+
+
+def _publish_base(
     repo_dir: Path,
-    city_slug: str,
-    base_name: str,
-    model: str,
-    intensity: str,
+    city: str,
+    n: int,
+    method: str,
     out_root: Path,
     *,
-    sample_step: float,
-    tolerance: float,
     generated_at: Optional[str],
     force: bool,
 ):
-    from mamut_routing_publish.td_generation import (
-        build_td_instance_pair,
-        load_bridge_graph,
-        load_bridge_nodes,
-        load_bridge_speeds,
+    from mamut_routing_publish.td_generation import build_base
+
+    city_slug = _city_slug(city)
+    meta_path = _find_stage1_meta(
+        repo_dir, city_slug, n, method,
+        _stage1_seed(city_slug, n, method),
     )
-
-    bridge_dir = repo_dir / "instances_v2" / "td-bridge" / city_slug
-    nodes_path = bridge_dir / f"nodes-{base_name}.json"
-    speeds_path = bridge_dir / f"speeds-{model}-{intensity}.json"
-    for required in (bridge_dir / "graph.json", speeds_path, nodes_path):
-        if not required.exists():
-            raise typer.BadParameter(
-                f"missing bridge file {required} (run 'workbench traffic-sim' with the right options first)"
-            )
-    meta_path = _find_base_meta(repo_dir, city_slug, base_name)
+    if meta_path is None:
+        raise typer.BadParameter(f"stage-1 meta missing for {city_slug} n={n} {method}")
     meta = json.loads(meta_path.read_text())
-    manifest = json.loads((meta_path.parent / f"{base_name}_manifest.json").read_text())
-    method_tag = METHOD_TAGS.get(str(meta.get("method", "")), "gen")
-
-    graph = load_bridge_graph(bridge_dir / "graph.json")
-    speeds = load_bridge_speeds(speeds_path, graph)
-    nodes = load_bridge_nodes(nodes_path)
-    return build_td_instance_pair(
+    manifest = json.loads(
+        (meta_path.parent / meta_path.name.replace("_meta.json", "_manifest.json")).read_text()
+    )
+    graph, nodes = _load_bridge_for_base(repo_dir, city_slug, str(meta["instance_name"]))
+    return build_base(
         graph=graph,
-        speeds=speeds,
         nodes=nodes,
         meta=meta,
-        vehicle_capacity=int(manifest["capacity"]),
-        place=city_slug,
-        method=method_tag,
-        out_root=out_root,
-        sample_step=sample_step,
-        simplify_tolerance=tolerance,
+        manifest=manifest,
+        city=city_slug,
+        method_tag=_method_tag(method),
+        collection_root=out_root,
         generated_at=generated_at,
         force=force,
     )
 
 
+def _stage1_seed(city_slug: str, n: int, method: str) -> int:
+    from mamut_routing_publish.td_generation import base_instance_name, sampling_seed
+
+    return sampling_seed(base_instance_name(city_slug, n, _method_tag(method)))
+
+
 workbench_app = typer.Typer(
     help=(
-        "Workbench generation stages: fetch a city OSM extract, generate stage-1 CVRP "
-        "bases, run the traffic stage (TD bridge), and build TDVRP/TDVRPTW instances "
-        "of the road-graph td model."
+        "Mamut2026 collection generation stages: fetch a city OSM extract, publish the "
+        "CVRP base layer (generate-base), derive the VRPTW layer, run the traffic "
+        "simulation, and build the TDVRP/TDVRPTW twins (road-graph v2 td model)."
     ),
     no_args_is_help=True,
 )
@@ -714,20 +789,71 @@ def workbench_fetch_city_cmd(
 @workbench_app.command("generate-base")
 def workbench_generate_base_cmd(
     city: Annotated[str, typer.Argument(help="City name (osmdata/<City>.osm must exist).")],
-    n: Annotated[int, typer.Option(help="Number of customers.")] = 100,
-    method: Annotated[str, typer.Option(help="Customer sampling: poi_categories | parametric_attach | hybrid.")] = "hybrid",
-    seed: Annotated[int, typer.Option(help="Generation seed.")] = 42,
+    n: Annotated[Optional[list[int]], typer.Option(help="Customer counts (repeatable; default: the family grid).")] = None,
+    method: Annotated[Optional[list[str]], typer.Option(help="Sampling methods (repeatable; default: poi_categories and hybrid).")] = None,
+    out_root: Annotated[Path, typer.Option(help="Collection root (marker written if missing).")] = Path("benchmarks/Mamut2026"),
     osm_path: Annotated[Optional[str], typer.Option(help="Explicit OSM file path (default osmdata/<City>.osm).")] = None,
+    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata (default: today).")] = None,
+    force: Annotated[bool, typer.Option(help="Republish bases whose files already exist.")] = False,
+    force_stage1: Annotated[bool, typer.Option(help="Resample the Julia stage-1 intermediates.")] = False,
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
-    """Generate one stage-1 CVRP base instance (three metric variants + meta/manifest)."""
-    from mamut_routing_publish.td_generation import julia_driver
+    """Publish the base layer: 3 slim CVRP metric instances + geo/road/distances sidecars.
+
+    Julia samples the base and exports the graph/node bridge (intermediates
+    only); the Python builder canonicalizes and publishes every artifact.
+    """
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    sizes = n or DEFAULT_SIZES
+    methods = method or DEFAULT_METHODS
+    out = _resolve_out_root(repo_dir, out_root)
+    meta_paths = [
+        _stage1_and_bridge_for_base(repo_dir, city, size, sampling, osm_path=osm_path, force_stage1=force_stage1)
+        for size in sizes
+        for sampling in methods
+    ]
+    _export_graph_and_nodes(repo_dir, city, meta_paths, osm_path=osm_path, seed=42)
+    for size in sizes:
+        for sampling in methods:
+            result = _publish_base(repo_dir, city, size, sampling, out, generated_at=generated_at, force=force)
+            if result is None:
+                typer.echo(f"kept {_city_slug(city)} n={size} {sampling} (already published)")
+                continue
+            typer.echo(
+                f"published {result.base}: road {result.num_road_vertices}v/{result.num_road_edges}e, "
+                f"3 CVRP + geo + 2 distances, {result.build_seconds:.1f}s"
+            )
+
+
+@workbench_app.command("derive-vrptw")
+def workbench_derive_vrptw_cmd(
+    city: Annotated[str, typer.Argument(help="City name or slug.")],
+    n: Annotated[Optional[list[int]], typer.Option(help="Customer counts (repeatable; default: the family grid).")] = None,
+    method: Annotated[Optional[list[str]], typer.Option(help="Sampling methods (repeatable).")] = None,
+    out_root: Annotated[Path, typer.Option(help="Collection root.")] = Path("benchmarks/Mamut2026"),
+    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-derive even if the VRPTW instance exists.")] = False,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Derive the candidate VRPTW layer (base-name-seeded TWs over free-flow fastest)."""
+    from mamut_routing_publish.td_generation import derive_vrptw
 
     repo_dir = _resolve_repo_dir(source_repo_dir)
-    result = julia_driver.generate_base(
-        repo_dir, city=city, n_customers=n, method=method, seed=seed, osm_path=osm_path
-    )
-    typer.echo(json.dumps(result, indent=2))
+    out = _resolve_out_root(repo_dir, out_root)
+    for size in n or DEFAULT_SIZES:
+        for sampling in method or DEFAULT_METHODS:
+            target = derive_vrptw(
+                collection_root=out,
+                city=_city_slug(city),
+                num_customers=size,
+                method_tag=_method_tag(sampling),
+                generated_at=generated_at,
+                force=force,
+            )
+            typer.echo(
+                f"derived {target}" if target is not None
+                else f"kept {_city_slug(city)} n={size} {sampling} (already derived)"
+            )
 
 
 @workbench_app.command("traffic-sim")
@@ -736,97 +862,131 @@ def workbench_traffic_sim_cmd(
     model: Annotated[Optional[list[str]], typer.Option(help="Traffic models (default: bpr and wave).")] = None,
     intensity: Annotated[Optional[list[str]], typer.Option(help="Intensities (default: light, moderate, heavy).")] = None,
     seed: Annotated[int, typer.Option(help="Traffic simulation seed.")] = 42,
-    nodes_for: Annotated[Optional[list[str]], typer.Option(help="Stage-1 base names to export node maps for (repeatable).")] = None,
-    all_bases: Annotated[bool, typer.Option("--all-bases", help="Export node maps for every stage-1 base of this city.")] = False,
     force: Annotated[bool, typer.Option(help="Recompute speed files even if present.")] = False,
     osm_path: Annotated[Optional[str], typer.Option(help="Explicit OSM file path.")] = None,
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
-    """Run the traffic stage: per-edge hourly speed profiles + TD bridge export."""
+    """Run the traffic stage: citywide per-edge hourly speed fields (bridge export)."""
     from mamut_routing_publish.td_generation import julia_driver
 
     repo_dir = _resolve_repo_dir(source_repo_dir)
-    city_slug = city.strip().lower().replace(" ", "_").replace("-", "_")
-    resolved_osm = osm_path or f"osmdata/{city}.osm"
-    meta_paths: list[str] = []
-    if all_bases:
-        meta_paths = [
-            str(path.relative_to(repo_dir))
-            for path in sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob("*/*_meta.json"))
-        ]
-    elif nodes_for:
-        meta_paths = [str(_find_base_meta(repo_dir, city_slug, base).relative_to(repo_dir)) for base in nodes_for]
     result = julia_driver.export_bridge(
         repo_dir,
-        osm_path=resolved_osm,
-        city_slug=city_slug,
+        osm_path=osm_path or f"osmdata/{city}.osm",
+        city_slug=_city_slug(city),
         models=model,
         intensities=intensity,
         seed=seed,
-        meta_paths=meta_paths,
+        meta_paths=[],
         force=force,
     )
-    typer.echo(json.dumps({"bridge_dir": result, "node_maps": len(meta_paths)}, indent=2))
+    typer.echo(json.dumps({"bridge_dir": result}, indent=2))
 
 
 @workbench_app.command("build-td")
 def workbench_build_td_cmd(
-    city: Annotated[str, typer.Argument(help="City slug (bridge under instances_v2/td-bridge/<city>).")],
-    base: Annotated[Optional[list[str]], typer.Option(help="Stage-1 base names (repeatable; default: every base with a node map).")] = None,
-    model: Annotated[Optional[list[str]], typer.Option(help="Traffic models (default: every model with a speeds file).")] = None,
-    intensity: Annotated[Optional[list[str]], typer.Option(help="Intensities (default: every intensity with a speeds file).")] = None,
-    out_root: Annotated[Path, typer.Option(help="Output benchmarks root (satellite mount or scratch).")] = Path("benchmarks"),
-    sample_step: Annotated[float, typer.Option(help="Departure-grid spacing (s) of the road-graph materialization.")] = 60.0,
-    tolerance: Annotated[float, typer.Option(help="Simplify tolerance (s) of the road-graph materialization.")] = 1.0,
-    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata (default: today).")] = None,
-    force: Annotated[bool, typer.Option(help="Rebuild cells whose instance files already exist.")] = False,
+    city: Annotated[str, typer.Argument(help="City name or slug (bridge under instances_v2/td-bridge/<slug>).")],
+    n: Annotated[Optional[list[int]], typer.Option(help="Customer counts (repeatable; default: the family grid).")] = None,
+    method: Annotated[Optional[list[str]], typer.Option(help="Sampling methods (repeatable).")] = None,
+    out_root: Annotated[Path, typer.Option(help="Collection root.")] = Path("benchmarks/Mamut2026"),
+    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata.")] = None,
+    force: Annotated[bool, typer.Option(help="Rebuild twins whose instance files already exist.")] = False,
+    verify: Annotated[bool, typer.Option(help="Full sha-verified reload of every written twin.")] = True,
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
-    """Build TDVRP + TDVRPTW twin instances for (base × model × intensity) cells."""
-    repo_dir = _resolve_repo_dir(source_repo_dir)
-    bridge_dir = repo_dir / "instances_v2" / "td-bridge" / city
-    if not bridge_dir.exists():
-        raise typer.BadParameter(f"no TD bridge at {bridge_dir}")
-    bases = base or sorted(p.name[len("nodes-"):-len(".json")] for p in bridge_dir.glob("nodes-*.json"))
-    combos = sorted(
-        tuple(p.name[len("speeds-"):-len(".json")].split("-", 1))
-        for p in bridge_dir.glob("speeds-*.json")
+    """Build the TD layer of each base: 6 traffic overlays, the shared TW lift
+    (finalizing the VRPTW instance) and the 12 slim TDVRP/TDVRPTW twins."""
+    from mamut_routing_publish.td_generation import (
+        TD_INTENSITIES,
+        TD_MODELS,
+        build_td,
+        load_bridge_graph,
+        load_bridge_speeds,
     )
-    if model:
-        combos = [c for c in combos if c[0] in set(model)]
-    if intensity:
-        combos = [c for c in combos if c[1] in set(intensity)]
-    if not bases or not combos:
-        raise typer.BadParameter("nothing to build: no node maps or no matching speed files in the bridge")
 
-    built = skipped = 0
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    city_slug = _city_slug(city)
+    out = _resolve_out_root(repo_dir, out_root)
+    bridge_dir = _bridge_dir(repo_dir, city_slug)
+    graph = load_bridge_graph(bridge_dir / "graph.json")
+    speeds_by_combo = {}
+    for combo_model in TD_MODELS:
+        for combo_intensity in TD_INTENSITIES:
+            speeds_path = bridge_dir / f"speeds-{combo_model}-{combo_intensity}.json"
+            if not speeds_path.exists():
+                raise typer.BadParameter(f"missing {speeds_path} (run 'workbench traffic-sim' first)")
+            speeds_by_combo[(combo_model, combo_intensity)] = load_bridge_speeds(speeds_path, graph)
+
     started = time.perf_counter()
-    for base_name in bases:
-        for cell_model, cell_intensity in combos:
-            result = _build_one_td_cell(
-                repo_dir, city, base_name, cell_model, cell_intensity,
-                out_root if out_root.is_absolute() else repo_dir / out_root,
-                sample_step=sample_step, tolerance=tolerance,
-                generated_at=generated_at, force=force,
+    built = skipped = 0
+    for size in n or DEFAULT_SIZES:
+        for sampling in method or DEFAULT_METHODS:
+            result = build_td(
+                collection_root=out,
+                graph=graph,
+                speeds_by_combo=speeds_by_combo,
+                city=city_slug,
+                num_customers=size,
+                method_tag=_method_tag(sampling),
+                generated_at=generated_at,
+                force=force,
+                verify=verify,
             )
             if result is None:
                 skipped += 1
                 continue
             built += 1
             typer.echo(
-                f"built {result.instance_name}: road {result.num_road_vertices}v/"
-                f"{result.num_road_edges}e, sidecar {result.sidecar_bytes_gz / 1e3:.0f} KB gz, "
-                f"{result.build_seconds:.1f}s"
+                f"built {result.base}: 12 twins, {result.lifted_customers} TW lifts "
+                f"(max {result.max_lift_seconds}s), {result.reduced_customers} TW reductions "
+                f"(max {result.max_reduction_seconds}s), {result.build_seconds:.1f}s"
             )
-    typer.echo(f"done: {built} built, {skipped} kept (already present) in {_format_duration(time.perf_counter() - started)}")
+    typer.echo(f"done: {built} bases built, {skipped} kept in {_format_duration(time.perf_counter() - started)}")
+
+
+@workbench_app.command("build-family")
+def workbench_build_family_cmd(
+    city: Annotated[str, typer.Argument(help="City name.")],
+    n: Annotated[Optional[list[int]], typer.Option(help="Customer counts (repeatable; default: the family grid).")] = None,
+    method: Annotated[Optional[list[str]], typer.Option(help="Sampling methods (repeatable; default: poi_categories and hybrid).")] = None,
+    out_root: Annotated[Path, typer.Option(help="Collection root.")] = Path("benchmarks/Mamut2026"),
+    max_radius_km: Annotated[float, typer.Option(help="Bbox clamp for fetch-city (0 = no clamp).")] = 0.0,
+    traffic_seed: Annotated[int, typer.Option(help="Traffic simulation seed.")] = 42,
+    generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata.")] = None,
+    validate: Annotated[bool, typer.Option(help="Run the full validation sweep at the end.")] = False,
+    force: Annotated[bool, typer.Option(help="Republish artifacts that already exist.")] = False,
+    source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
+) -> None:
+    """Run the whole pipeline for one city: fetch-city (if needed), generate-base,
+    derive-vrptw, traffic-sim, build-td (and optionally the validation sweep)."""
+    from mamut_routing_publish.td_generation import julia_driver
+
+    repo_dir = _resolve_repo_dir(source_repo_dir)
+    osm_file = repo_dir / "osmdata" / f"{city}.osm"
+    if not osm_file.exists():
+        typer.echo(f"fetching {city} OSM extract...")
+        julia_driver.fetch_city(repo_dir, city=city, max_radius_km=max_radius_km)
+    ctx_args = dict(n=n, method=method, out_root=out_root, source_repo_dir=source_repo_dir)
+    workbench_generate_base_cmd(city, generated_at=generated_at, force=force, force_stage1=False, osm_path=None, **ctx_args)
+    workbench_derive_vrptw_cmd(city, generated_at=generated_at, force=force, **ctx_args)
+    workbench_traffic_sim_cmd(city, model=None, intensity=None, seed=traffic_seed, force=False, osm_path=None, source_repo_dir=source_repo_dir)
+    workbench_build_td_cmd(city, generated_at=generated_at, force=force, verify=True, **ctx_args)
+    if validate:
+        out = _resolve_out_root(repo_dir, out_root)
+        workbench_validate_cmd(out, verify_sha256=True)
 
 
 @workbench_app.command("td-validate")
-def workbench_td_validate_cmd(
-    root: Annotated[Path, typer.Argument(help="Directory tree holding TD instances (*.vrp.json).")],
+def workbench_validate_cmd(
+    root: Annotated[Path, typer.Argument(help="Directory tree holding instances (*.vrp.json).")],
     verify_sha256: Annotated[bool, typer.Option(help="Verify sidecar and materialized-ATF digests.")] = True,
 ) -> None:
-    """Full-load validation sweep over every TD instance under a directory."""
+    """Full-load validation sweep: TD instances (sha-verified materialization)
+    plus, inside a collection, the slim CVRP/VRPTW instances (matrix
+    hydration + geo sidecar digests)."""
+    from mamut_routing_lib import load_benchmark_instance, resolve_arc_costs
+    from mamut_routing_lib.geo import compute_geo_sha256, load_instance_geo
+    from mamut_routing_lib.sidecars import find_collection_root
     from mamut_routing_lib.td import load_td_instance
 
     paths = sorted(root.rglob("*.vrp.json"))
@@ -834,15 +994,32 @@ def workbench_td_validate_cmd(
         raise typer.BadParameter(f"no *.vrp.json under {root}")
     failures = 0
     started = time.perf_counter()
+    geo_checked: set[str] = set()
     for path in paths:
         try:
-            load_td_instance(path, verify_sha256=verify_sha256)
+            payload = json.loads(path.read_text())
+            if "td" in payload:
+                load_td_instance(path, verify_sha256=verify_sha256)
+            else:
+                instance = load_benchmark_instance(path)
+                if hasattr(instance, "arc_costs_source"):
+                    resolve_arc_costs(instance, path)
+            if verify_sha256:
+                geo_ref = payload.get("metadata", {}).get("sidecars", {}).get("geo")
+                if geo_ref and geo_ref.get("sha256") and geo_ref["path"] not in geo_checked:
+                    geo_checked.add(geo_ref["path"])
+                    collection_root = find_collection_root(path)
+                    if collection_root is None:
+                        raise ValueError("geo sidecar reference outside a collection")
+                    digest = compute_geo_sha256(load_instance_geo(collection_root / geo_ref["path"]))
+                    if digest != geo_ref["sha256"]:
+                        raise ValueError(f"geo sha256 mismatch for {geo_ref['path']}")
         except Exception as error:  # noqa: BLE001 - report and continue the sweep
             failures += 1
             typer.echo(f"FAIL {path}: {error}", err=True)
     typer.echo(
-        f"validated {len(paths) - failures}/{len(paths)} instances in "
-        f"{_format_duration(time.perf_counter() - started)}"
+        f"validated {len(paths) - failures}/{len(paths)} instances "
+        f"({len(geo_checked)} geo sidecars) in {_format_duration(time.perf_counter() - started)}"
     )
     if failures:
         raise typer.Exit(code=1)

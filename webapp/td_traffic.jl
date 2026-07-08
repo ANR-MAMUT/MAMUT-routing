@@ -26,7 +26,7 @@
 # get_map_data_cached, SPEED_ROADS_URBAN, haversine_m, get_vertex_latlon,
 # default_categories).
 
-const TD_BRIDGE_SCHEMA_VERSION = 1
+const TD_BRIDGE_SCHEMA_VERSION = 2
 const TD_NUM_BINS = 24
 const TD_BIN_SECONDS = 3600.0
 const TD_SPEED_DECIMALS = 3          # exported speeds are rounded to mm/s
@@ -301,6 +301,12 @@ function export_td_bridge(; osm_path::String,
     out_dir = joinpath(out_root, city_slug)
     mkpath(out_dir)
 
+    # Bridge schema v2 (Stream 12'): edges carry the static free-flow limit
+    # (m/s, same rounding as the speed profiles) so the Python builder never
+    # needs the class table, and every vertex incident to an edge ships its
+    # WGS84 position ([osm_id, lon, lat], sorted by osm_id) for the road-graph
+    # v2 `vertex_lonlat` and the geo road cache.
+    used_vertices = sort!(collect(Set(v for e in edges for v in (e.u, e.v))))
     graph_path = joinpath(out_dir, "graph.json")
     td_write_json(graph_path, Dict(
         "schema_version" => TD_BRIDGE_SCHEMA_VERSION,
@@ -314,7 +320,9 @@ function export_td_bridge(; osm_path::String,
         "bin_seconds" => TD_BIN_SECONDS,
         "speed_unit" => "m/s",
         "length_unit" => "m",
-        "edges" => [Any[e.osm_u, e.osm_v, e.length_m, e.class] for e in edges],
+        "vertices" => [Any[md.n[v], vertex_ll[v][2], vertex_ll[v][1]] for v in used_vertices],
+        "edges" => [Any[e.osm_u, e.osm_v, e.length_m, e.class,
+                        td_round_speed(td_free_speed_ms(e.class))] for e in edges],
     ))
 
     written = String[]

@@ -1,26 +1,57 @@
-"""Instance naming and on-disk layout of the generated TD family.
+"""Naming and on-disk layout of the Mamut2026 collection (v2, Stream 12').
 
-Names are lowercase and self-describing:
-``mamut-<place>-n<N>-<model>-<intensity>-<method>``, e.g.
-``mamut-lyon-n100-bpr-heavy-poi``. Instances live in the 7-part Mamut2026
-layout with the ``fastest`` metric slot (TD travel derives from
-free-flow-fastest paths):
-``<TDVRP|TDVRPTW>/Mamut2026/fastest/<place>/n=<N>/<instance>/<files>``.
+One base instance = one customer set = one name across every problem type:
+``mamut-<city>-n<N>-<method>`` (method in {poi, hyb}). TD subinstances append
+``-<model>-<intensity>`` (6 per base). The family lives in a single
+family-first collection repo mounted at ``benchmarks/Mamut2026/``:
+
+    sidecars/<city>/n=<N>/<base>/            shared sidecars of the base
+    CVRP/<metric>/<city>/n=<N>/<base>/
+    VRPTW/fastest/<city>/n=<N>/<base>/
+    TDVRP/<city>/n=<N>/<base>/<sub>/
+    TDVRPTW/<city>/n=<N>/<base>/<sub>/
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-TD_FAMILY = "Mamut2026"
-TD_METRIC = "fastest"
+FAMILY = "Mamut2026"
+METHOD_TAGS = {"poi_categories": "poi", "parametric_attach": "par", "hybrid": "hyb"}
 
 
-def td_instance_name(place: str, n: int, model: str, intensity: str, method: str) -> str:
-    return f"mamut-{place}-n{n}-{model}-{intensity}-{method}".lower()
+def base_instance_name(city: str, n: int, method_tag: str) -> str:
+    return f"mamut-{city}-n{n}-{method_tag}".lower()
 
 
-def td_instance_dir(root: str | Path, problem_type: str, place: str, n: int, instance_name: str) -> Path:
+def subinstance_name(model: str, intensity: str) -> str:
+    return f"{model}-{intensity}".lower()
+
+
+def td_instance_name(base: str, model: str, intensity: str) -> str:
+    return f"{base}-{subinstance_name(model, intensity)}"
+
+
+def sidecar_dir(collection_root: str | Path, city: str, n: int, base: str) -> Path:
+    return Path(collection_root) / "sidecars" / city / f"n={n}" / base
+
+
+def sidecar_relpath(city: str, n: int, base: str, filename: str) -> str:
+    """Collection-root-relative sidecar path (the form stored in instance refs)."""
+    return f"sidecars/{city}/n={n}/{base}/{filename}"
+
+
+def cvrp_dir(collection_root: str | Path, metric: str, city: str, n: int, base: str) -> Path:
+    return Path(collection_root) / "CVRP" / metric / city / f"n={n}" / base
+
+
+def vrptw_dir(collection_root: str | Path, city: str, n: int, base: str) -> Path:
+    return Path(collection_root) / "VRPTW" / "fastest" / city / f"n={n}" / base
+
+
+def td_instance_dir(
+    collection_root: str | Path, problem_type: str, city: str, n: int, base: str, sub: str
+) -> Path:
     if problem_type not in ("TDVRP", "TDVRPTW"):
         raise ValueError(f"problem_type must be TDVRP or TDVRPTW, got {problem_type!r}")
-    return Path(root) / problem_type / TD_FAMILY / TD_METRIC / place / f"n={n}" / instance_name
+    return Path(collection_root) / problem_type / city / f"n={n}" / base / sub
