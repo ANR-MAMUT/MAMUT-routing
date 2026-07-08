@@ -205,7 +205,7 @@ Per-arc travel times are the exact result of driving the fastest free-flow path 
 
 Licensing note: the road networks derive from OpenStreetMap, and the benchmark data of this family is distributed under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) with attribution to [OpenStreetMap and its contributors](https://www.openstreetmap.org/copyright).
 
-The family targets 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models and 3 intensities.
+The family contains 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models, 3 intensities and 2 sampling methods. No BKS are published yet; `Duration` BKS sidecars will follow in a dedicated seeding campaign.
 
 ### `Mamut2026` (TDVRP)
 
@@ -213,4 +213,4 @@ The TDVRP layer of the time-dependent `Mamut2026` family is the same instance se
 
 Licensing note: as for the TDVRPTW layer — OpenStreetMap-derived benchmark data under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) with attribution to OpenStreetMap and its contributors.
 
-The family targets 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models and 3 intensities.
+The family contains 360 instances over 6 sizes (10 to 1000 customers), 5 cities, 2 traffic models, 3 intensities and 2 sampling methods. No BKS are published yet; `Duration` BKS sidecars will follow in a dedicated seeding campaign.
