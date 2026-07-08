@@ -2,20 +2,30 @@
 
 Several related projects are useful context for MAMUT-routing, even when they are not benchmark families shipped directly in the current tree.
 
-They reinforce the central point of the ANR-MAMUT `MAMUT-routing` project: a benchmark is not only a set of instance files. It is a contract made of data provenance, objective semantics, numerical conventions, solution format, validation code, and maintenance policy.
+MAMUT-routing is, first and foremost, a curated benchmark vendor: a benchmark is not only a set of instance files, it is a contract made of data provenance, objective semantics, numerical conventions, solution format, validation code, and maintenance policy. It also ships its own workbench for generating realistic routing instances from real-world data (the pipeline behind the `Mamut2026` family) as a second, complementary role. The two sections below group related projects accordingly.
 
-## Combopt
+## Related benchmark & curation projects
+
+### Combopt
 
 [Combopt](http://combopt.org/tables/) and its [open repository](https://github.com/rogalski-wmii-uni-lodz-pl/vrp-benchmarks) provide one of the most useful community-maintained mirrors of classical VRP/VRPTW benchmark information. Its history section, GitHub repository, and overall design are direct inspiration for MAMUT-routing's benchmark-as-contract approach. Maintained by [Marek Rogalski](https://github.com/rogalski-wmii-uni-lodz-pl), it builds heavily on SINTEF's BKS culture and adds scripts and a checker-oriented workflow. It does not fully solve the reproducibility problem: many historical BKS files are missing or empty, the update policy is not always explicit, and the website itself is not open-source. Still, it is a useful community resource and a strong proof of concept for a curated benchmark repository.
 
-## CVRPLib
+### CVRPLib
 
 [CVRPLib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) is the reference infrastructure for CVRP benchmarks and BKS. It is important for MAMUT-routing in two ways. First, it shows how useful a centralized curated benchmark library can be when it is widely trusted. Second, its newer VRPTW material overlaps with the classical Solomon and Homberger universe, so objective and cost conventions must be stated carefully whenever CVRPLib-derived VRPTW files are compared with `Sintef2008` or `Dimacs2021`.
 
-## VRP-REP
+### VRP-REP
 
 [VRP-REP](http://www.vrp-rep.org/) was an ambitious attempt to provide a broader repository, checker, and specification platform for multiple VRP variants, including VRPTW. Its goal is close in spirit to MAMUT-routing: make benchmark data more structured and reusable. The project appears inactive today, which is a useful warning that benchmark infrastructure needs not only a schema, but also maintainable tooling, clear ownership, and an update process that survives beyond the initial publication.
 
-## Dietmar Wolz's VRPTW Repository
+### Dietmar Wolz's VRPTW Repository
 
 Dietmar Wolz's [VRPTW repository](https://github.com/dietmarwo/VRPTW) is a smaller but relevant reproducibility-oriented project. It discusses precisely the ambiguities that motivate MAMUT-routing: cost-only versus hierarchical objectives, rounding policies, validation, and the difficulty of comparing solver results when route files and checkers are not shared consistently.
+
+## Related instance-generation projects
+
+### Timefold quickstarts (vehicle-routing example)
+
+[Timefold](https://timefold.ai) ships a vehicle-routing example (`timefold-quickstarts`, `java/vehicle-routing/`) as a demo application for its constraint-solving engine. Historically, `timefold-solver` (through v1.9.0, inherited from its OptaPlanner ancestry) vendored unmodified copies of classical benchmark sets (the full Uchoa et al. CVRPLIB X-set, the Augerat A-set, and a subset of Gehring & Homberger VRPTW instances) as import fixtures for that example app; the whole `examples/` module, vendored data included, was removed in v1.10.0. The current quickstarts example instead ships a small, fully parameterized, seeded synthetic generator (a handful of named city profiles, arbitrary sizes and seeds reachable) for demo purposes: no best-known-solution tracking, no fixed objective contract, no maintenance as a benchmark.
+
+Timefold has therefore never defined a benchmark of its own. What it vendored was always someone else's (already available from CVRPLIB and SINTEF directly), and what it generates today is a demo-data tool. Architecturally, that generator is closer to MAMUT-routing's own workbench (the pipeline behind `Mamut2026`) than to a curated benchmark family, which is why it is listed here rather than among the curated benchmark families.
