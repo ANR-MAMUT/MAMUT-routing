@@ -1786,15 +1786,18 @@ def _sorted_problem_types(items: list[_ResolvedSiteInstance]) -> list[ProblemTyp
 
 
 def _sorted_benchmark_names(items: list[_ResolvedSiteInstance]) -> list[BenchmarkName]:
+    # Historical/curated families first, workbench-generated families last
+    # (Mamut2026 after Lera2026: newest and least established closes the list).
     order = {
         BenchmarkName.SINTEF_2008: 0,
         BenchmarkName.DIMACS_2021: 1,
         BenchmarkName.ORTEC_2022: 2,
-        BenchmarkName.MAMUT_2026: 3,
-        BenchmarkName.DABIA_2013: 4,
-        BenchmarkName.ARI_2018: 5,
-        BenchmarkName.VU_2020: 6,
-        BenchmarkName.RIFKI_2020: 7,
+        BenchmarkName.DABIA_2013: 3,
+        BenchmarkName.ARI_2018: 4,
+        BenchmarkName.VU_2020: 5,
+        BenchmarkName.RIFKI_2020: 6,
+        BenchmarkName.LERA_2026: 7,
+        BenchmarkName.MAMUT_2026: 8,
     }
     return sorted({item.locator.benchmark_name for item in items}, key=lambda value: (order.get(value, 99), value.value))
 
