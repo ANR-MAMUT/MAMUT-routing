@@ -40,7 +40,7 @@ from mamut_routing_lib.td import (
     td_instance_from_payload,
 )
 
-from mamut_routing_publish.td_generation.bridge import BridgeGraph, BridgeNodes, BridgeSpeeds
+from mamut_routing_publish.td_generation.bridge import BridgeFormatError, BridgeGraph, BridgeNodes, BridgeSpeeds
 from mamut_routing_publish.td_generation.naming import td_instance_dir, td_instance_name
 from mamut_routing_publish.td_generation.tw_synthesis import (
     nearest_neighbour_visit_times,
@@ -234,6 +234,14 @@ def build_td_instance_pair(
     meta_nodes = meta["nodes"]
     coordinates = [[float(node["enu_x"]), float(node["enu_y"])] for node in meta_nodes]
     demands = [int(node["demand"]) for node in meta_nodes]
+    meta_reference_lla = meta.get("reference_lla")
+    if not isinstance(meta_reference_lla, dict):
+        raise BridgeFormatError(f"stage-1 meta for {name} has no reference_lla geodetic anchor")
+    reference_lla = {
+        "lat": float(meta_reference_lla["lat"]),
+        "lon": float(meta_reference_lla["lon"]),
+        "alt": float(meta_reference_lla.get("alt", 0.0)),
+    }
 
     service_rng = Random(_stable_seed(name, "service"))
     service_times = synthesize_service_times(service_rng, num_customers)
@@ -250,6 +258,7 @@ def build_td_instance_pair(
         "demands": demands,
         "service_times": service_times,
         "depot": 0,
+        "reference_lla": reference_lla,
         "horizon": list(TD_HORIZON),
         "td": {
             "model": "road-graph",
