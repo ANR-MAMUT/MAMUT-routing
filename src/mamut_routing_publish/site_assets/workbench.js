@@ -118,6 +118,7 @@ const {
   parseUploadedSolutionText,
   postWorkbenchBlob,
   postWorkbenchJson,
+  projectEnuInstanceCoordinates,
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
@@ -1317,7 +1318,9 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
     if (payload?.payload_kind !== "instance_page") {
       throw new Error(`Route '${instanceRoute}' is not a benchmark instance page.`);
     }
-    const instanceData = await fetchJson(artifactHref(payload.artifact_links.vrp_json_path));
+    const instanceData = projectEnuInstanceCoordinates(
+      await fetchJson(artifactHref(payload.artifact_links.vrp_json_path)),
+    );
     const objectiveEntries = Array.isArray(payload.bks_entries) ? payload.bks_entries : [];
     const objectiveEntry = objectiveEntries.find((entry) => entry.objective_function === preferredObjective)
       || objectiveEntries[0]

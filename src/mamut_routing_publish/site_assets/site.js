@@ -1933,7 +1933,9 @@ async function renderInstancePage(payload, options = {}) {
     : payload.breadcrumbs;
   setPage(pageTitle, pageIntro, breadcrumbs, "explorer");
   setStatus(`Loading ${payload.title}…`);
-  const instanceData = await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path));
+  const instanceData = projectEnuInstanceCoordinates(
+    await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path)),
+  );
   let geometryMeta = null;
   if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && payload.artifact_links.meta_path) {
     try {
@@ -2499,7 +2501,7 @@ async function loadWorkbenchInstancePreview(instancePayload, preferredObjectiveF
     && instancePayload.summary.road_cache_status === "complete"
     && instancePayload.artifact_links.meta_path;
   const [instanceData, geometryMeta, selectedBksData] = await Promise.all([
-    fetchJsonMemo(artifactHref(instancePayload.artifact_links.vrp_json_path)),
+    fetchJsonMemo(artifactHref(instancePayload.artifact_links.vrp_json_path)).then(projectEnuInstanceCoordinates),
     hasCachedRoad
       ? fetchJsonMemo(artifactHref(instancePayload.artifact_links.meta_path)).catch((error) => {
           console.warn("Unable to load geometry sidecar", error);
@@ -3174,24 +3176,34 @@ function parseVrpText(text, fileName) {
   };
 }
 
-function parseUploadedInstanceJson(payload, fileName) {
-  const rawCoordinates = Array.isArray(payload?.coordinates)
-    ? payload.coordinates.map(normalizeGeometryPoint)
-    : [];
-  if (rawCoordinates.length === 0 || rawCoordinates.some((point) => !point)) {
-    throw new Error(`JSON instance '${fileName}' does not expose a usable coordinates array.`);
-  }
-
+function projectEnuInstanceCoordinates(payload) {
   const refPayload = payload?.reference_lla;
   const refLat = Number(refPayload?.lat);
   const refLon = Number(refPayload?.lon);
+  if (!Number.isFinite(refLat) || !Number.isFinite(refLon) || !Array.isArray(payload?.coordinates)) {
+    return payload;
+  }
   const refAlt = Number.isFinite(Number(refPayload?.alt)) ? Number(refPayload.alt) : 0;
-  const coordinates = (Number.isFinite(refLat) && Number.isFinite(refLon))
-    ? rawCoordinates.map(([east, north]) => {
-        const geo = enuToGeodetic(Number(east), Number(north), 0.0, refLat, refLon, refAlt);
-        return [geo.lon, geo.lat];
-      })
-    : rawCoordinates;
+  return {
+    ...payload,
+    coordinates: payload.coordinates.map((point) => {
+      if (!Array.isArray(point) || point.length < 2) {
+        return point;
+      }
+      const geo = enuToGeodetic(Number(point[0]), Number(point[1]), 0.0, refLat, refLon, refAlt);
+      return [geo.lon, geo.lat];
+    }),
+  };
+}
+
+function parseUploadedInstanceJson(payload, fileName) {
+  const projected = projectEnuInstanceCoordinates(payload);
+  const coordinates = Array.isArray(projected?.coordinates)
+    ? projected.coordinates.map(normalizeGeometryPoint)
+    : [];
+  if (coordinates.length === 0 || coordinates.some((point) => !point)) {
+    throw new Error(`JSON instance '${fileName}' does not expose a usable coordinates array.`);
+  }
 
   return {
     name: payload.instance_id || payload.instance_name || payload.name || fileName,
@@ -3917,6 +3929,7 @@ export {
   normalizeRoute,
   parseUploadedInstanceText,
   parseUploadedMetaText,
+  projectEnuInstanceCoordinates,
   parseUploadedSolutionText,
   postWorkbenchBlob,
   postWorkbenchJson,
