@@ -100,9 +100,9 @@ def export_bridge(repo_root: Path, *, osm_path: str, city_slug: str,
         "force": force,
         "meta_paths": meta_paths or [],
     }
-    if models:
+    if models is not None:
         payload["models"] = models
-    if intensities:
+    if intensities is not None:
         payload["intensities"] = intensities
     expression = (
         'export_td_bridge(; osm_path=String(payload["osm_path"]), city_slug=String(payload["city_slug"]), '
