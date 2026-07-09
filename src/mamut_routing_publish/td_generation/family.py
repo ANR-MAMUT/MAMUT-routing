@@ -12,8 +12,11 @@ The Python side of the deliberately 3-stepped generation. Per base
    ``distances-*`` sidecars into the collection trees.
 
 2. ``derive_vrptw`` (stage ``derive-vrptw``): the single name-seeded
-   synthesis (service times + route-centered TWs over the published
-   free-flow fastest matrix) emits the candidate VRPTW instance.
+   synthesis (service times + TWs over the published free-flow fastest
+   matrix) emits one VRPTW instance per TW set: the ``td-shared``
+   candidate (route-centered, finalized by ``build_td``) and the
+   static-only ``tight`` / ``spread`` sets (final as written, never
+   audited under traffic, NOT the TDVRPTW windows).
 
 3. ``build_td`` (stage ``build-td``): aligns the 6 traffic overlays to the
    trimmed graph (clamped at each edge's free-flow limit), materializes the
@@ -71,7 +74,11 @@ from mamut_routing_lib.td import (
 
 from mamut_routing_publish.td_generation.bridge import BridgeGraph, BridgeNodes, BridgeSpeeds
 from mamut_routing_publish.td_generation.naming import (
+    ALL_TW_SETS,
     FAMILY,
+    TW_SET_SPREAD,
+    TW_SET_TD_SHARED,
+    TW_SET_TIGHT,
     base_instance_name,
     cvrp_dir,
     sidecar_dir,
@@ -80,11 +87,17 @@ from mamut_routing_publish.td_generation.naming import (
     td_instance_dir,
     td_instance_name,
     vrptw_dir,
+    vrptw_instance_name,
 )
 from mamut_routing_publish.td_generation.tw_synthesis import (
+    TIGHT_TW_WIDTH_RATIO_MAX,
+    TIGHT_TW_WIDTH_RATIO_MEAN,
+    TIGHT_TW_WIDTH_RATIO_MIN,
+    TIGHT_TW_WIDTH_RATIO_STD,
     nearest_neighbour_visit_times,
     synthesize_service_times,
     synthesize_time_windows,
+    synthesize_time_windows_spread,
 )
 
 TD_HORIZON = (0.0, 86400.0)
@@ -632,22 +645,81 @@ def build_base(
 # ---------------------------------------------------------------------------
 
 
+TW_SET_METADATA: dict[str, dict[str, Any]] = {
+    TW_SET_TD_SHARED: {
+        "name": TW_SET_TD_SHARED,
+        "td_paired": True,
+        "policy": "route-centered",
+        "note": "windows shared verbatim with the base's TDVRPTW twins (post minimal-shared-tw-repair)",
+    },
+    TW_SET_TIGHT: {
+        "name": TW_SET_TIGHT,
+        "td_paired": False,
+        "policy": "route-centered-tight",
+        "note": "static-only TW set; NOT the TDVRPTW windows; never audited under traffic",
+    },
+    TW_SET_SPREAD: {
+        "name": TW_SET_SPREAD,
+        "td_paired": False,
+        "policy": "uniform-spread",
+        "note": "static-only TW set; NOT the TDVRPTW windows; never audited under traffic",
+    },
+}
+
+
+def _annotate_tw_set(path: Path) -> bool:
+    """Insert ``metadata.tw_set`` into an already-published td-shared VRPTW
+    instance, at the position a fresh pipeline run produces (just before
+    ``tw_repair``); returns whether the file changed. Everything else is
+    preserved byte-for-byte (canonical rewrite of identical content)."""
+    import json as _json
+
+    payload = _json.loads(path.read_text())
+    metadata = payload["metadata"]
+    if "tw_set" in metadata:
+        return False
+    ordered: dict[str, Any] = {}
+    for key, value in metadata.items():
+        if key == "tw_repair":
+            ordered["tw_set"] = TW_SET_METADATA[TW_SET_TD_SHARED]
+        ordered[key] = value
+    if "tw_set" not in ordered:
+        ordered["tw_set"] = TW_SET_METADATA[TW_SET_TD_SHARED]
+    payload["metadata"] = ordered
+    save_json_to_file(payload, path)
+    return True
+
+
 def derive_vrptw(
     *,
     collection_root: str | Path,
     city: str,
     num_customers: int,
     method_tag: str,
+    tw_set: str = TW_SET_TD_SHARED,
     generated_at: str | None = None,
     force: bool = False,
-) -> Path | None:
-    """Emit the candidate VRPTW instance of a base (finalized by ``build_td``)."""
+) -> tuple[str, Path]:
+    """Emit one VRPTW TW-set instance of a base.
+
+    ``td-shared`` emits the candidate finalized by ``build_td`` (audit +
+    minimal shared TW repair); the static-only sets (``tight``, ``spread``)
+    are final as written and never touched by ``build_td``. Returns
+    ``(action, path)`` with action in ``derived`` / ``kept`` / ``annotated``
+    (the latter: an existing td-shared instance received the ``tw_set``
+    metadata block in place, windows untouched).
+    """
+    if tw_set not in ALL_TW_SETS:
+        raise ValueError(f"unknown TW set {tw_set!r} (expected one of {ALL_TW_SETS})")
     root = Path(collection_root)
     base = base_instance_name(city, num_customers, method_tag)
+    name = vrptw_instance_name(base, tw_set)
     target_dir = vrptw_dir(root, city, num_customers, base)
-    target = target_dir / f"{base}.vrp.json"
+    target = target_dir / f"{name}.vrp.json"
     if not force and target.exists():
-        return None
+        if tw_set == TW_SET_TD_SHARED and _annotate_tw_set(target):
+            return "annotated", target
+        return "kept", target
 
     cvrp_fastest = cvrp_dir(root, "fastest", city, num_customers, base) / f"{base}.vrp.json"
     if not cvrp_fastest.exists():
@@ -660,32 +732,52 @@ def derive_vrptw(
     ).values
 
     service_times = synthesize_service_times(Random(_stable_seed(base, "service")), num_customers)
-    visit_times = nearest_neighbour_visit_times(fastest, service_times)
-    time_windows = synthesize_time_windows(
-        Random(_stable_seed(base, "tw")), fastest, service_times, visit_times
-    )
+    tw_seed_label = "tw" if tw_set == TW_SET_TD_SHARED else f"tw:{tw_set}"
+    tw_rng = Random(_stable_seed(base, tw_seed_label))
+    if tw_set == TW_SET_SPREAD:
+        tw_anchor = "uniform-feasible"
+        time_windows = synthesize_time_windows_spread(tw_rng, fastest, service_times)
+    else:
+        tw_anchor = "free-flow-fastest"
+        visit_times = nearest_neighbour_visit_times(fastest, service_times)
+        if tw_set == TW_SET_TIGHT:
+            time_windows = synthesize_time_windows(
+                tw_rng,
+                fastest,
+                service_times,
+                visit_times,
+                width_ratio_mean=TIGHT_TW_WIDTH_RATIO_MEAN,
+                width_ratio_std=TIGHT_TW_WIDTH_RATIO_STD,
+                width_ratio_min=TIGHT_TW_WIDTH_RATIO_MIN,
+                width_ratio_max=TIGHT_TW_WIDTH_RATIO_MAX,
+            )
+        else:
+            time_windows = synthesize_time_windows(tw_rng, fastest, service_times, visit_times)
+
+    generator_extra: dict[str, Any] = {
+        "city": city,
+        "method": method_tag,
+        "service_seed": _stable_seed(base, "service"),
+        "tw_seed": _stable_seed(base, tw_seed_label),
+        "tw_anchor": tw_anchor,
+    }
+    if tw_set != TW_SET_TD_SHARED:
+        generator_extra["tw_set"] = tw_set
 
     payload = dict(cvrp_payload)
+    payload["instance_name"] = name
     payload["service_times"] = service_times
     payload["time_windows"] = [list(window) for window in time_windows]
     metadata = dict(cvrp_payload["metadata"])
     metadata["problem_type"] = "VRPTW"
-    metadata["generator"] = _base_generator(
-        "derive-vrptw",
-        {
-            "city": city,
-            "method": method_tag,
-            "service_seed": _stable_seed(base, "service"),
-            "tw_seed": _stable_seed(base, "tw"),
-            "tw_anchor": "free-flow-fastest",
-        },
-    )
+    metadata["generator"] = _base_generator("derive-vrptw", generator_extra)
     if generated_at:
         metadata["generated_at"] = generated_at
+    metadata["tw_set"] = TW_SET_METADATA[tw_set]
     payload["metadata"] = metadata
     target_dir.mkdir(parents=True, exist_ok=True)
     save_json_to_file(payload, target)
-    return target
+    return "derived", target
 
 
 # ---------------------------------------------------------------------------
