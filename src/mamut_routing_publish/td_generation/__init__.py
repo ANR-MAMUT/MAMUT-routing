@@ -32,15 +32,23 @@ from mamut_routing_publish.td_generation.family import (
     simplify_tolerance_for,
 )
 from mamut_routing_publish.td_generation.naming import (
+    ALL_TW_SETS,
+    EXTRA_TW_SETS,
     FAMILY,
     METHOD_TAGS,
+    TW_SET_TD_SHARED,
     base_instance_name,
     subinstance_name,
     td_instance_dir,
     td_instance_name,
+    vrptw_instance_name,
 )
 
 __all__ = [
+    "ALL_TW_SETS",
+    "EXTRA_TW_SETS",
+    "TW_SET_TD_SHARED",
+    "vrptw_instance_name",
     "BridgeGraph",
     "BridgeNodes",
     "BridgeSpeeds",

@@ -830,30 +830,36 @@ def workbench_derive_vrptw_cmd(
     city: Annotated[str, typer.Argument(help="City name or slug.")],
     n: Annotated[Optional[list[int]], typer.Option(help="Customer counts (repeatable; default: the family grid).")] = None,
     method: Annotated[Optional[list[str]], typer.Option(help="Sampling methods (repeatable).")] = None,
+    tw_set: Annotated[Optional[list[str]], typer.Option(help="TW sets (repeatable; default: td-shared, tight, spread).")] = None,
     out_root: Annotated[Path, typer.Option(help="Collection root.")] = Path("benchmarks/Mamut2026"),
     generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata.")] = None,
     force: Annotated[bool, typer.Option(help="Re-derive even if the VRPTW instance exists.")] = False,
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
-    """Derive the candidate VRPTW layer (base-name-seeded TWs over free-flow fastest)."""
-    from mamut_routing_publish.td_generation import derive_vrptw
+    """Derive the VRPTW layer: the td-shared candidate (base-name-seeded TWs
+    over free-flow fastest, finalized by build-td) plus the static-only TW
+    sets (tight, spread; final as written)."""
+    from mamut_routing_publish.td_generation import ALL_TW_SETS, derive_vrptw
 
     repo_dir = _resolve_repo_dir(source_repo_dir)
     out = _resolve_out_root(repo_dir, out_root)
     for size in n or DEFAULT_SIZES:
         for sampling in method or DEFAULT_METHODS:
-            target = derive_vrptw(
-                collection_root=out,
-                city=_city_slug(city),
-                num_customers=size,
-                method_tag=_method_tag(sampling),
-                generated_at=generated_at,
-                force=force,
-            )
-            typer.echo(
-                f"derived {target}" if target is not None
-                else f"kept {_city_slug(city)} n={size} {sampling} (already derived)"
-            )
+            for set_name in tw_set or ALL_TW_SETS:
+                action, target = derive_vrptw(
+                    collection_root=out,
+                    city=_city_slug(city),
+                    num_customers=size,
+                    method_tag=_method_tag(sampling),
+                    tw_set=set_name,
+                    generated_at=generated_at,
+                    force=force,
+                )
+                typer.echo(
+                    f"kept {_city_slug(city)} n={size} {sampling} [{set_name}] (already derived)"
+                    if action == "kept"
+                    else f"{action} {target}"
+                )
 
 
 @workbench_app.command("traffic-sim")

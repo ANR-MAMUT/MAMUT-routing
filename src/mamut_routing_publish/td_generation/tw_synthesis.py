@@ -1,24 +1,39 @@
 """Stage-2 (VRPTW) synthesis of service times and time windows (v2, Stream 12').
 
 The single implementation of the family's name-seeded synthesis
-(language-boundary tier 2): windows are route-centered over the **static
-free-flow fastest** travel times of the base, seeded from the **base name**,
-so one service-time set and one TW set exist per base and are shared verbatim
-by the VRPTW instance and every TDVRPTW subinstance. The v1 per-variant,
-TD-anchored synthesis is retired: anchoring windows on each traffic variant's
-own arrivals partially cancelled the traffic effect the family is built to
-measure.
+(language-boundary tier 2). One **service-time set** exists per base, shared
+by every VRPTW instance and TDVRPTW subinstance. Three **TW sets** exist per
+base:
+
+- ``td-shared`` (the TD-paired set): route-centered over the **static
+  free-flow fastest** travel times, seeded from the base name, shared
+  verbatim (post ``build-td`` repair) by the plain VRPTW instance and every
+  TDVRPTW subinstance. The v1 per-variant, TD-anchored synthesis is retired:
+  anchoring windows on each traffic variant's own arrivals partially
+  cancelled the traffic effect the family is built to measure.
+- ``tight`` (static-only): same route-centered machinery and hence the same
+  window centers as ``td-shared``, but much narrower widths (a controlled
+  width comparison over identical demand geometry).
+- ``spread`` (static-only): window centers drawn uniformly over each
+  customer's individually feasible interval, destroying the route structure
+  (Solomon R-class flavor); widths follow the ``td-shared`` distribution.
+
+The static-only sets are never audited under traffic and are **not** the
+TDVRPTW windows; they exist to widen the static VRPTW layer of the family.
 
 Values are integer seconds (exact in binary64). Feasibility bounds at free
 flow: a window ``[e, l]`` guarantees ``l >= t_0i`` (a vehicle leaving the
 depot at the horizon start reaches the customer by ``l``) and
 ``l + s_i + t_i0 <= horizon end`` (starting service at ``l`` returns in
-time). Stage 3 (``build-td``) then audits these windows under every traffic
-overlay and applies the minimal shared deadline lift, which only relaxes
-deadlines, so free-flow feasibility is preserved.
+time). For ``td-shared``, stage 3 (``build-td``) then audits these windows
+under every traffic overlay and applies the minimal shared TW repair. The
+static-only sets are feasible by construction under the free-flow fastest
+matrix (route-centered: the seeding NN tour serves everyone in-window;
+spread: every customer is individually serveable, so singleton routes fit
+the horizon) and receive no repair.
 
-All randomness comes from ``random.Random`` seeded per base; the windows are
-shipped data, never re-derived at load time.
+All randomness comes from ``random.Random`` seeded per base and TW set; the
+windows are shipped data, never re-derived at load time.
 """
 
 from __future__ import annotations
@@ -33,6 +48,12 @@ SERVICE_MEAN_RATIO = 0.01
 SERVICE_MEAN_RATIO_STD = 0.005
 TW_WIDTH_RATIO_MEAN = 0.2
 TW_WIDTH_RATIO_STD = 0.08
+TW_WIDTH_RATIO_MIN = 0.01
+TW_WIDTH_RATIO_MAX = 1.0
+TIGHT_TW_WIDTH_RATIO_MEAN = 0.05
+TIGHT_TW_WIDTH_RATIO_STD = 0.02
+TIGHT_TW_WIDTH_RATIO_MIN = 0.01
+TIGHT_TW_WIDTH_RATIO_MAX = 0.15
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -82,30 +103,83 @@ def nearest_neighbour_visit_times(
     return arrivals
 
 
+def _feasible_bounds(
+    fastest: list[list[float]], service_times: list[int], i: int
+) -> tuple[int, int]:
+    """Integer free-flow feasibility bounds for customer ``i``'s service start."""
+    earliest_arrival = fastest[0][i]
+    latest_service_start = HORIZON_END - fastest[i][0] - service_times[i]
+    lo = math.ceil(earliest_arrival)
+    hi = math.floor(latest_service_start)
+    if hi < lo:
+        raise ValueError(
+            f"customer {i} cannot be served within the horizon at free flow: "
+            f"earliest arrival {earliest_arrival}, latest feasible service start "
+            f"{latest_service_start}"
+        )
+    return lo, hi
+
+
 def synthesize_time_windows(
     rng: Random,
     fastest: list[list[float]],
     service_times: list[int],
     visit_times: list[float],
+    *,
+    width_ratio_mean: float = TW_WIDTH_RATIO_MEAN,
+    width_ratio_std: float = TW_WIDTH_RATIO_STD,
+    width_ratio_min: float = TW_WIDTH_RATIO_MIN,
+    width_ratio_max: float = TW_WIDTH_RATIO_MAX,
 ) -> list[tuple[int, int]]:
-    """Route-centered integer windows repaired to the free-flow feasibility bounds."""
+    """Route-centered integer windows clamped to the free-flow feasibility bounds.
+
+    Defaults reproduce the ``td-shared`` set byte-for-byte; the ``tight`` set
+    passes the ``TIGHT_TW_WIDTH_RATIO_*`` parameters (same rng call sequence,
+    so identical seeds with identical widths give identical windows).
+    """
     horizon = HORIZON_END - HORIZON_START
     num_nodes = len(fastest)
     windows: list[tuple[int, int]] = [(int(HORIZON_START), int(HORIZON_END))]
     for i in range(1, num_nodes):
-        earliest_arrival = fastest[0][i]
-        latest_service_start = HORIZON_END - fastest[i][0] - service_times[i]
-        lo = math.ceil(earliest_arrival)
-        hi = math.floor(latest_service_start)
-        if hi < lo:
-            raise ValueError(
-                f"customer {i} cannot be served within the horizon at free flow: "
-                f"earliest arrival {earliest_arrival}, latest feasible service start "
-                f"{latest_service_start}"
-            )
-        width_ratio = _clamp(rng.gauss(0.0, 1.0) * TW_WIDTH_RATIO_STD + TW_WIDTH_RATIO_MEAN, 0.01, 1.0)
+        lo, hi = _feasible_bounds(fastest, service_times, i)
+        width_ratio = _clamp(
+            rng.gauss(0.0, 1.0) * width_ratio_std + width_ratio_mean,
+            width_ratio_min,
+            width_ratio_max,
+        )
         width = max(1.0, float(round(horizon * width_ratio)))
         center = visit_times[i]
+        latest = int(_clamp(float(round(center + width / 2.0)), float(lo), float(hi)))
+        earliest = int(_clamp(float(round(center - width / 2.0)), HORIZON_START, float(latest)))
+        windows.append((earliest, latest))
+    return windows
+
+
+def synthesize_time_windows_spread(
+    rng: Random,
+    fastest: list[list[float]],
+    service_times: list[int],
+) -> list[tuple[int, int]]:
+    """Uniform-center integer windows (the static-only ``spread`` set).
+
+    Per customer, the width is drawn from the ``td-shared`` distribution and
+    the center uniformly over the customer's feasible interval (width first,
+    then center: the rng call order is part of the frozen policy). Clamping
+    is identical to the route-centered synthesis, so every window satisfies
+    the individual free-flow feasibility bounds by construction.
+    """
+    horizon = HORIZON_END - HORIZON_START
+    num_nodes = len(fastest)
+    windows: list[tuple[int, int]] = [(int(HORIZON_START), int(HORIZON_END))]
+    for i in range(1, num_nodes):
+        lo, hi = _feasible_bounds(fastest, service_times, i)
+        width_ratio = _clamp(
+            rng.gauss(0.0, 1.0) * TW_WIDTH_RATIO_STD + TW_WIDTH_RATIO_MEAN,
+            TW_WIDTH_RATIO_MIN,
+            TW_WIDTH_RATIO_MAX,
+        )
+        width = max(1.0, float(round(horizon * width_ratio)))
+        center = rng.uniform(float(lo), float(hi))
         latest = int(_clamp(float(round(center + width / 2.0)), float(lo), float(hi)))
         earliest = int(_clamp(float(round(center - width / 2.0)), HORIZON_START, float(latest)))
         windows.append((earliest, latest))
