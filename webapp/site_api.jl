@@ -17,6 +17,12 @@ const WORKBENCH_MAP_CACHE = Dict{String,Any}()
 const REPO_ARTIFACT_ROOT_ENTRIES = Set([
     "LICENSE",
     "benchmarks",
+    # Workbench-generated scratch artifacts (git-ignored), so users can
+    # download the instances and sidecars they generate interactively.
+    "instances_v2",
+    # Payload artifact links reference build-time materializations (e.g. the
+    # dist/atf-cache sidecars) by their repo-relative path.
+    "dist",
 ])
 
 
@@ -25,7 +31,14 @@ default_site_repo_root() = normpath(joinpath(@__DIR__, ".."))
 
 
 function canonical_site_repo_root(repo_root::AbstractString=default_site_repo_root())
-    return normpath(abspath(String(repo_root)))
+    resolved = normpath(abspath(String(repo_root)))
+    # normpath keeps a trailing separator when the input ends with ".." (the
+    # default root does: joinpath(@__DIR__, "..")); strip it so containment
+    # checks of the form startswith(candidate, root * separator) hold.
+    while length(resolved) > 1 && (endswith(resolved, '/') || endswith(resolved, '\\'))
+        resolved = chop(resolved)
+    end
+    return resolved
 end
 
 
@@ -2993,6 +3006,86 @@ function workbench_generation_bulk_download_zip(payload; repo_root::AbstractStri
 end
 
 
+# --- Workbench TD generation (Mamut2026 v2 pipeline) -----------------------
+# The published family pipeline is Python-owned (language-boundary rule:
+# Python is the sole serializer of published formats; Julia only samples and
+# simulates). The workbench therefore shells out to the publisher CLI instead
+# of re-implementing the stages, the exact inverse of td_generation/julia_driver.
+
+const WORKBENCH_TD_OUTPUT_ROOT = joinpath("instances_v2", "workbench-collection")
+const WORKBENCH_TD_MIN_CUSTOMERS = 5
+const WORKBENCH_TD_MAX_CUSTOMERS = 100
+const WORKBENCH_TD_METHODS = Set(["poi_categories", "hybrid"])
+
+function workbench_td_publisher_cli(repo_root::AbstractString)
+    candidate = joinpath(repo_root, ".venv", "bin", "mamut-routing-publish")
+    isfile(candidate) && return candidate
+    resolved = Sys.which("mamut-routing-publish")
+    resolved === nothing && error("mamut-routing-publish CLI not found: install the publisher package (uv sync) or put it on PATH")
+    return resolved
+end
+
+workbench_td_city_slug(city::AbstractString) = replace(replace(lowercase(strip(String(city))), " " => "_"), "-" => "_")
+
+function workbench_td_collect_artifacts(repo_root::AbstractString, out_root::AbstractString, base::AbstractString, n::Int)
+    artifacts = Dict{String,Any}[]
+    root = joinpath(repo_root, out_root)
+    isdir(root) || return artifacts
+    for (dirpath, _, filenames) in walkdir(root)
+        occursin(base, dirpath) || continue
+        occursin("n=$(n)", dirpath) || continue
+        for filename in sort(filenames)
+            startswith(filename, base) || continue
+            relative = workbench_to_repo_relative(repo_root, joinpath(dirpath, filename))
+            segments = split(replace(relative, "\\" => "/"), "/")
+            kind = length(segments) >= 3 ? segments[3] : "artifact"
+            push!(artifacts, Dict("path" => relative, "kind" => kind, "filename" => filename))
+        end
+    end
+    return artifacts
+end
+
+function workbench_td_build_payload(payload; repo_root::AbstractString=default_site_repo_root())
+    city = strip(String(get(payload, "city", "")))
+    isempty(city) && error("city is required")
+    n = Int(get(payload, "n", 25))
+    (n < WORKBENCH_TD_MIN_CUSTOMERS || n > WORKBENCH_TD_MAX_CUSTOMERS) &&
+        error("n must lie in [$(WORKBENCH_TD_MIN_CUSTOMERS), $(WORKBENCH_TD_MAX_CUSTOMERS)] for workbench TD generation (larger sizes belong to the offline CLI)")
+    method = String(get(payload, "method", "poi_categories"))
+    method in WORKBENCH_TD_METHODS || error("method must be one of: poi_categories, hybrid")
+
+    cli = workbench_td_publisher_cli(repo_root)
+    command = Cmd(
+        Cmd(String[cli, "workbench", "build-family", city,
+            "--n", string(n),
+            "--method", method,
+            "--out-root", WORKBENCH_TD_OUTPUT_ROOT,
+            "--source-repo-dir", String(repo_root)]);
+        dir=String(repo_root),
+    )
+    stdout_buffer = IOBuffer()
+    stderr_buffer = IOBuffer()
+    started = time()
+    succeeded = success(pipeline(command; stdout=stdout_buffer, stderr=stderr_buffer))
+    log_lines = vcat(split(String(take!(stdout_buffer)), '\n'), split(String(take!(stderr_buffer)), '\n'))
+    log_tail = join(filter(!isempty, log_lines)[max(1, end - 39):end], "\n")
+    succeeded || error("TD generation failed:\n$(log_tail)")
+
+    slug = workbench_td_city_slug(city)
+    method_tag = method == "poi_categories" ? "poi" : "hyb"
+    base = "mamut-$(slug)-n$(n)-$(method_tag)"
+    artifacts = workbench_td_collect_artifacts(repo_root, WORKBENCH_TD_OUTPUT_ROOT, base, n)
+    return Dict(
+        "ok" => true,
+        "base" => base,
+        "collection_root" => WORKBENCH_TD_OUTPUT_ROOT,
+        "elapsed_seconds" => round(time() - started; digits=1),
+        "artifacts" => artifacts,
+        "log_tail" => log_tail,
+        "note" => "Workbench-generated with the published Mamut2026 v2 pipeline; not part of the published collection.",
+    )
+end
+
 function build_site_api_handler(; repo_root::AbstractString=default_site_repo_root(), api_prefix::AbstractString=DEFAULT_SITE_API_PREFIX, indent::Int=2, sort_keys::Bool=false)
     http = load_http_module()
     resolved_repo_root = canonical_site_repo_root(repo_root)
@@ -3078,6 +3171,15 @@ function build_site_api_handler(; repo_root::AbstractString=default_site_repo_ro
                 payload = JSON3.read(String(request.body))
                 zip_bytes, filename = workbench_generation_bulk_download_zip(payload; repo_root=resolved_repo_root)
                 return site_api_zip_response(200, zip_bytes, filename)
+            catch error
+                return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
+            end
+        end
+
+        if method == "POST" && path == "/api/workbench/generation/td-build"
+            try
+                payload = materialize_json(JSON3.read(String(request.body)))
+                return site_api_json_response(200, workbench_td_build_payload(payload; repo_root=resolved_repo_root))
             catch error
                 return site_api_json_response(400, Dict("ok" => false, "error" => sprint(showerror, error)))
             end

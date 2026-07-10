@@ -10,6 +10,7 @@ const WORKBENCH_GENERATION_SINGLE_DOWNLOAD_PATH = "/api/workbench/generation/sin
 const WORKBENCH_GENERATION_BULK_PATH = "/api/workbench/generation/bulk";
 const WORKBENCH_GENERATION_BULK_DOWNLOAD_PATH = "/api/workbench/generation/bulk-download";
 const WORKBENCH_GENERATION_FETCH_OSM_PATH = "/api/workbench/generation/fetch-osm-city";
+const WORKBENCH_GENERATION_TD_BUILD_PATH = "/api/workbench/generation/td-build";
 const ROUTE_COLORS = [
   "#e63946",
   "#457b9d",
@@ -175,6 +176,8 @@ const genPoiSelectAllBtn = document.getElementById("genPoiSelectAllBtn");
 const genPoiClearBtn = document.getElementById("genPoiClearBtn");
 const genDisplayBtn = document.getElementById("genDisplayBtn");
 const genGenerateBtn = document.getElementById("genGenerateBtn");
+const tdGenerateBtn = document.getElementById("tdGenerateBtn");
+const tdGenResult = document.getElementById("tdGenResult");
 const genFilesBtn = document.getElementById("genFilesBtn");
 const genResult = document.getElementById("genResult");
 const generationNote = document.getElementById("generationNote");
@@ -2356,6 +2359,56 @@ genDisplayBtn.addEventListener("click", async () => {
     genResult.textContent = error.message || String(error);
     hideAllProgressBars();
     showToast(`Generation preview error: ${error.message || error}`);
+  }
+});
+
+tdGenerateBtn?.addEventListener("click", async () => {
+  if (window.location.protocol === "file:") {
+    showToast("TD generation requires the site API server over HTTP.");
+    return;
+  }
+  const preview = currentGenerationPreviewPayload();
+  const method = preview.method === "hybrid" ? "hybrid" : "poi_categories";
+  const n = Number.isFinite(preview.nCustomers) ? preview.nCustomers : 25;
+  if (!preview.city) {
+    tdGenResult.textContent = "Select a city first.";
+    return;
+  }
+  if (n > 100) {
+    tdGenResult.textContent = "TD generation in the workbench is capped at n = 100; use the offline CLI for larger sizes.";
+    return;
+  }
+  const operationId = `generation-td-${Date.now()}`;
+  startProgressBar("Generating TD Family", operationId, tdGenerateBtn, 180000);
+  tdGenResult.textContent = `Running the Mamut2026 v2 pipeline for ${preview.city} (n=${n}, ${method})\nSampling, traffic simulation, overlays and twins can take a few minutes for a new city...`;
+  try {
+    const response = await postWorkbenchJson(WORKBENCH_GENERATION_TD_BUILD_PATH, { city: preview.city, n, method });
+    const artifacts = Array.isArray(response.artifacts) ? response.artifacts : [];
+    const byKind = new Map();
+    artifacts.forEach((artifact) => {
+      const kind = artifact.kind || "artifact";
+      byKind.set(kind, (byKind.get(kind) || 0) + 1);
+    });
+    const lines = [
+      `Base instance: ${response.base}`,
+      `Collection root: ${response.collection_root} (workbench-scoped scratch, not the published collection)`,
+      `Elapsed: ${response.elapsed_seconds}s`,
+      "Artifacts:",
+      ...Array.from(byKind.entries()).map(([kind, count]) => `  ${kind}: ${count} file(s)`),
+      "Downloads (repo-relative):",
+      ...artifacts.slice(0, 24).map((artifact) => `  /${artifact.path}`),
+    ];
+    if (artifacts.length > 24) {
+      lines.push(`  ... and ${artifacts.length - 24} more`);
+    }
+    tdGenResult.textContent = lines.join("\n");
+    completeProgressBar(operationId);
+    showToast(`TD family generated for ${preview.city}`);
+  } catch (error) {
+    console.error(error);
+    tdGenResult.textContent = `TD generation error: ${error.message || error}`;
+    hideAllProgressBars();
+    showToast(`TD generation failed: ${error.message || error}`);
   }
 });
 

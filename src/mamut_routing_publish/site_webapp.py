@@ -493,6 +493,15 @@ def _render_workbench_shell_html(
                     <span id="bulkCountBadge" class="poi-count" style="margin-left:0.5rem">0 instances</span>
                 </section>
 
+                <section class="card" id="tdGenerationCard">
+                    <h2>Time-Dependent Generation</h2>
+                    <p class="meta-line">Runs the published Mamut2026 v2 pipeline on the selected city: CVRP base (3 metrics), VRPTW time-window sets, 6 traffic overlays and the 12 TDVRP/TDVRPTW subinstances, with shared road/geo/distances sidecars. Uses the city, customer count and sampling method selected above (n &le; 100); expect a few minutes per city. Generated data is workbench-scoped, not part of the published collection.</p>
+                    <div class="btn-row">
+                        <button id="tdGenerateBtn" type="button">Generate TD Family</button>
+                    </div>
+                    <pre id="tdGenResult" class="mono-block">No TD generation call yet.</pre>
+                </section>
+
                 <section class="card">
                     <h2>Generation Output</h2>
                     <pre id="genResult" class="mono-block">No generation call yet.</pre>
