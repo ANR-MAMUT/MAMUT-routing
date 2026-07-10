@@ -19,6 +19,7 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 |---|---|
 | `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
+| `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Mamut2026 generated benchmarks. |
 | `webapp/` | Julia webapp (Genie) serving the static site and the route-payload API. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
@@ -44,11 +45,16 @@ The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW 
 
 `Lera2026` is the first `igp-profile` family: it ships compact IGP specifications instead of ATF sidecars (the canonical arrival-time functions materialize deterministically on load, pinned by `atf_sha256`), which keeps its two satellites at ~50 MB despite covering 200–1000 customers.
 
+### The Mamut2026 collection
+
+[MAMUT-routing-Mamut2026](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026), mounted at `benchmarks/Mamut2026/`, is the generated city family and the first **family-first collection**: instead of one satellite per problem type, a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Mamut2026 satellites are archived with tombstone READMEs.
+
 A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
 
 ```bash
-git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one family (0.1–0.8 GB each)
-git submodule update --init                                # everything (~2 GB of satellite data)
+git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one TD family (0.1–0.8 GB each)
+git submodule update --init benchmarks/Mamut2026           # the generated collection (~0.4 GB)
+git submodule update --init                                # everything (~2.5 GB of satellite data)
 ```
 
 ## Python publishing toolkit (`mamut-routing-publish`)
@@ -79,13 +85,24 @@ julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 This installs and precompiles the Julia dependencies declared in `webapp/Project.toml` and `webapp/Manifest.toml`.
 
 
-### CLI
+### Publishing the site (build order)
+
+The whole publish is four chained steps: fetch the data, install, materialize the build-time ATF cache (TD schedule tables and arc-click sidecars for the materialized-model families), build, then serve:
+
+```bash
+git submodule update --init MAMUT-routing-lib benchmarks/Mamut2026 \
+  && uv sync \
+  && uv run mamut-routing-publish site materialize-atf --max-n 400 \
+  && uv run mamut-routing-publish site build \
+  && julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+```
+
+Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step (the Julia server additionally provides repo-artifact downloads and the interactive workbench, including the TD generation endpoint).
+
+### CLI variants
 
 ```bash
 uv run mamut-routing-publish --help
-
-# Build the site (payloads + static HTML shell) into ./dist/
-uv run mamut-routing-publish site build
 
 # Quiet build for scripts that do not want progress on stderr
 uv run mamut-routing-publish site build --quiet
@@ -93,14 +110,17 @@ uv run mamut-routing-publish site build --quiet
 # Machine-readable progress events on stderr + generated file lists in stdout summary
 uv run mamut-routing-publish site build --progress-format json --list-files
 
-# Payloads only
+# Payloads only / static HTML shell only (assumes payloads already exist)
 uv run mamut-routing-publish site payloads
-
-# Static HTML shell only (assumes payloads already exist)
 uv run mamut-routing-publish site webapp
 
 # Build release archives + manifest into ./dist-release/
 uv run mamut-routing-publish release build
+
+# Generate a Mamut2026-pipeline family for a city (CVRP base, VRPTW TW sets,
+# 6 traffic overlays, 12 TD twins, shared sidecars); the workbench exposes the
+# same pipeline interactively for n <= 100
+uv run mamut-routing-publish workbench build-family Lyon --n 25 --method poi_categories --out-root instances_v2/workbench-collection
 ```
 
 By default, the CLI resolves the MAMUT-routing repo root from the current working directory, or from the `MAMUT_ROUTING_ROOT` environment variable (shared with `mamut-routing-lib`). Override via `--output-repo-dir` / `--source-repo-dir`. `site build` reports progress and a final human-readable duration/file/memory summary to stderr by default, then keeps the machine-readable JSON summary on stdout. Instance payload resolution runs in parallel by default with `--jobs auto`, defined as `max(1, os.cpu_count() - 2)` and capped by the number of discovered instances. Use `--jobs 1` for serial resolution.
