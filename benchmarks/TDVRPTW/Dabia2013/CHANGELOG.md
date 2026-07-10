@@ -2,6 +2,10 @@
 
 All notable changes to the curated `Dabia2013` TDVRPTW best-known solutions (BKS) are recorded here. Objective: **Duration** (duration minimization — the depot departure time of each route is a decision variable). Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer), total summed in that order — so any strict improvement is real.
 
+## 2026-07-10
+
+2 BKS improved at n=100 (RC101: 24778.294 -> 24762.734; RC106: 21238.247 -> 21233.331) by exact solves recorded as ordinary best-known solutions (no optimality stamps), from a re-certification campaign running the exact solver four times per instance (cold/warm starts x two labeling modes) with four-way value agreement, an audited exact-pricing phase, and canonical-checker re-validation.
+
 ## 2026-07-08
 
 21 of 168 BKS improved (mean -2.80%, largest single improvement -4.67%) by a 20,808-run anytime-strategy head-to-head campaign on Grid'5000: kayros 0.4.0.dev0 (TD-ILS, TD-ACO+LS, and an ACO-then-ILS budget split, all over the granular time-dependent local search), per-size time limits (120 s for n<=30, 300 s for n<=60, 600 s for n<=100), seeds {42, 123, 456}, single-threaded runs. Improve-only fold: for each instance the campaign-best solution was re-priced by the canonical checker before writing (checker cost authoritative); stored BKS marked proven optimal were left untouched.
