@@ -82,11 +82,20 @@ def materialize_atf_cache(
     """
     import json
 
+    from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
+
     summary = ATFCacheSummary()
     tasks: dict[str, str] = {}  # cache path -> instance path (first variant found)
     over_cap: set[str] = set()
-    for problem_type in ("TDVRPTW", "TDVRP"):
-        root = output_repo_dir / "benchmarks" / problem_type
+    benchmarks_root = output_repo_dir / "benchmarks"
+    # Problem-type-first satellites plus the TD trees of family-first
+    # collections (marker-rooted, e.g. benchmarks/Mamut2026/TDVRPTW).
+    scan_roots = [benchmarks_root / problem_type for problem_type in ("TDVRPTW", "TDVRP")]
+    if benchmarks_root.is_dir():
+        for candidate in sorted(benchmarks_root.iterdir()):
+            if candidate.is_dir() and (candidate / COLLECTION_MARKER_FILENAME).is_file():
+                scan_roots.extend(candidate / problem_type for problem_type in ("TDVRPTW", "TDVRP"))
+    for root in scan_roots:
         if not root.is_dir():
             continue
         for instance_path in sorted(root.rglob("*.vrp.json")):

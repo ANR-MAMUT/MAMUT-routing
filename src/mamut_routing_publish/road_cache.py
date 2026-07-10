@@ -59,7 +59,15 @@ def _bks_paths_for_sidecar(output_repo: Path, meta_path: Path, metric: str) -> l
 
 
 def build_road_cache_plan(output_repo_dir: str | Path) -> dict[str, Any]:
-    """Build a Julia-consumable plan for OSM-backed route-edge cache enforcement."""
+    """Build a Julia-consumable plan for OSM-backed route-edge cache enforcement.
+
+    This targets the retired v1 per-instance ``.meta.json`` sidecars, whose
+    route-edge caches were filled lazily from published BKS routes. The v2
+    family-first collection (``benchmarks/Mamut2026``) ships complete indexed
+    road caches inside its published geo sidecars (n <= 100; none above by
+    design), so it is deliberately outside this mechanism: with no v1 sidecar
+    on disk the plan is empty and enforcement is a no-op.
+    """
     output_repo = Path(output_repo_dir)
     entries: list[dict[str, Any]] = []
     sidecar_root = output_repo / "benchmarks"

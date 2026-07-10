@@ -640,6 +640,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
         "/project/legal-mentions/",
         "/project/authors/",
         "/project/citing/",
+        "/project/glossary/",
         "/project/faq/",
         "/project/related-projects/",
         "/project/funding/",
@@ -707,7 +708,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    assert webapp_summary.asset_files_written == 15
+    assert webapp_summary.asset_files_written == 16
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -1177,6 +1178,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": "benchmarks/VRPTW/Sintef2008/n=2/C101.bks.HierarchicalVehicleCost.json",
+            "optimality_proven": False,
         },
     ]
 
@@ -1203,12 +1205,14 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.HierarchicalVehicleCost.json",
+            "optimality_proven": False,
         },
         {
             "objective_function": "MonoCost",
             "cost": 12,
             "num_routes": None,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.MonoCost.json",
+            "optimality_proven": False,
         },
     ]
 
@@ -1716,3 +1720,171 @@ def test_evaluate_on_domain_absorbs_horizon_ulp_overshoot() -> None:
     # loudly -- the clamp must not mask a real infeasibility.
     with pytest.raises(PWLFError):
         _evaluate_on_domain(fn, horizon + 10 * _TD_SCHEDULE_DOMAIN_TOL)
+
+
+# ---------------------------------------------------------------------------
+# Family-first collection (Mamut2026 v2): slim instances, shared sidecars,
+# identity-based cross-links, geo-sidecar geometry.
+# ---------------------------------------------------------------------------
+
+_COLLECTION_BASE = "mamut-toyville-n2-poi"
+_COLLECTION_CITY = "toyville"
+
+
+def _collection_static_payload(*, metric: str, arc_costs_source: dict, name: str | None = None, tw_set: dict | None = None, with_tw: bool = False) -> dict:
+    payload = {
+        "instance_name": name or _COLLECTION_BASE,
+        "instance_origin": "OsmCvrpGen",
+        "benchmark_name": "Mamut2026",
+        "num_customers": 2,
+        "num_vehicles": None,
+        "vehicle_capacity": 10,
+        "coordinates": [[0.0, 0.0], [3.0, 4.0], [6.0, 8.0]],
+        "demands": [0, 4, 4],
+        "depot": 0,
+        "metric_variant": metric,
+        "arc_costs_source": arc_costs_source,
+        "metadata": {
+            "authors": "fixture",
+            "generated_at": "2026-07-10",
+            "city": _COLLECTION_CITY,
+            "base_instance_name": _COLLECTION_BASE,
+            "sidecars": {
+                "geo": {"path": f"sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz"},
+            },
+        },
+    }
+    if tw_set is not None:
+        payload["metadata"]["tw_set"] = tw_set
+    if with_tw:
+        payload["service_times"] = [0, 10, 10]
+        payload["time_windows"] = [[0, 86400], [100, 5000], [200, 6000]]
+    return payload
+
+
+def build_collection_fixture(output_repo_dir: Path) -> Path:
+    from mamut_routing_lib.distances import InstanceDistances, compute_distances_sha256, save_instance_distances
+    from mamut_routing_lib.geo import GeoNode, GeoRoadCache, InstanceGeo, save_instance_geo
+    from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
+
+    collection = output_repo_dir / "benchmarks" / "Mamut2026"
+    save_collection_marker(CollectionMarker(family="Mamut2026"), collection)
+
+    distances = InstanceDistances(
+        base_name=_COLLECTION_BASE,
+        benchmark_name="Mamut2026",
+        metric="fastest",
+        num_customers=2,
+        values=[[0.0, 120.5, 240.25], [120.5, 0.0, 130.75], [240.25, 130.75, 0.0]],
+    )
+    distances_rel = f"sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.distances-fastest.json.gz"
+    save_instance_distances(distances, collection / distances_rel)
+    fastest_source = {
+        "model": "distances-sidecar",
+        "distances": {"path": distances_rel, "sha256": compute_distances_sha256(distances)},
+    }
+
+    nodes = [
+        GeoNode(instance_node_id=i, poi_lon=4.0 + 0.01 * i, poi_lat=45.0 + 0.01 * i, enu_x=float(i), enu_y=float(i), demand=0 if i == 0 else 4, source_tag="poi", graph_vertex_id=100 + i)
+        for i in range(3)
+    ]
+    # Complete indexed cache for both road metrics over the 6 ordered pairs.
+    pair_keys = [f"{i}-{j}" for i in range(3) for j in range(3) if i != j]
+    cache = GeoRoadCache(
+        vertex_lonlat=[(4.0 + 0.01 * i, 45.0 + 0.01 * i) for i in range(3)] + [(4.05, 45.05)],
+        paths={metric: {key: [int(key[0]), 3, int(key[2])] for key in pair_keys} for metric in ("fastest", "shortest")},
+    )
+    geo = InstanceGeo(
+        base_name=_COLLECTION_BASE,
+        benchmark_name="Mamut2026",
+        city=_COLLECTION_CITY,
+        method="poi",
+        source_osm_file="osmdata/Toyville.osm",
+        reference_lla={"lat": 45.0, "lon": 4.0, "alt": 0.0},
+        map_options={},
+        nodes=nodes,
+        road_cache=cache,
+    )
+    save_instance_geo(geo, collection / f"sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz")
+
+    cvrp_dir = collection / "CVRP" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE
+    save_json_to_file(_collection_static_payload(metric="fastest", arc_costs_source=fastest_source), cvrp_dir / f"{_COLLECTION_BASE}.vrp.json")
+    save_json_to_file(
+        _collection_static_payload(metric="euclidean", arc_costs_source={"model": "euclidean", "decimals": 3}),
+        collection / "CVRP" / "euclidean" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / f"{_COLLECTION_BASE}.vrp.json",
+    )
+    save_json_to_file(
+        BenchmarkBKS(
+            instance_name=_COLLECTION_BASE,
+            routes=[[1, 2]],
+            cost=491.5,
+            objective_function=ObjectiveFunction.MONO_COST,
+            metadata={"authors": "fixture"},
+        ).model_dump(mode="json"),
+        cvrp_dir / f"{_COLLECTION_BASE}.bks.MonoCost.json",
+    )
+
+    vrptw_dir = collection / "VRPTW" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE
+    save_json_to_file(
+        _collection_static_payload(metric="fastest", arc_costs_source=fastest_source, with_tw=True, tw_set={"name": "td-shared", "td_paired": True}),
+        vrptw_dir / f"{_COLLECTION_BASE}.vrp.json",
+    )
+    save_json_to_file(
+        _collection_static_payload(
+            metric="fastest", arc_costs_source=fastest_source, with_tw=True,
+            name=f"{_COLLECTION_BASE}-tw-tight", tw_set={"name": "tight", "td_paired": False},
+        ),
+        vrptw_dir / f"{_COLLECTION_BASE}-tw-tight.vrp.json",
+    )
+    return collection
+
+
+def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path: Path) -> None:
+    output_repo_dir = tmp_path / "repo"
+    build_collection_fixture(output_repo_dir)
+
+    site_output = output_repo_dir / "dist"
+    generate_site_payloads(output_repo_dir, source_commit="fixture123", site_output_dir=site_output)
+    payload_root = site_output / "site-payloads"
+
+    cvrp_page = json.loads(
+        (payload_root / "benchmarks" / "cvrp" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
+    )
+    summary = cvrp_page["summary"]
+    assert summary["viewer_render_mode"] == "cached_road"
+    assert summary["road_cache_status"] == "complete"
+    assert summary["road_cache_metrics"] == ["fastest", "shortest"]
+    assert summary["license"] == "ODbL-1.0"
+    assert summary["source_city"] == _COLLECTION_CITY
+    links = cvrp_page["artifact_links"]
+    assert links["geo_json_path"] == f"benchmarks/Mamut2026/sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz"
+    assert links["meta_path"] is None
+    assert cvrp_page["sibling_variant_routes"] == {
+        "CVRP (euclidean)": f"/benchmarks/cvrp/mamut2026/euclidean/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+    }
+    assert cvrp_page["derived_problem_routes"] == {
+        "VRPTW (td-shared)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+        "VRPTW (tight)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
+    }
+    assert cvrp_page["source_problem_routes"] == {}
+    assert [entry["objective_function"] for entry in cvrp_page["bks_entries"]] == ["MonoCost"]
+
+    tight_page = json.loads(
+        (payload_root / "benchmarks" / "vrptw" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / f"{_COLLECTION_BASE}-tw-tight" / "index.json").read_text(encoding="utf-8")
+    )
+    assert tight_page["sibling_variant_routes"] == {
+        "VRPTW (td-shared)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+    }
+    assert tight_page["source_problem_routes"] == {
+        "CVRP (fastest)": f"/benchmarks/cvrp/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+    }
+    assert tight_page["derived_problem_routes"] == {}
+
+    shared_page = json.loads(
+        (payload_root / "benchmarks" / "vrptw" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
+    )
+    # The TD twins do not exist in this fixture: no phantom links may appear.
+    assert shared_page["derived_problem_routes"] == {}
+    assert shared_page["sibling_variant_routes"] == {
+        "VRPTW (tight)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
+    }
