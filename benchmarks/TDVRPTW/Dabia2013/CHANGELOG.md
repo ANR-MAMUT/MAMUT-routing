@@ -2,6 +2,10 @@
 
 All notable changes to the curated `Dabia2013` TDVRPTW best-known solutions (BKS) are recorded here. Objective: **Duration** (duration minimization — the depot departure time of each route is a decision variable). Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer), total summed in that order — so any strict improvement is real.
 
+## 2026-07-11
+
+**96 BKS stamped proven optimal** (`metadata.optimality`), including 15 at n=100, under a full re-certification (the earlier certificates' producer carried a pricing-ladder termination defect, so stamps were regenerated from scratch under a stronger protocol). Each stamp certifies four independent exact solves (cold and warm starts x two labeling modes) agreeing on the value, an audited exact-pricing phase in every run, zero checker-infeasible priced columns, and canonical-checker re-validation at stamping time. Instances whose runs disagreed, timed out, or priced a checker-infeasible column carry NO stamp.
+
 ## 2026-07-10
 
 2 BKS improved at n=100 (RC101: 24778.294 -> 24762.734; RC106: 21238.247 -> 21233.331) by exact solves recorded as ordinary best-known solutions (no optimality stamps), from a re-certification campaign running the exact solver four times per instance (cold/warm starts x two labeling modes) with four-way value agreement, an audited exact-pricing phase, and canonical-checker re-validation.

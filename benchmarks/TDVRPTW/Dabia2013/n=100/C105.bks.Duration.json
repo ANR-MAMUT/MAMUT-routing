@@ -20,7 +20,20 @@
         "date": "2026-07-02",
         "route_durations": [11437.980894967997, 8155.7151632474815, 10315.464137365072, 8903.594542052953, 12326.928369312163, 8109.58986894327, 9550.562788189052, 10328.184816483401, 9644.655412971839, 9056.570551313369],
         "route_departure_times": [112.00039428458777, 298.2857877548922, 236.28606161040568, 99.33333333333334, 0.0, 0.0, 437.99999999999994, 561.7154465272956, 410.595005154206, 36.000754283559225],
-        "published_duration_sum": 97829.24654484661
+        "published_duration_sum": 97829.24654484661,
+        "optimality": {
+            "proven": true,
+            "prover": "kayros lera branch-price-and-cut (HiGHS backend; branch m5.9-exact-stepwise-labeling, commit 7f5f357)",
+            "certificate": "Optimal under checker-exact route costs and standard LP/pricing tolerances. Certified by four independent solves (cold and warm starts x asymmetric and symmetric labeling modes) agreeing on the value, each with an audited exact-pricing phase and zero checker-infeasible priced columns.",
+            "date": "2026-07-10",
+            "arithmetic": "checker-exact route costs (IEEE-754 doubles, canonical route order); the proven optimum equals compute_solution_cost of the stored routes bit-exactly",
+            "proven_optimum": 97829.24654484661,
+            "dual_bound": 97829.2465448466,
+            "wall_time_s": 16.06,
+            "time_limit_s": 3600.0,
+            "checker": "mamut-routing-lib td Duration checker",
+            "campaign": "2026-07-10 full TD re-certification on Grid'5000 (reservation 6763721 + retry 6765373)"
+        }
     },
     "objective_function": "Duration"
 }
