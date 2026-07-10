@@ -18,7 +18,9 @@ from mamut_routing_lib.artifacts import (
     load_bks,
 )
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
+from mamut_routing_lib.geo import load_instance_geo
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
+from mamut_routing_lib.sidecars import find_collection_root
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
 
 from mamut_routing_publish.atf_cache import atf_cache_path
@@ -233,6 +235,9 @@ class SiteArtifactLinks(BaseModel):
     meta_path: str | None = None
     manifest_path: str | None = None
     atf_json_path: str | None = None
+    # Collection (Mamut2026 v2) geo sidecar (.geo.json.gz, indexed road cache);
+    # the viewer decodes it client-side where v1 instances fetch meta_path.
+    geo_json_path: str | None = None
 
 
 class TDScheduleStop(BaseModel):
@@ -898,6 +903,7 @@ def _build_geometry_summary(
     metric_variant: MetricVariant | None,
     artifact_links: SiteArtifactLinks,
     bks_paths: list[Path] | None = None,
+    meta_payload_override: dict | None = None,
 ) -> dict[str, object]:
     default_summary = {
         "has_geometry_sidecar": False,
@@ -908,23 +914,28 @@ def _build_geometry_summary(
         "road_cache_expected_entry_count": None,
     }
 
-    if artifact_links.meta_path is None:
-        if metric_variant in {MetricVariant.FASTEST, MetricVariant.SHORTEST}:
-            default_summary["road_cache_status"] = "none"
-            default_summary["road_cache_expected_entry_count"] = _expected_road_cache_entry_count(instance, None, bks_paths)
-        return default_summary
+    if meta_payload_override is not None:
+        # Collection instances: the geo sidecar was already loaded and viewed
+        # through the meta-payload shape; skip the meta_path plumbing.
+        meta_payload = meta_payload_override
+    else:
+        if artifact_links.meta_path is None:
+            if metric_variant in {MetricVariant.FASTEST, MetricVariant.SHORTEST}:
+                default_summary["road_cache_status"] = "none"
+                default_summary["road_cache_expected_entry_count"] = _expected_road_cache_entry_count(instance, None, bks_paths)
+            return default_summary
 
-    meta_path = output_repo_dir / artifact_links.meta_path
-    if not meta_path.is_file():
-        summary = dict(default_summary)
-        if metric_variant in {MetricVariant.FASTEST, MetricVariant.SHORTEST}:
-            summary["road_cache_status"] = "none"
-            summary["road_cache_expected_entry_count"] = _expected_road_cache_entry_count(instance, None, bks_paths)
-        return summary
+        meta_path = output_repo_dir / artifact_links.meta_path
+        if not meta_path.is_file():
+            summary = dict(default_summary)
+            if metric_variant in {MetricVariant.FASTEST, MetricVariant.SHORTEST}:
+                summary["road_cache_status"] = "none"
+                summary["road_cache_expected_entry_count"] = _expected_road_cache_entry_count(instance, None, bks_paths)
+            return summary
 
-    meta_payload = load_json_from_file(meta_path)
-    if not isinstance(meta_payload, dict):
-        return dict(default_summary)
+        meta_payload = load_json_from_file(meta_path)
+        if not isinstance(meta_payload, dict):
+            return dict(default_summary)
 
     road_cache = meta_payload.get("road_cache")
     metrics = sorted(
@@ -1044,10 +1055,24 @@ def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: 
         candidate = atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name)
         if candidate.is_file():
             atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
+    # Collection instances (Mamut2026 v2) reference their shared geo sidecar
+    # through metadata.sidecars; the link is repo-relative like every other.
+    geo_json_path: str | None = None
+    sidecars_ref = _collection_sidecars_ref(instance)
+    if sidecars_ref is not None:
+        geo_ref = sidecars_ref.get("geo")
+        geo_relpath = geo_ref.get("path") if isinstance(geo_ref, dict) else None
+        if geo_relpath:
+            collection_root = find_collection_root(instance_path)
+            if collection_root is not None:
+                candidate = collection_root / str(geo_relpath)
+                if candidate.is_file():
+                    geo_json_path = candidate.relative_to(output_repo_dir).as_posix()
     return SiteArtifactLinks(
         vrp_json_path=instance_path.relative_to(output_repo_dir).as_posix(),
         vrp_path=relative_raw_path,
         atf_json_path=atf_json_path,
+        geo_json_path=geo_json_path,
     )
 
 
@@ -1058,6 +1083,156 @@ def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> di
         if route_path is not None:
             routes[key] = route_path
     return routes
+
+
+# ---------------------------------------------------------------------------
+# Family-first collections (Mamut2026 v2): slim instances with plain-dict
+# metadata, shared sha-pinned sidecars, identity-based cross-links.
+# ---------------------------------------------------------------------------
+
+#: Collection data is OSM-derived and published under ODbL 1.0 at the
+#: collection root; slim instances carry no per-file license fields.
+_COLLECTION_LICENSE = "ODbL-1.0"
+_COLLECTION_LICENSE_URL = "https://opendatacommons.org/licenses/odbl/1-0/"
+
+_COLLECTION_TD_SUBINSTANCES = tuple(
+    f"{model}-{intensity}" for model in ("bpr", "wave") for intensity in ("light", "moderate", "heavy")
+)
+_COLLECTION_TW_SETS = ("td-shared", "tight", "spread")
+
+
+def _collection_sidecars_ref(instance: AnyBenchmarkInstance) -> dict | None:
+    metadata = getattr(instance, "metadata", None)
+    if isinstance(metadata, dict) and isinstance(metadata.get("sidecars"), dict):
+        return metadata["sidecars"]
+    return None
+
+
+def _collection_geo_meta_view(collection_root: Path, geo_ref: dict) -> dict | None:
+    """Load a collection geo sidecar and view it through the v1 meta-payload
+    shape used by the geometry summary (node ids + per-metric key presence;
+    polylines are decoded client-side from the sidecar itself)."""
+    geo_relpath = geo_ref.get("path") if isinstance(geo_ref, dict) else None
+    if not geo_relpath:
+        return None
+    geo_path = collection_root / str(geo_relpath)
+    if not geo_path.is_file():
+        return None
+    geo = load_instance_geo(geo_path)
+    road_cache: dict[str, dict[str, bool]] = {}
+    if geo.road_cache is not None:
+        for metric, entries in geo.road_cache.paths.items():
+            converted: dict[str, bool] = {}
+            for key in entries:
+                from_node, _, to_node = key.partition("-")
+                converted[f"node:{from_node}_{to_node}"] = True
+            road_cache[str(metric)] = converted
+    return {
+        "nodes": [{"instance_node_id": node.instance_node_id} for node in geo.nodes],
+        "depot_instance_node_id": 0,
+        "road_cache": road_cache,
+    }
+
+
+def _collection_route_if_exists(
+    collection_root: Path,
+    benchmark_name: BenchmarkName,
+    problem_type: ProblemType,
+    relative_path: str,
+    instance_identifier: str,
+    size_bucket: str,
+    metric_variant: MetricVariant | None,
+    place_slug: str,
+) -> str | None:
+    if not (collection_root / relative_path).is_file():
+        return None
+    return _instance_route_path(
+        problem_type,
+        benchmark_name,
+        instance_identifier,
+        size_bucket,
+        metric_variant=metric_variant if metric_variant is not None else MetricVariant.FASTEST,
+        place_slug=place_slug,
+    )
+
+
+def _collection_related_routes(
+    collection_root: Path,
+    benchmark_name: BenchmarkName,
+    problem_type: ProblemType,
+    base: str,
+    city: str,
+    size_bucket: str,
+    *,
+    metric_variant: MetricVariant | None = None,
+    tw_set: str | None = None,
+    subinstance: str | None = None,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Identity-based cross-links of a collection instance: variants of the
+    same base within the problem type (siblings), instances generated from it
+    (derived), and the instances it was generated from (sources)."""
+    siblings: dict[str, str] = {}
+    derived: dict[str, str] = {}
+    sources: dict[str, str] = {}
+    n_segment = size_bucket
+
+    def cvrp(metric: str) -> str | None:
+        return _collection_route_if_exists(
+            collection_root, benchmark_name, ProblemType.CVRP,
+            f"CVRP/{metric}/{city}/{n_segment}/{base}/{base}.vrp.json",
+            base, size_bucket, MetricVariant(metric), city,
+        )
+
+    def vrptw(set_name: str) -> str | None:
+        name = base if set_name == "td-shared" else f"{base}-tw-{set_name}"
+        return _collection_route_if_exists(
+            collection_root, benchmark_name, ProblemType.VRPTW,
+            f"VRPTW/fastest/{city}/{n_segment}/{base}/{name}.vrp.json",
+            name, size_bucket, MetricVariant.FASTEST, city,
+        )
+
+    def td(problem: ProblemType, sub: str) -> str | None:
+        return _collection_route_if_exists(
+            collection_root, benchmark_name, problem,
+            f"{problem.value}/{city}/{n_segment}/{base}/{sub}/{base}-{sub}.vrp.json",
+            f"{base}-{sub}", size_bucket, MetricVariant.FASTEST, city,
+        )
+
+    def put(target: dict[str, str], label: str, route: str | None) -> None:
+        if route is not None:
+            target[label] = route
+
+    if problem_type is ProblemType.CVRP:
+        for metric in ("fastest", "shortest", "euclidean"):
+            if metric_variant is not None and metric == metric_variant.value:
+                continue
+            put(siblings, f"CVRP ({metric})", cvrp(metric))
+        if metric_variant is MetricVariant.FASTEST:
+            for set_name in _COLLECTION_TW_SETS:
+                put(derived, f"VRPTW ({set_name})", vrptw(set_name))
+            for sub in _COLLECTION_TD_SUBINSTANCES:
+                put(derived, f"TDVRP ({sub})", td(ProblemType.TDVRP, sub))
+    elif problem_type is ProblemType.VRPTW:
+        for set_name in _COLLECTION_TW_SETS:
+            if set_name == (tw_set or "td-shared"):
+                continue
+            put(siblings, f"VRPTW ({set_name})", vrptw(set_name))
+        put(sources, "CVRP (fastest)", cvrp("fastest"))
+        if (tw_set or "td-shared") == "td-shared":
+            for sub in _COLLECTION_TD_SUBINSTANCES:
+                put(derived, f"TDVRPTW ({sub})", td(ProblemType.TDVRPTW, sub))
+    elif problem_type in (ProblemType.TDVRP, ProblemType.TDVRPTW):
+        for sub in _COLLECTION_TD_SUBINSTANCES:
+            if sub == subinstance:
+                continue
+            put(siblings, f"{problem_type.value} ({sub})", td(problem_type, sub))
+        put(sources, "CVRP (fastest)", cvrp("fastest"))
+        if problem_type is ProblemType.TDVRPTW:
+            put(sources, "VRPTW (td-shared)", vrptw("td-shared"))
+        if subinstance is not None:
+            twin_problem = ProblemType.TDVRP if problem_type is ProblemType.TDVRPTW else ProblemType.TDVRPTW
+            put(derived, f"{twin_problem.value} twin ({subinstance})", td(twin_problem, subinstance))
+    return siblings, derived, sources
 
 
 # Forward point-evaluation of a TD schedule (below) walks the route arc by arc,
@@ -1210,17 +1385,30 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     size_bucket = f"n={bucket_n}"
     instance_identifier = instance.instance_name
     subset_segment = getattr(discovered_item, "subset", None)
+    # Family-first collections (Mamut2026 v2). TD collection instances have no
+    # metric path slot on disk (the time dependence is the metric); the site
+    # keeps presenting them under the fastest facet, which is the metric their
+    # pinned road paths follow, so catalogs and URLs keep the v1 drill-down.
+    collection_root = (
+        find_collection_root(discovered_item.instance_path)
+        if getattr(discovered_item, "base_instance_name", None) is not None
+        else None
+    )
+    is_collection = collection_root is not None
+    effective_metric_variant = discovered_item.metric_variant
+    if is_collection and effective_metric_variant is None and discovered_item.place_slug is not None:
+        effective_metric_variant = MetricVariant.FASTEST
     route_path = _instance_route_path(
         problem_type,
         benchmark_name,
         instance_identifier,
         size_bucket,
-        metric_variant=discovered_item.metric_variant,
+        metric_variant=effective_metric_variant,
         place_slug=discovered_item.place_slug,
         subset=subset_segment,
     )
     topology_type, tw_type = (None, None)
-    if discovered_item.metric_variant is None:
+    if effective_metric_variant is None:
         topology_type, tw_type = derive_historical_taxonomy(instance_identifier)
 
     sibling_variant_routes: dict[str, str] = {}
@@ -1247,11 +1435,26 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         meta_dict = instance.metadata
         authors = meta_dict.get("authors")
         generated_instance_at = meta_dict.get("generated_at")
-        source_city = meta_dict.get("source_city")
+        source_city = meta_dict.get("source_city") or meta_dict.get("city")
         num_vehicles_lb = meta_dict.get("num_vehicles_lb")
         license_value = meta_dict.get("license")
         license_url_value = meta_dict.get("license_url")
         instance_provider_value = meta_dict.get("instance_provider")
+        if is_collection:
+            license_value = license_value or _COLLECTION_LICENSE
+            license_url_value = license_url_value or _COLLECTION_LICENSE_URL
+    if is_collection and discovered_item.place_slug is not None and discovered_item.base_instance_name is not None:
+        sibling_variant_routes, derived_problem_routes, source_problem_routes = _collection_related_routes(
+            collection_root,
+            benchmark_name,
+            problem_type,
+            discovered_item.base_instance_name,
+            discovered_item.place_slug,
+            size_bucket,
+            metric_variant=discovered_item.metric_variant,
+            tw_set=getattr(discovered_item, "tw_set", None),
+            subinstance=discovered_item.subinstance,
+        )
     subset_value = getattr(discovered_item, "subset", None)
     # ``subset`` is path-derived (5-part layout). Fall back to metadata for
     # tooling that constructs ``_ResolvedSiteInstance`` outside path discovery.
@@ -1260,12 +1463,19 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
 
     artifact_links = _build_artifact_links(output_repo_dir, discovered_item.instance_path, instance)
     bks_paths = _discover_bks_paths(discovered_item.instance_path)
+    geo_meta_view: dict | None = None
+    if is_collection:
+        sidecars_ref = _collection_sidecars_ref(instance)
+        geo_ref = sidecars_ref.get("geo") if sidecars_ref is not None else None
+        if isinstance(geo_ref, dict):
+            geo_meta_view = _collection_geo_meta_view(collection_root, geo_ref)
     geometry_summary = _build_geometry_summary(
         output_repo_dir,
         instance,
-        discovered_item.metric_variant,
+        effective_metric_variant,
         artifact_links,
         bks_paths,
+        meta_payload_override=geo_meta_view,
     )
     td_atfs = None
     td_block = getattr(instance, "td", None)
@@ -1294,7 +1504,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         locator=BenchmarkLocator(
             problem_type=problem_type,
             benchmark_name=benchmark_name,
-            metric_variant=discovered_item.metric_variant,
+            metric_variant=effective_metric_variant,
             place_slug=discovered_item.place_slug,
             size_bucket=size_bucket,
             instance_identifier=instance_identifier,

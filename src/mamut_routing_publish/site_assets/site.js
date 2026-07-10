@@ -156,6 +156,83 @@ function fetchJsonMemo(sourcePath) {
   return promise;
 }
 
+// --- Collection geo sidecars (Mamut2026 v2) ------------------------------
+// v1 instances ship an explicit .meta.json geometry sidecar; collection
+// instances ship a shared, gzipped geo sidecar with an indexed road cache
+// (a local vertex table + per-metric paths as index lists). The loader below
+// resolves either into the same geometryMeta shape the viewer consumes.
+
+const GEOMETRY_META_CACHE = new Map();
+
+function geometryMetaSourcePath(artifactLinks) {
+  if (!artifactLinks) {
+    return null;
+  }
+  return artifactLinks.meta_path || artifactLinks.geo_json_path || null;
+}
+
+async function fetchGeoSidecarJson(sourceHref) {
+  const response = await fetch(sourceHref, { headers: { Accept: "application/json, */*" } });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${sourceHref}`);
+  }
+  const buffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  // The server may already have decoded Content-Encoding: gzip; sniff the magic.
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const decompressed = new Response(new Blob([buffer]).stream().pipeThrough(new DecompressionStream("gzip")));
+    return JSON.parse(await decompressed.text());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function geometryMetaFromGeoSidecar(geo) {
+  const nodes = Array.isArray(geo?.nodes) ? geo.nodes : [];
+  const roadCache = {};
+  const cache = geo?.road_cache;
+  const vertexTable = Array.isArray(cache?.vertex_lonlat) ? cache.vertex_lonlat : [];
+  const paths = cache?.paths && typeof cache.paths === "object" ? cache.paths : {};
+  Object.entries(paths).forEach(([metric, entries]) => {
+    const converted = {};
+    Object.entries(entries || {}).forEach(([key, indexes]) => {
+      const separator = key.indexOf("-");
+      if (separator <= 0 || !Array.isArray(indexes)) {
+        return;
+      }
+      const fromNode = key.slice(0, separator);
+      const toNode = key.slice(separator + 1);
+      const polyline = indexes
+        .map((vertexIndex) => vertexTable[vertexIndex])
+        .filter((point) => Array.isArray(point) && point.length === 2);
+      if (polyline.length >= 2) {
+        converted[`node:${fromNode}_${toNode}`] = polyline;
+      }
+    });
+    roadCache[String(metric).toLowerCase()] = converted;
+  });
+  return { nodes, depot_instance_node_id: 0, road_cache: roadCache };
+}
+
+function fetchGeometryMetaMemo(artifactLinks) {
+  const sourcePath = geometryMetaSourcePath(artifactLinks);
+  if (!sourcePath) {
+    return Promise.resolve(null);
+  }
+  const href = artifactHref(sourcePath);
+  if (GEOMETRY_META_CACHE.has(href)) {
+    return GEOMETRY_META_CACHE.get(href);
+  }
+  const promise = (artifactLinks.meta_path
+    ? fetchJsonMemo(href)
+    : fetchGeoSidecarJson(href).then(geometryMetaFromGeoSidecar)
+  ).catch((error) => {
+    GEOMETRY_META_CACHE.delete(href);
+    throw error;
+  });
+  GEOMETRY_META_CACHE.set(href, promise);
+  return promise;
+}
+
 async function fetchWorkbenchPayloadForRoute(routePath) {
   const sourcePath = payloadUrlForRoute(routePath);
   const cacheKey = `${state.payloadMode}:${sourcePath}`;
@@ -1004,8 +1081,8 @@ async function loadHomePreviewBundle(payload) {
 
 function loadHomePreviewSampleGeometry(sample, onLoaded) {
   const summary = sample?.instancePayload?.summary;
-  const metaPath = sample?.instancePayload?.artifact_links?.meta_path;
-  if (!summary || !metaPath) {
+  const artifactLinks = sample?.instancePayload?.artifact_links;
+  if (!summary || !geometryMetaSourcePath(artifactLinks)) {
     return;
   }
   if (summary.viewer_render_mode !== "cached_road" || summary.road_cache_status !== "complete") {
@@ -1014,7 +1091,7 @@ function loadHomePreviewSampleGeometry(sample, onLoaded) {
   if (sample.preview.geometryMeta) {
     return;
   }
-  fetchJsonMemo(artifactHref(metaPath))
+  fetchGeometryMetaMemo(artifactLinks)
     .then((data) => {
       sample.preview.geometryMeta = data;
       onLoaded?.(sample);
@@ -1937,9 +2014,9 @@ async function renderInstancePage(payload, options = {}) {
     await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path)),
   );
   let geometryMeta = null;
-  if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && payload.artifact_links.meta_path) {
+  if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && geometryMetaSourcePath(payload.artifact_links)) {
     try {
-      geometryMeta = await fetchJsonMemo(artifactHref(payload.artifact_links.meta_path));
+      geometryMeta = await fetchGeometryMetaMemo(payload.artifact_links);
     } catch (error) {
       console.warn("Unable to load geometry sidecar", error);
     }
@@ -1983,6 +2060,7 @@ async function renderInstancePage(payload, options = {}) {
           <li><a href="${artifactHref(payload.artifact_links.vrp_json_path)}">vrp.json</a></li>
           ${payload.artifact_links.vrp_path ? `<li><a href="${artifactHref(payload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
           ${payload.artifact_links.meta_path ? `<li><a href="${artifactHref(payload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
+          ${payload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(payload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
           ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
@@ -2499,11 +2577,11 @@ async function loadWorkbenchInstancePreview(instancePayload, preferredObjectiveF
 
   const hasCachedRoad = instancePayload.summary.viewer_render_mode === "cached_road"
     && instancePayload.summary.road_cache_status === "complete"
-    && instancePayload.artifact_links.meta_path;
+    && geometryMetaSourcePath(instancePayload.artifact_links);
   const [instanceData, geometryMeta, selectedBksData] = await Promise.all([
     fetchJsonMemo(artifactHref(instancePayload.artifact_links.vrp_json_path)).then(projectEnuInstanceCoordinates),
     hasCachedRoad
-      ? fetchJsonMemo(artifactHref(instancePayload.artifact_links.meta_path)).catch((error) => {
+      ? fetchGeometryMetaMemo(instancePayload.artifact_links).catch((error) => {
           console.warn("Unable to load geometry sidecar", error);
           return null;
         })
@@ -2584,6 +2662,7 @@ function renderWorkbenchArtifactsCard(instancePayload) {
       <li><a href="${artifactHref(instancePayload.artifact_links.vrp_json_path)}">vrp.json</a></li>
       ${instancePayload.artifact_links.vrp_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
       ${instancePayload.artifact_links.meta_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
+      ${instancePayload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
       ${instancePayload.artifact_links.manifest_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
       ${instancePayload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.atf_json_path)}">${escapeHtml(instancePayload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
     </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(instancePayload.snapshot.published_at)} from commit ${escapeHtml(instancePayload.snapshot.source_commit)}</div>`,
