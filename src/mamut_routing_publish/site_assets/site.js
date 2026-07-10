@@ -1732,7 +1732,7 @@ function renderGeometryCard(summary) {
       ["Road cache", labelizeCapability(summary.road_cache_status)],
       ["Sidecar", summary.has_geometry_sidecar ? "yes" : "no"],
       ["Cached paths", summary.road_cache_entry_count ?? 0],
-      ["Expected paths", summary.road_cache_expected_entry_count ?? "n/a"],
+      ["BKS route edges", summary.road_cache_expected_entry_count ?? "n/a"],
       ["Metrics", metrics],
     ])}`,
   );
