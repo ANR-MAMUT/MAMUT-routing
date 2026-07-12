@@ -30,7 +30,20 @@
         "date": "2026-07-02",
         "route_durations": [1665.7508583761742, 1049.5991528016943, 1148.5997228005544, 1706.3751462514415, 1370.2847689006317, 1176.0945425870211, 1932.7973451939406, 1991.475478736029, 869.9994240011522, 1049.1558370617822, 1599.7004845310996, 685.2506806267013, 1012.7998104003791, 2125.642550702774, 1295.5666176174568, 383.41677187522976, 1967.9994682303472, 945.2279113207885, 1056.9332001335995, 1824.8564130955165],
         "route_departure_times": [407.9996760001619, 164.0, 100.0, 320.0, 409.42877477495784, 437.3333333333333, 232.5365648060593, 9.667199999999857, 1312.0005759988478, 215.14357958977263, 226.0, 507.0, 52.0, 138.85798554856663, 227.33333333333331, 352.33331999999996, 204.00063256969327, 846.2000845992231, 59.66666666666668, 310.0002],
-        "published_duration_sum": 26857.526185244315
+        "published_duration_sum": 26857.526185244315,
+        "optimality": {
+            "proven": true,
+            "prover": "kayros lera branch-price-and-cut (HiGHS backend; branch m5.9-exact-stepwise-labeling, commit 272e77e)",
+            "certificate": "Optimal under checker-exact route costs and standard LP/pricing tolerances. Certified by four independent solves (cold and warm starts x asymmetric and symmetric labeling modes) agreeing on the value, each with an audited exact-pricing phase and zero checker-infeasible priced columns.",
+            "date": "2026-07-12",
+            "arithmetic": "checker-exact route costs (IEEE-754 doubles, canonical route order); the proven optimum equals compute_solution_cost of the stored routes bit-exactly",
+            "proven_optimum": 26857.526185244315,
+            "dual_bound": 26857.52618524431,
+            "wall_time_s": 2.5,
+            "time_limit_s": 7200.0,
+            "checker": "mamut-routing-lib td Duration checker",
+            "campaign": "2026-07-11/12 weekend TD re-certification top-up on Grid'5000 (reservations 6767852 + 6767861)"
+        }
     },
     "objective_function": "Duration"
 }

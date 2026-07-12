@@ -24,7 +24,20 @@
         "date": "2026-07-02",
         "route_durations": [2119.033187143947, 1493.9608639974522, 1814.4578927089826, 2115.7330317337437, 1393.82099506827, 1155.356753945964, 1598.6224273126898, 2151.5638802270737, 1493.799717222987, 1913.5499487779368, 1642.2564729235219, 1622.4998104187762, 906.1168667276357, 1956.0407489532588],
         "route_departure_times": [229.36687501601503, 306.6666666666667, 158.66666666666666, 119.42964162959538, 84.17878893216215, 165.14325730514375, 430.1112578887, 35.143528161348144, 763.2002285985303, 272.20046559809936, 699.600421199838, 42.99995333333334, 567.3330824987062, 111.8098791146546],
-        "published_duration_sum": 23376.812607162236
+        "published_duration_sum": 23376.812607162236,
+        "optimality": {
+            "proven": true,
+            "prover": "kayros lera branch-price-and-cut (HiGHS backend; branch m5.9-exact-stepwise-labeling, commit 272e77e)",
+            "certificate": "Optimal under checker-exact route costs and standard LP/pricing tolerances. Certified by four independent solves (cold and warm starts x asymmetric and symmetric labeling modes) agreeing on the value, each with an audited exact-pricing phase and zero checker-infeasible priced columns.",
+            "date": "2026-07-12",
+            "arithmetic": "checker-exact route costs (IEEE-754 doubles, canonical route order); the proven optimum equals compute_solution_cost of the stored routes bit-exactly",
+            "proven_optimum": 23376.812597162243,
+            "dual_bound": 23376.81259716224,
+            "wall_time_s": 210.74,
+            "time_limit_s": 7200.0,
+            "checker": "mamut-routing-lib td Duration checker",
+            "campaign": "2026-07-11/12 weekend TD re-certification top-up on Grid'5000 (reservations 6767852 + 6767861)"
+        }
     },
     "objective_function": "Duration"
 }
