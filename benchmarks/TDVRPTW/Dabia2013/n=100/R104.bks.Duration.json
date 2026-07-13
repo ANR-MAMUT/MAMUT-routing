@@ -1,29 +1,40 @@
 {
     "instance_name": "R104",
     "routes": [
-        [6, 5, 61, 16, 44, 86, 84, 17, 45, 46, 48, 7, 52],
-        [10, 90, 63, 32, 51, 9, 81, 33, 29, 24, 80, 28],
-        [26, 12, 76, 79, 68, 54, 55, 4, 25],
-        [27, 1, 69, 82, 8, 83, 60, 89],
-        [31, 88, 62, 11, 19, 64, 49, 36, 47, 18],
-        [40, 72, 75, 56, 23, 67, 39, 22, 41, 74, 73, 21],
+        [21, 72, 75, 56, 23, 67, 39, 54, 55, 4, 25],
+        [26, 12, 76, 79, 24, 29, 68, 80, 3, 77, 28],
+        [27, 69, 1, 70, 30, 20, 32, 63, 90, 10, 31],
+        [40, 2, 57, 15, 42, 87, 97, 93, 59, 95, 13],
+        [51, 66, 65, 71, 9, 35, 34, 78, 81, 33, 50],
+        [52, 7, 88, 62, 11, 64, 49, 47, 46, 45, 83, 60],
         [53],
-        [70, 30, 20, 66, 65, 71, 35, 34, 78, 3, 77, 50],
-        [94, 95, 59, 93, 98, 99, 87, 2, 57, 97, 13],
-        [96, 92, 42, 15, 38, 43, 14, 37, 85, 91, 100, 58]
+        [89, 5, 61, 16, 44, 8, 82, 36, 19, 48, 18],
+        [94, 92, 98, 37, 14, 38, 43, 41, 74, 22, 73, 58],
+        [96, 99, 84, 17, 86, 85, 91, 100, 6]
     ],
-    "cost": 17984.22098632164,
+    "cost": 17949.847506616446,
     "metadata": {
-        "authors": "Florian Rascoussier (0nyr)",
-        "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
+        "source": "kayros lera BPC exact solve (HiGHS backend) \u2014 four independent runs (cold/warm starts x two labeling modes) agreeing on the value, each with exact-pricing iterations audited; recorded as a best-known solution (optimality stamping is handled separately)",
         "validated_by": "mamut-routing-lib td Duration checker",
-        "date": "2026-07-02",
-        "route_durations": [2188.6827970065115, 2136.2211293384757, 1787.2150855707139, 1392.1004480522774, 2074.2507046282576, 2039.4128611686065, 192.399914200122, 2221.9357744403674, 1703.883060289758, 2248.119211626554],
-        "route_departure_times": [74.66666666666663, 6.2858220405083784, 339.74958337288285, 202.00003299998352, 180.99984999962498, 65.41599503933952, 884.0000329999835, 34.81454243542495, 132.66666666666666, 16.381324624786775],
-        "legacy_declared_value": 18018.214694712282,
-        "legacy_key": "R104-n=102-9c51cfe2d891c12d65e0cb6e52c3127a2518ab65.json",
-        "previous_cost": 18344.469455803224,
-        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions"
+        "route_durations": [2121.5317293632206, 1858.7714717560339, 1936.7674554640123, 1799.9517985430823, 2059.5596006603396, 2204.1200591286724, 192.399914200122, 2107.9040854420687, 2134.8906665819645, 1533.9507254769323],
+        "route_departure_times": [5.43293958037609, 386.0, 251.33332, 42.714911456918074, 80.66666666666663, 40.88027837217118, 884.0000329999835, 45.33333333333331, 45.14301387710321, 702.7997413992347],
+        "authors": "Florian Rascoussier (0nyr)",
+        "validated_cost": 17949.847506616446,
+        "validated_num_routes": 10,
+        "date": "2026-07-13T14:09:04",
+        "optimality": {
+            "proven": true,
+            "prover": "kayros lera branch-price-and-cut (HiGHS backend; branch m5.9-exact-stepwise-labeling, commit 272e77e)",
+            "certificate": "Optimal under checker-exact route costs and standard LP/pricing tolerances. Certified by four independent solves (cold and warm starts x asymmetric and symmetric labeling modes) agreeing on the value, each with an audited exact-pricing phase and zero checker-infeasible priced columns.",
+            "date": "2026-07-13",
+            "arithmetic": "checker-exact route costs (IEEE-754 doubles, canonical route order); the proven optimum equals compute_solution_cost of the stored routes bit-exactly",
+            "proven_optimum": 17949.847506616446,
+            "dual_bound": 17949.84750661649,
+            "wall_time_s": 4311.79,
+            "time_limit_s": 7200.0,
+            "checker": "mamut-routing-lib td Duration checker",
+            "campaign": "2026-07-11/12 weekend TD re-certification top-up on Grid'5000 (reservations 6767852 + 6767861)"
+        }
     },
     "objective_function": "Duration"
 }

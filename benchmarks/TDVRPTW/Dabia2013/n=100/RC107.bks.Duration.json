@@ -25,7 +25,20 @@
         "legacy_declared_value": 19947.634837976213,
         "legacy_key": "RC107-n=102-3f7de6bea5b74f5e6cb80a97f80ef11c0deb2b35.json",
         "previous_cost": 20101.59190189448,
-        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions"
+        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "optimality": {
+            "proven": true,
+            "prover": "kayros lera branch-price-and-cut (HiGHS backend; branch m5.9-exact-stepwise-labeling, commit 272e77e)",
+            "certificate": "Optimal under checker-exact route costs and standard LP/pricing tolerances. Certified by four independent solves (cold and warm starts x asymmetric and symmetric labeling modes) agreeing on the value, each with an audited exact-pricing phase and zero checker-infeasible priced columns.",
+            "date": "2026-07-13",
+            "arithmetic": "checker-exact route costs (IEEE-754 doubles, canonical route order); the proven optimum equals compute_solution_cost of the stored routes bit-exactly",
+            "proven_optimum": 19918.20692969383,
+            "dual_bound": 19918.206929693835,
+            "wall_time_s": 3896.66,
+            "time_limit_s": 7200.0,
+            "checker": "mamut-routing-lib td Duration checker",
+            "campaign": "2026-07-11/12 weekend TD re-certification top-up on Grid'5000 (reservations 6767852 + 6767861)"
+        }
     },
     "objective_function": "Duration"
 }
