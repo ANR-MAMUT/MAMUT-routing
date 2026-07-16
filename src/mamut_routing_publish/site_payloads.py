@@ -4,6 +4,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -29,6 +30,7 @@ from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
 from .road_cache import enforce_full_road_cache
+from .route_geometry import route_geometry_for_bks
 
 
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
@@ -65,11 +67,6 @@ class SitePayloadKind(str, Enum):
 # Tuples: (problem, family, metric_variant_or_None, place_slug_or_None, objective_function).
 # Resolved server-side at publish time into HomePreviewSample entries.
 HOME_PREVIEW_SEEDS: tuple[tuple[str, str, str | None, str | None, str], ...] = (
-    ("CVRP", "Mamut2026", "fastest", "brest", "MonoCost"),
-    ("CVRP", "Mamut2026", "shortest", "london", "MonoCost"),
-    ("CVRP", "Mamut2026", "euclidean", "brest", "MonoCost"),
-    ("VRPTW", "Mamut2026", "fastest", "brest", "HierarchicalVehicleCost"),
-    ("VRPTW", "Mamut2026", "fastest", "london", "HierarchicalVehicleCost"),
     ("TDVRPTW", "Dabia2013", None, None, "Duration"),
     ("TDVRPTW", "Rifki2020", None, None, "Duration"),
 )
@@ -219,6 +216,11 @@ class InstanceListItem(BaseModel):
     route_path: str
     artifact_vrp_json_path: str
     place_slug: str | None = None
+    sampling_method: str | None = None
+    tw_set: str | None = None
+    traffic_model: str | None = None
+    traffic_intensity: str | None = None
+    base_instance: str | None = None
     historical_topology_type: str | None = None
     historical_tw_type: str | None = None
     bks_count: int
@@ -306,6 +308,10 @@ class BKSPageEntry(BaseModel):
     license_url: str | None = None
     td_schedules: list[TDRouteSchedule] | None = None
     route_functions_path: str | None = None
+    route_geometry_path: str | None = None
+    route_geometry_sha256: str | None = None
+    route_geometry_bks_sha256: str | None = None
+    route_geometry_metric: str | None = None
     # Structured optimality proof from the BKS metadata (see the
     # OptimalityMetadata model in mamut-routing-lib), passed through verbatim
     # so the site can badge proven-optimal solutions.
@@ -441,6 +447,7 @@ class SiteHistoryEntry(BaseModel):
 class SiteHistoryLedger(SitePayloadBase):
     payload_kind: Literal[SitePayloadKind.SITE_HISTORY] = SitePayloadKind.SITE_HISTORY
 
+    route_path: str = "/history/"
     current_snapshot_id: str
     entries: list[SiteHistoryEntry]
 
@@ -561,6 +568,7 @@ class BenchmarksIndexPayload(SitePayloadBase):
     route_path: str
     breadcrumbs: list[BreadcrumbItem] = Field(default_factory=list)
     problems: list[ProblemSummaryCard]
+    items: list[InstanceListItem] = Field(default_factory=list)
 
 
 class ProblemIndexPayload(SitePayloadBase):
@@ -677,6 +685,11 @@ class _ResolvedSiteInstance(BaseModel):
     artifact_links: SiteArtifactLinks
     historical_topology_type: str | None = None
     historical_tw_type: str | None = None
+    sampling_method: str | None = None
+    tw_set: str | None = None
+    traffic_model: str | None = None
+    traffic_intensity: str | None = None
+    base_instance: str | None = None
     has_geometry_sidecar: bool = False
     viewer_render_mode: ViewerRenderMode = "straight_line"
     road_cache_status: RoadCacheStatus = "not_applicable"
@@ -1339,6 +1352,17 @@ def _build_bks_entries(
         optimality_value = bks.metadata.get("optimality") if isinstance(bks.metadata, dict) else None
         td_schedules = None
         route_functions_path = None
+        route_geometry_path = None
+        route_geometry_sha256 = None
+        route_geometry_bks_sha256 = None
+        route_geometry_metric = None
+        route_geometry = route_geometry_for_bks(output_repo_dir, bks_path)
+        if route_geometry is not None:
+            geometry_path, geometry_payload = route_geometry
+            route_geometry_path = geometry_path.relative_to(output_repo_dir).as_posix()
+            route_geometry_sha256 = hashlib.sha256(geometry_path.read_bytes()).hexdigest()
+            route_geometry_bks_sha256 = str(geometry_payload["bks_sha256"])
+            route_geometry_metric = str(geometry_payload["metric"])
         if td_instance is not None and td_atfs is not None and bks.objective_function == ObjectiveFunction.DURATION:
             try:
                 td_schedules, function_entries = _build_td_schedules(td_instance, td_atfs, bks.routes)
@@ -1367,6 +1391,10 @@ def _build_bks_entries(
                 license_url=license_url_value,
                 td_schedules=td_schedules,
                 route_functions_path=route_functions_path,
+                route_geometry_path=route_geometry_path,
+                route_geometry_sha256=route_geometry_sha256,
+                route_geometry_bks_sha256=route_geometry_bks_sha256,
+                route_geometry_metric=route_geometry_metric,
                 optimality=optimality_value,
             )
         )
@@ -1421,6 +1449,11 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     license_value: str | None = None
     license_url_value: str | None = None
     instance_provider_value: str | None = None
+    sampling_method: str | None = None
+    tw_set: str | None = None
+    traffic_model: str | None = None
+    traffic_intensity: str | None = None
+    base_instance: str | None = getattr(discovered_item, "base_instance_name", None)
     if has_structured_metadata(instance):
         authors = instance.metadata.authors
         generated_instance_at = instance.metadata.generated_at
@@ -1443,6 +1476,14 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         if is_collection:
             license_value = license_value or _COLLECTION_LICENSE
             license_url_value = license_url_value or _COLLECTION_LICENSE_URL
+            sampling_method = meta_dict.get("method")
+            raw_tw_set = meta_dict.get("tw_set")
+            tw_set = raw_tw_set.get("name") if isinstance(raw_tw_set, dict) else raw_tw_set
+            base_instance = meta_dict.get("base_instance_name") or base_instance
+            traffic = meta_dict.get("traffic")
+            if isinstance(traffic, dict):
+                traffic_model = traffic.get("model")
+                traffic_intensity = traffic.get("intensity")
     if is_collection and discovered_item.place_slug is not None and discovered_item.base_instance_name is not None:
         sibling_variant_routes, derived_problem_routes, source_problem_routes = _collection_related_routes(
             collection_root,
@@ -1499,6 +1540,16 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         td_atfs=td_atfs,
         route_path=route_path,
     )
+    route_geometry_entries = [entry for entry in bks_entries if entry.route_geometry_path is not None]
+    if route_geometry_entries:
+        geometry_summary["viewer_render_mode"] = "cached_road" if len(route_geometry_entries) == len(bks_entries) else "mixed"
+        geometry_summary["road_cache_status"] = "complete" if len(route_geometry_entries) == len(bks_entries) else "partial"
+        geometry_summary["road_cache_metrics"] = sorted(
+            set(geometry_summary["road_cache_metrics"])
+            | {entry.route_geometry_metric for entry in route_geometry_entries if entry.route_geometry_metric}
+        )
+        if geometry_summary["road_cache_status"] == "complete" and geometry_summary["road_cache_expected_entry_count"] is not None:
+            geometry_summary["road_cache_entry_count"] = geometry_summary["road_cache_expected_entry_count"]
 
     return _ResolvedSiteInstance(
         locator=BenchmarkLocator(
@@ -1529,6 +1580,11 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         artifact_links=artifact_links,
         historical_topology_type=topology_type,
         historical_tw_type=tw_type,
+        sampling_method=sampling_method,
+        tw_set=tw_set,
+        traffic_model=traffic_model,
+        traffic_intensity=traffic_intensity,
+        base_instance=base_instance,
         has_geometry_sidecar=bool(geometry_summary["has_geometry_sidecar"]),
         viewer_render_mode=geometry_summary["viewer_render_mode"],
         road_cache_status=geometry_summary["road_cache_status"],
@@ -1556,10 +1612,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
     availability: list[ObjectiveAvailability] = []
     for objective in sorted(by_objective, key=_objective_sort_key):
         entry = by_objective[objective]
-        if objective is ObjectiveFunction.HIERARCHICAL_VEHICLE_COST:
-            num_routes = entry.validated_num_routes if entry.validated_num_routes is not None else entry.num_routes
-        else:
-            num_routes = None
+        num_routes = entry.validated_num_routes if entry.validated_num_routes is not None else entry.num_routes
         availability.append(
             ObjectiveAvailability(
                 objective_function=objective,
@@ -1581,6 +1634,11 @@ def _build_instance_list_item(resolved: _ResolvedSiteInstance) -> InstanceListIt
         route_path=resolved.route_path,
         artifact_vrp_json_path=resolved.artifact_links.vrp_json_path,
         place_slug=resolved.locator.place_slug,
+        sampling_method=resolved.sampling_method,
+        tw_set=resolved.tw_set,
+        traffic_model=resolved.traffic_model,
+        traffic_intensity=resolved.traffic_intensity,
+        base_instance=resolved.base_instance,
         historical_topology_type=resolved.historical_topology_type,
         historical_tw_type=resolved.historical_tw_type,
         bks_count=len(resolved.bks_entries),
@@ -2043,6 +2101,16 @@ def _build_root_benchmarks_index(
         route_path="/benchmarks/",
         breadcrumbs=_build_breadcrumbs(("benchmarks", "/benchmarks/")),
         problems=problem_cards,
+        items=[
+            _build_instance_list_item(item)
+            for item in sorted(items, key=lambda current: (
+                current.locator.problem_type.value,
+                current.locator.benchmark_name.value,
+                current.locator.place_slug or "",
+                current.instance_summary.num_customers,
+                current.display_name,
+            ))
+        ],
     )
 
 
@@ -2100,11 +2168,51 @@ def _build_home_preview_bundle(
 ) -> HomePreviewBundlePayload:
     samples: list[HomePreviewSample] = []
     seen_keys: set[tuple[str, str]] = set()
+    selected_matches: list[tuple[_ResolvedSiteInstance, BKSPageEntry]] = []
+    has_mamut_preview_sizes = any(
+        item.locator.benchmark_name.value == "Mamut2026" and item.instance_summary.num_customers in {25, 50}
+        for item in resolved_items
+    )
+    objective_by_problem = {
+        "CVRP": "MonoCost",
+        "VRPTW": "MonoCost",
+        "TDVRP": "Duration",
+        "TDVRPTW": "Duration",
+    }
+    for problem in ("CVRP", "VRPTW", "TDVRP", "TDVRPTW"):
+        objective = objective_by_problem[problem]
+        candidates = [
+            (item, entry)
+            for item in resolved_items
+            if item.locator.problem_type.value == problem
+            and item.locator.benchmark_name.value == "Mamut2026"
+            and item.instance_summary.num_customers in {25, 50}
+            for entry in item.bks_entries
+            if entry.objective_function.value == objective
+        ]
+        candidates.sort(
+            key=lambda pair: (
+                0 if pair[0].instance_summary.num_customers == 25 else 1,
+                0 if pair[0].locator.metric_variant == MetricVariant.FASTEST else 1,
+                pair[0].locator.place_slug or "",
+                pair[0].sampling_method or "",
+                pair[0].route_path,
+            )
+        )
+        if candidates:
+            selected_matches.append(candidates[0])
+    if has_mamut_preview_sizes and len(selected_matches) < 4:
+        available = sorted({pair[0].locator.problem_type.value for pair in selected_matches})
+        raise ValueError(
+            "Home preview invariant failed: expected one n=25/50 Mamut2026 preview for each of "
+            f"CVRP, VRPTW, TDVRP and TDVRPTW; available matches: {available}"
+        )
     for seed in HOME_PREVIEW_SEEDS:
-        match = _match_seed_instance(resolved_items, seed)
-        if match is None:
-            continue
-        resolved, bks_entry = match
+        historical_match = _match_seed_instance(resolved_items, seed)
+        if historical_match is not None:
+            selected_matches.append(historical_match)
+
+    for resolved, bks_entry in selected_matches:
         key = (resolved.route_path, bks_entry.objective_function.value)
         if key in seen_keys:
             continue
@@ -3094,6 +3202,9 @@ def generate_site_payloads(
     )
     save_json_to_file(history_ledger.model_dump(mode="json"), history_path)
     written_paths.append(history_path)
+    history_payload_path = site_output / payload_root / "history" / "index.json"
+    save_json_to_file(history_ledger.model_dump(mode="json"), history_payload_path)
+    written_paths.append(history_payload_path)
 
     history_detail_path = _history_detail_payload_path(site_output, snapshot.snapshot_id, payload_root)
     history_detail_payload = _build_history_detail_payload(

@@ -309,6 +309,58 @@ body[data-page-kind="workbench-app"] > .layout.workbench-layout {
 	margin-top: 0.8rem;
 }
 
+.route-view-summary {
+	margin: 0;
+	font-weight: 700;
+}
+
+.route-view-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	gap: 0.55rem;
+}
+
+.benchmark-filter-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+	gap: 0.6rem;
+}
+
+.route-view-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.route-view-toggle input {
+	width: auto;
+}
+
+.route-view-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+
+.route-view-actions button,
+.route-pager button {
+	width: auto;
+}
+
+.route-page-list {
+	display: grid;
+	gap: 0.35rem;
+	border-top: 1px solid var(--line);
+	padding-top: 0.55rem;
+}
+
+.route-pager {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
 .route-checkbox-label {
 	display: flex;
 	align-items: flex-start;

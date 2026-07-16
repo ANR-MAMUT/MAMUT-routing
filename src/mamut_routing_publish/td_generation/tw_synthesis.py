@@ -25,10 +25,10 @@ Values are integer seconds (exact in binary64). Feasibility bounds at free
 flow: a window ``[e, l]`` guarantees ``l >= t_0i`` (a vehicle leaving the
 depot at the horizon start reaches the customer by ``l``) and
 ``l + s_i + t_i0 <= horizon end`` (starting service at ``l`` returns in
-time). For ``td-shared``, stage 3 (``build-td``) then audits these windows
-under every traffic overlay and applies the minimal shared TW repair. The
-static-only sets are feasible by construction under the free-flow fastest
-matrix (route-centered: the seeding NN tour serves everyone in-window;
+time). For ``td-shared``, stage 3 (``build-td``) then certifies the complete
+anchor routes under every traffic overlay and applies minimal shared deadline
+lifts. The static-only sets are feasible by construction under the free-flow fastest
+matrix (route-centered: the deterministic multi-route anchor serves everyone in-window;
 spread: every customer is individually serveable, so singleton routes fit
 the horizon) and receive no repair.
 
@@ -73,34 +73,91 @@ def synthesize_service_times(rng: Random, num_customers: int) -> list[int]:
     return service_times
 
 
-def nearest_neighbour_visit_times(
-    fastest: list[list[float]], service_times: list[int]
-) -> list[float]:
-    """Greedy nearest-neighbour tour over the static fastest times from the
-    depot at the horizon start; returns the simulated arrival time at each
-    node (depot: horizon start). Ties break on the smallest node index."""
+def construct_anchor_routes(
+    fastest: list[list[float]],
+    demands: list[int],
+    capacity: int,
+    service_times: list[int],
+) -> tuple[list[list[int]], list[float]]:
+    """Build deterministic capacity-and-horizon-feasible TW anchor routes.
+
+    Every route starts at the depot at the horizon start. The next customer
+    is the nearest unserved customer that respects capacity and still permits
+    a direct return to the depot within the horizon. Ties break on customer
+    index. The returned visit times are the free-flow arrivals independently
+    simulated on those routes.
+    """
     num_nodes = len(fastest)
+    if len(demands) != num_nodes or len(service_times) != num_nodes:
+        raise ValueError("fastest, demands and service_times must have identical dimensions")
+    if capacity <= 0:
+        raise ValueError("vehicle capacity must be positive")
+
+    unserved = set(range(1, num_nodes))
     arrivals = [HORIZON_START] * num_nodes
-    visited = [False] * num_nodes
-    visited[0] = True
-    current = 0
-    clock = HORIZON_START
-    for _ in range(num_nodes - 1):
-        best = -1
-        best_travel = float("inf")
-        for j in range(1, num_nodes):
-            if visited[j]:
-                continue
-            travel = fastest[current][j]
-            if travel < best_travel:
-                best_travel = travel
-                best = j
-        clock += best_travel
-        arrivals[best] = clock
-        clock += service_times[best]
-        visited[best] = True
-        current = best
-    return arrivals
+    routes: list[list[int]] = []
+    while unserved:
+        route: list[int] = []
+        current = 0
+        load = 0
+        clock = HORIZON_START
+        while True:
+            feasible: list[tuple[float, int, float]] = []
+            for customer in unserved:
+                demand = demands[customer]
+                arrival = clock + fastest[current][customer]
+                completion = arrival + service_times[customer]
+                if load + demand <= capacity and completion + fastest[customer][0] <= HORIZON_END:
+                    feasible.append((fastest[current][customer], customer, arrival))
+            if not feasible:
+                break
+            _, customer, arrival = min(feasible, key=lambda item: (item[0], item[1]))
+            route.append(customer)
+            unserved.remove(customer)
+            arrivals[customer] = arrival
+            load += demands[customer]
+            clock = arrival + service_times[customer]
+            current = customer
+        if not route:
+            customer = min(unserved)
+            raise ValueError(
+                f"customer {customer} cannot start a capacity-and-horizon-feasible anchor route"
+            )
+        routes.append(route)
+    return routes, arrivals
+
+
+def validate_static_anchor(
+    routes: list[list[int]],
+    fastest: list[list[float]],
+    demands: list[int],
+    capacity: int,
+    service_times: list[int],
+    time_windows: list[tuple[int, int]],
+) -> None:
+    """Hard-check a static anchor certificate against its generated windows."""
+    expected = set(range(1, len(fastest)))
+    visited = [customer for route in routes for customer in route]
+    if len(visited) != len(expected) or set(visited) != expected:
+        raise AssertionError("anchor routes must cover every customer exactly once")
+    for route in routes:
+        load = sum(demands[customer] for customer in route)
+        if load > capacity:
+            raise AssertionError(f"anchor route load {load} exceeds capacity {capacity}")
+        clock = HORIZON_START
+        previous = 0
+        for customer in route:
+            arrival = clock + fastest[previous][customer]
+            earliest, latest = time_windows[customer]
+            clock = max(arrival, earliest)
+            if clock > latest:
+                raise AssertionError(
+                    f"anchor route reaches customer {customer} at {clock} after deadline {latest}"
+                )
+            clock += service_times[customer]
+            previous = customer
+        if clock + fastest[previous][0] > HORIZON_END:
+            raise AssertionError("anchor route returns after the horizon end")
 
 
 def _feasible_bounds(
