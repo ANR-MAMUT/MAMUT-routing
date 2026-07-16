@@ -276,7 +276,7 @@ def probe_julia_site_payload_types(output_repo_dir: Path, snapshot_id: str, inst
     payload_paths = [
         ("home", payload_root / "index.json"),
         ("snapshot", site_output / "site" / "snapshot.json"),
-        ("history", site_output / "site" / "history.json"),
+        ("history", payload_root / "history" / "index.json"),
         ("benchmarks", payload_root / "benchmarks" / "index.json"),
         ("project", payload_root / "project" / "index.json"),
         ("project_text", payload_root / "project" / "legal-mentions" / "index.json"),
@@ -335,6 +335,7 @@ def probe_julia_site_api_routes(output_repo_dir: Path, snapshot_id: str, instanc
         ("home", "/", "/api/site-payload"),
         ("project", "/project/", "/api/site-payload/project"),
         ("project_text", "/project/legal-mentions/", "/api/site-payload/project/legal-mentions"),
+        ("history", "/history/", "/api/site-payload/history"),
         ("problem", "benchmarks/vrptw", "/api/site-payload?route=benchmarks%2Fvrptw"),
         (
             "instance",
@@ -662,6 +663,16 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "Florian Rascoussier, aka Onyr" in authors_payload["markdown"]
     assert "Adrien Pichon, aka Anzury" in authors_payload["markdown"]
 
+    citing_payload = project_text_payloads["/project/citing/"]
+    assert "CITATION.cff" in citing_payload["markdown"]
+    assert "Software Heritage rolling pointer" in citing_payload["markdown"]
+    assert "swh:1:rev:5dd0e60f69816a5e6afa3fa8c3c95902c5de3245" in citing_payload["markdown"]
+
+    related_projects_payload = project_text_payloads["/project/related-projects/"]
+    assert "mamut-routing-lib" in related_projects_payload["markdown"]
+    assert "PyVRP" in related_projects_payload["markdown"]
+    assert "KAYROS" in related_projects_payload["markdown"]
+
     legal_payload = project_text_payloads["/project/legal-mentions/"]
     assert legal_payload["title"] == "Legal Mentions"
     assert legal_payload["markdown"].startswith("# Legal Mentions")
@@ -698,6 +709,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert vrptw_instance_page["source_problem_routes"]["cvrp_vrp_json"] == "/benchmarks/cvrp/mamut2026/fastest/brest/n=2/mamut-n2-cafe123/"
 
     history_payload = json.loads((site_output / "site" / "history.json").read_text(encoding="utf-8"))
+    routed_history_payload = json.loads((payload_root / "history" / "index.json").read_text(encoding="utf-8"))
+    assert routed_history_payload == history_payload
+    assert history_payload["route_path"] == "/history/"
     assert history_payload["current_snapshot_id"] == "2026-04-23-abcdef1"
     assert history_payload["entries"][0]["snapshot"]["source_commit"] == "abcdef123456"
 
@@ -1014,6 +1028,13 @@ def test_julia_site_api_resolves_routes_and_renders_payload_json(tmp_path: Path)
             "extracted_route": "/project/legal-mentions/",
             "has_kind": "true",
         },
+        "history": {
+            "model_type": "SiteHistoryLedger",
+            "payload_kind": "site_history",
+            "route_path": "/history/",
+            "extracted_route": "/history/",
+            "has_kind": "true",
+        },
         "problem": {
             "model_type": "ProblemIndexPayload",
             "payload_kind": "problem_index",
@@ -1208,9 +1229,9 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "optimality_proven": False,
         },
         {
-            "objective_function": "MonoCost",
-            "cost": 12,
-            "num_routes": None,
+                "objective_function": "MonoCost",
+                "cost": 12,
+                "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.MonoCost.json",
             "optimality_proven": False,
         },
@@ -1888,3 +1909,20 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     assert shared_page["sibling_variant_routes"] == {
         "VRPTW (tight)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
     }
+
+    root_index = json.loads((payload_root / "benchmarks" / "index.json").read_text(encoding="utf-8"))
+    assert len(root_index["items"]) == 4
+    assert [item["num_customers"] for item in root_index["items"]] == [2, 2, 2, 2]
+    tight_item = next(item for item in root_index["items"] if item["instance_id"].endswith("-tw-tight"))
+    assert tight_item["tw_set"] == "tight"
+    assert tight_item["place_slug"] == _COLLECTION_CITY
+    fastest_item = next(
+        item for item in root_index["items"]
+        if item["locator"]["problem_type"] == "CVRP" and item["locator"]["metric_variant"] == "fastest"
+    )
+    assert len(fastest_item["objective_availability"]) == 1
+    fastest_objective = fastest_item["objective_availability"][0]
+    assert fastest_objective["objective_function"] == "MonoCost"
+    assert fastest_objective["cost"] == 491.5
+    assert fastest_objective["num_routes"] == 1
+    assert fastest_objective["optimality_proven"] is False

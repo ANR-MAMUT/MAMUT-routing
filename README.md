@@ -93,9 +93,12 @@ The whole publish is four chained steps: fetch the data, install, materialize th
 git submodule update --init MAMUT-routing-lib benchmarks/Mamut2026 \
   && uv sync \
   && uv run mamut-routing-publish site materialize-atf --max-n 400 \
+  && uv run mamut-routing-publish site materialize-route-geometry \
   && uv run mamut-routing-publish site build \
-  && julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+  && julia -t auto --project=webapp webapp/run_site_api.jl --quiet --repo-root "$(pwd)"
 ```
+
+The route-geometry materializer is incremental and keyed by the exact BKS SHA-256. Run it before every publication: unchanged BKS reuse their existing derived sidecar, while every new or modified BKS receives a new sidecar and payload reference.
 
 Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step (the Julia server additionally provides repo-artifact downloads and the interactive workbench, including the TD generation endpoint).
 

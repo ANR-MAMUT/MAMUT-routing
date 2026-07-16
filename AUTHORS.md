@@ -27,6 +27,8 @@ This work has been made possible under the scientific supervision of, in alphabe
 
 Special thanks to [Eduardo Queiroga](https://github.com/EduardoQueiroga), a maintainer of [CVRPlib](https://galgos.inf.puc-rio.br/cvrplib/en/about) who provided BKS files and to [Romain Fontaine](https://github.com/romainfontaine) for his help with [Grid5000](https://www.grid5000.fr/).
 
+Additionally, the authors thank [Geoffrey De Smet](https://github.com/ge0ffrey) ([Timefold](https://timefold.ai/) CTO) for his valuable feedback on the [Reddit r/optimization post announcing the project](https://www.reddit.com/r/optimization/comments/1tpziek/announcing_mamutrouting_an_open_benchmark_catalog/) and to [Leon Lan](https://github.com/leonlan) ([PyVRP](https://github.com/PyVRP/PyVRP)) for his helpful feedback on the [PyVRP community post announcing the project](https://github.com/PyVRP/PyVRP/discussions/1109).
+
 ## Funding and Project Context
 
 This work is part of the ANR-MAMUT project, [ANR-22-CE22-0016](https://anr.fr/Projet-ANR-22-CE22-0016).

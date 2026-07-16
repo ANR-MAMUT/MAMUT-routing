@@ -1,10 +1,10 @@
 using JSON3
 
-const BENCHMARK_NAMES = Set(["Sintef2008", "Dimacs2021", "Mamut2026", "Ortec2022"])
-const INSTANCE_ORIGINS = Set(["Solomon1987", "GehHom1999", "OsmCvrpGen", "Ortec2022"])
-const PROBLEM_TYPES = Set(["CVRP", "VRPTW"])
+const BENCHMARK_NAMES = Set(["Sintef2008", "Dimacs2021", "Mamut2026", "Ortec2022", "Dabia2013", "Ari2018", "Vu2020", "Rifki2020", "Lera2026"])
+const INSTANCE_ORIGINS = Set(["Solomon1987", "GehHom1999", "OsmCvrpGen", "Ortec2022", "Ari2018", "Rifki2020"])
+const PROBLEM_TYPES = Set(["CVRP", "VRPTW", "TDVRP", "TDVRPTW"])
 const METRIC_VARIANTS = Set(["fastest", "shortest", "euclidean"])
-const OBJECTIVE_FUNCTIONS = Set(["HierarchicalVehicleCost", "MonoCost"])
+const OBJECTIVE_FUNCTIONS = Set(["HierarchicalVehicleCost", "MonoCost", "Duration"])
 const FAMILY_CHANGE_KINDS = Set(["added", "removed"])
 const INSTANCE_CHANGE_KINDS = Set(["added", "removed"])
 const BKS_CHANGE_KINDS = Set(["added", "removed", "improved", "regressed"])
@@ -153,6 +153,7 @@ struct ObjectiveAvailability
     cost::Union{Nothing,Int,Float64}
     num_routes::Union{Nothing,Int}
     artifact_path::String
+    optimality_proven::Bool
 end
 
 
@@ -245,6 +246,11 @@ struct InstanceListItem
     route_path::String
     artifact_vrp_json_path::String
     place_slug::Union{Nothing,String}
+    sampling_method::Union{Nothing,String}
+    tw_set::Union{Nothing,String}
+    traffic_model::Union{Nothing,String}
+    traffic_intensity::Union{Nothing,String}
+    base_instance::Union{Nothing,String}
     historical_topology_type::Union{Nothing,String}
     historical_tw_type::Union{Nothing,String}
     bks_count::Int
@@ -259,6 +265,8 @@ struct SiteArtifactLinks
     vrp_path::Union{Nothing,String}
     meta_path::Union{Nothing,String}
     manifest_path::Union{Nothing,String}
+    atf_json_path::Union{Nothing,String}
+    geo_json_path::Union{Nothing,String}
 end
 
 
@@ -273,6 +281,13 @@ struct BKSPageEntry
     validated_num_routes::Union{Nothing,Int}
     license::Union{Nothing,String}
     license_url::Union{Nothing,String}
+    td_schedules::Any
+    route_functions_path::Union{Nothing,String}
+    route_geometry_path::Union{Nothing,String}
+    route_geometry_sha256::Union{Nothing,String}
+    route_geometry_bks_sha256::Union{Nothing,String}
+    route_geometry_metric::Union{Nothing,String}
+    optimality::Any
 end
 
 
@@ -402,6 +417,7 @@ struct SiteHistoryLedger
     schema_version::String
     generated_at::String
     snapshot::SnapshotRef
+    route_path::String
     current_snapshot_id::String
     entries::Vector{SiteHistoryEntry}
 end
@@ -424,6 +440,7 @@ struct HomePagePayload
     objectives_route_path::String
     history_route_path::String
     workbench_route_path::String
+    home_preview_bundle_href::Union{Nothing,String}
 end
 
 
@@ -509,6 +526,7 @@ struct BenchmarksIndexPayload
     route_path::String
     breadcrumbs::Vector{BreadcrumbItem}
     problems::Vector{ProblemSummaryCard}
+    items::Vector{InstanceListItem}
 end
 
 
@@ -1083,7 +1101,7 @@ function SiteCounts(; problem_count, family_count, variant_count, place_count, s
 end
 
 
-function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=nothing, artifact_path)
+function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=nothing, artifact_path, optimality_proven=false)
     num_routes_int = coerce_optional_int(num_routes, "num_routes")
     num_routes_int === nothing || require_nonnegative(num_routes_int, "num_routes")
     return ObjectiveAvailability(
@@ -1091,6 +1109,7 @@ function ObjectiveAvailability(; objective_function, cost=nothing, num_routes=no
         coerce_cost(cost, "cost"),
         num_routes_int,
         coerce_string(artifact_path, "artifact_path"),
+        optimality_proven isa Bool ? optimality_proven : error("optimality_proven must be a boolean"),
     )
 end
 
@@ -1196,7 +1215,7 @@ function CatalogSummary(; instance_count, bks_count, place_count, size_bucket_co
 end
 
 
-function InstanceListItem(; locator, display_name, instance_id, num_customers, route_path, artifact_vrp_json_path, place_slug=nothing, historical_topology_type=nothing, historical_tw_type=nothing, bks_count, viewer_render_mode="straight_line", road_cache_status="not_applicable", objective_availability)
+function InstanceListItem(; locator, display_name, instance_id, num_customers, route_path, artifact_vrp_json_path, place_slug=nothing, sampling_method=nothing, tw_set=nothing, traffic_model=nothing, traffic_intensity=nothing, base_instance=nothing, historical_topology_type=nothing, historical_tw_type=nothing, bks_count, viewer_render_mode="straight_line", road_cache_status="not_applicable", objective_availability)
     return InstanceListItem(
         locator isa BenchmarkLocator ? locator : benchmark_locator_from_dict(locator),
         coerce_string(display_name, "display_name"),
@@ -1205,6 +1224,11 @@ function InstanceListItem(; locator, display_name, instance_id, num_customers, r
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
         validate_relative_path(coerce_string(artifact_vrp_json_path, "artifact_vrp_json_path")),
         coerce_optional_string(place_slug, "place_slug"),
+        coerce_optional_string(sampling_method, "sampling_method"),
+        coerce_optional_string(tw_set, "tw_set"),
+        coerce_optional_string(traffic_model, "traffic_model"),
+        coerce_optional_string(traffic_intensity, "traffic_intensity"),
+        coerce_optional_string(base_instance, "base_instance"),
         coerce_optional_string(historical_topology_type, "historical_topology_type"),
         coerce_optional_string(historical_tw_type, "historical_tw_type"),
         require_nonnegative(coerce_int(bks_count, "bks_count"), "bks_count"),
@@ -1215,17 +1239,19 @@ function InstanceListItem(; locator, display_name, instance_id, num_customers, r
 end
 
 
-function SiteArtifactLinks(; vrp_json_path, vrp_path=nothing, meta_path=nothing, manifest_path=nothing)
+function SiteArtifactLinks(; vrp_json_path, vrp_path=nothing, meta_path=nothing, manifest_path=nothing, atf_json_path=nothing, geo_json_path=nothing)
     return SiteArtifactLinks(
         validate_relative_path(coerce_string(vrp_json_path, "vrp_json_path")),
         vrp_path === nothing ? nothing : validate_relative_path(coerce_string(vrp_path, "vrp_path")),
         meta_path === nothing ? nothing : validate_relative_path(coerce_string(meta_path, "meta_path")),
         manifest_path === nothing ? nothing : validate_relative_path(coerce_string(manifest_path, "manifest_path")),
+        atf_json_path === nothing ? nothing : validate_relative_path(coerce_string(atf_json_path, "atf_json_path")),
+        geo_json_path === nothing ? nothing : validate_relative_path(coerce_string(geo_json_path, "geo_json_path")),
     )
 end
 
 
-function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=nothing, authors=nothing, source=nothing, method=nothing, validated_num_routes=nothing, license=nothing, license_url=nothing)
+function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=nothing, authors=nothing, source=nothing, method=nothing, validated_num_routes=nothing, license=nothing, license_url=nothing, td_schedules=nothing, route_functions_path=nothing, route_geometry_path=nothing, route_geometry_sha256=nothing, route_geometry_bks_sha256=nothing, route_geometry_metric=nothing, optimality=nothing)
     validated_num_routes_int = coerce_optional_int(validated_num_routes, "validated_num_routes")
     validated_num_routes_int === nothing || require_nonnegative(validated_num_routes_int, "validated_num_routes")
     return BKSPageEntry(
@@ -1239,6 +1265,13 @@ function BKSPageEntry(; objective_function, artifact_path, num_routes, cost=noth
         validated_num_routes_int,
         coerce_optional_string(license, "license"),
         coerce_optional_string(license_url, "license_url"),
+        td_schedules,
+        route_functions_path === nothing ? nothing : validate_site_path(coerce_string(route_functions_path, "route_functions_path"), "route_functions_path"),
+        route_geometry_path === nothing ? nothing : validate_relative_path(coerce_string(route_geometry_path, "route_geometry_path")),
+        coerce_optional_string(route_geometry_sha256, "route_geometry_sha256"),
+        coerce_optional_string(route_geometry_bks_sha256, "route_geometry_bks_sha256"),
+        coerce_optional_string(route_geometry_metric, "route_geometry_metric"),
+        optimality,
     )
 end
 
@@ -1398,19 +1431,20 @@ function SiteHistoryEntry(; snapshot, summary, detail_route_path, affected_probl
 end
 
 
-function SiteHistoryLedger(; payload_kind, schema_version, generated_at, snapshot, current_snapshot_id, entries)
+function SiteHistoryLedger(; payload_kind, schema_version, generated_at, snapshot, route_path="/history/", current_snapshot_id, entries)
     return SiteHistoryLedger(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
         coerce_string(generated_at, "generated_at"),
         snapshot isa SnapshotRef ? snapshot : snapshot_ref_from_dict(snapshot),
+        validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
         coerce_string(current_snapshot_id, "current_snapshot_id"),
         entries isa AbstractVector ? [entry isa SiteHistoryEntry ? entry : site_history_entry_from_dict(entry) for entry in entries] : error("entries must be a list"),
     )
 end
 
 
-function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/", title, subtitle, hero_summary, latest_publication_summary, counts, problems, benchmarks_route_path="/benchmarks/", project_route_path="/project/", objectives_route_path="/objectives/", history_route_path="/history/", workbench_route_path="/workbench/")
+function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot, route_path="/", title, subtitle, hero_summary, latest_publication_summary, counts, problems, benchmarks_route_path="/benchmarks/", project_route_path="/project/", objectives_route_path="/objectives/", history_route_path="/history/", workbench_route_path="/workbench/", home_preview_bundle_href=nothing)
     return HomePagePayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1428,6 +1462,7 @@ function HomePagePayload(; payload_kind, schema_version, generated_at, snapshot,
         validate_site_path(coerce_string(objectives_route_path, "objectives_route_path"), "objectives_route_path"),
         validate_site_path(coerce_string(history_route_path, "history_route_path"), "history_route_path"),
         validate_site_path(coerce_string(workbench_route_path, "workbench_route_path"), "workbench_route_path"),
+        coerce_optional_string(home_preview_bundle_href, "home_preview_bundle_href"),
     )
 end
 
@@ -1518,7 +1553,7 @@ function HistoryDetailPayload(; payload_kind, schema_version, generated_at, snap
 end
 
 
-function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, breadcrumbs=BreadcrumbItem[BreadcrumbItem("benchmarks", "/benchmarks/")], problems)
+function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, snapshot, route_path, breadcrumbs=BreadcrumbItem[BreadcrumbItem("benchmarks", "/benchmarks/")], problems, items=InstanceListItem[])
     return BenchmarksIndexPayload(
         require_choice(coerce_string(payload_kind, "payload_kind"), SITE_PAYLOAD_KINDS, "payload_kind"),
         coerce_string(schema_version, "schema_version"),
@@ -1527,6 +1562,7 @@ function BenchmarksIndexPayload(; payload_kind, schema_version, generated_at, sn
         validate_site_path(coerce_string(route_path, "route_path"), "route_path"),
         breadcrumbs isa AbstractVector ? [item isa BreadcrumbItem ? item : breadcrumb_item_from_dict(item) for item in breadcrumbs] : error("breadcrumbs must be a list"),
         problems isa AbstractVector ? [problem isa ProblemSummaryCard ? problem : problem_summary_card_from_dict(problem) for problem in problems] : error("problems must be a list"),
+        items isa AbstractVector ? [item isa InstanceListItem ? item : instance_list_item_from_dict(item) for item in items] : error("items must be a list"),
     )
 end
 
@@ -1819,11 +1855,24 @@ site_counts_payload(value::SiteCounts) = Pair{String,Any}[
 ]
 
 
+change_counts_payload(value::ChangeCounts) = Pair{String,Any}[
+    "families_added" => value.families_added,
+    "families_removed" => value.families_removed,
+    "instances_added" => value.instances_added,
+    "instances_removed" => value.instances_removed,
+    "bks_added" => value.bks_added,
+    "bks_removed" => value.bks_removed,
+    "bks_improved" => value.bks_improved,
+    "bks_regressed" => value.bks_regressed,
+]
+
+
 objective_availability_payload(value::ObjectiveAvailability) = Pair{String,Any}[
     "objective_function" => value.objective_function,
     "cost" => value.cost,
     "num_routes" => value.num_routes,
     "artifact_path" => value.artifact_path,
+    "optimality_proven" => value.optimality_proven,
 ]
 
 
@@ -1918,10 +1967,17 @@ instance_list_item_payload(value::InstanceListItem) = begin
     result = Pair{String,Any}[
         "locator" => benchmark_locator_payload(value.locator),
         "display_name" => value.display_name,
+        "instance_id" => value.instance_id,
+        "num_customers" => value.num_customers,
         "route_path" => value.route_path,
         "artifact_vrp_json_path" => value.artifact_vrp_json_path,
     ]
     push_if_not_nothing!(result, "place_slug", value.place_slug)
+    push_if_not_nothing!(result, "sampling_method", value.sampling_method)
+    push_if_not_nothing!(result, "tw_set", value.tw_set)
+    push_if_not_nothing!(result, "traffic_model", value.traffic_model)
+    push_if_not_nothing!(result, "traffic_intensity", value.traffic_intensity)
+    push_if_not_nothing!(result, "base_instance", value.base_instance)
     push_if_not_nothing!(result, "historical_topology_type", value.historical_topology_type)
     push_if_not_nothing!(result, "historical_tw_type", value.historical_tw_type)
     push!(result, "bks_count" => value.bks_count)
@@ -1937,6 +1993,8 @@ site_artifact_links_payload(value::SiteArtifactLinks) = begin
     push_if_not_nothing!(result, "vrp_path", value.vrp_path)
     push_if_not_nothing!(result, "meta_path", value.meta_path)
     push_if_not_nothing!(result, "manifest_path", value.manifest_path)
+    push_if_not_nothing!(result, "atf_json_path", value.atf_json_path)
+    push_if_not_nothing!(result, "geo_json_path", value.geo_json_path)
     result
 end
 
@@ -1954,6 +2012,13 @@ bks_page_entry_payload(value::BKSPageEntry) = begin
     push_if_not_nothing!(result, "validated_num_routes", value.validated_num_routes)
     push_if_not_nothing!(result, "license", value.license)
     push_if_not_nothing!(result, "license_url", value.license_url)
+    push_if_not_nothing!(result, "td_schedules", value.td_schedules)
+    push_if_not_nothing!(result, "route_functions_path", value.route_functions_path)
+    push_if_not_nothing!(result, "route_geometry_path", value.route_geometry_path)
+    push_if_not_nothing!(result, "route_geometry_sha256", value.route_geometry_sha256)
+    push_if_not_nothing!(result, "route_geometry_bks_sha256", value.route_geometry_bks_sha256)
+    push_if_not_nothing!(result, "route_geometry_metric", value.route_geometry_metric)
+    push_if_not_nothing!(result, "optimality", value.optimality)
     result
 end
 
@@ -2011,6 +2076,7 @@ site_history_entry_payload(value::SiteHistoryEntry) = Pair{String,Any}[
     "affected_problem_types" => value.affected_problem_types,
     "affected_benchmark_names" => value.affected_benchmark_names,
     "affected_objective_functions" => value.affected_objective_functions,
+    "change_counts" => change_counts_payload(value.change_counts),
 ]
 
 
@@ -2019,12 +2085,14 @@ site_history_ledger_payload(value::SiteHistoryLedger) = Pair{String,Any}[
     "schema_version" => value.schema_version,
     "generated_at" => value.generated_at,
     "snapshot" => snapshot_ref_payload(value.snapshot),
+    "route_path" => value.route_path,
     "current_snapshot_id" => value.current_snapshot_id,
     "entries" => [site_history_entry_payload(entry) for entry in value.entries],
 ]
 
 
-home_page_payload(value::HomePagePayload) = Pair{String,Any}[
+home_page_payload(value::HomePagePayload) = begin
+    result = Pair{String,Any}[
     "payload_kind" => value.payload_kind,
     "schema_version" => value.schema_version,
     "generated_at" => value.generated_at,
@@ -2041,7 +2109,10 @@ home_page_payload(value::HomePagePayload) = Pair{String,Any}[
     "objectives_route_path" => value.objectives_route_path,
     "history_route_path" => value.history_route_path,
     "workbench_route_path" => value.workbench_route_path,
-]
+    ]
+    push_if_not_nothing!(result, "home_preview_bundle_href", value.home_preview_bundle_href)
+    result
+end
 
 
 project_fact_payload(value::ProjectFact) = begin
@@ -2128,6 +2199,7 @@ benchmarks_index_payload(value::BenchmarksIndexPayload) = Pair{String,Any}[
     "route_path" => value.route_path,
     "breadcrumbs" => [breadcrumb_item_payload(item) for item in value.breadcrumbs],
     "problems" => [problem_summary_card_payload(problem) for problem in value.problems],
+    "items" => [instance_list_item_payload(item) for item in value.items],
 ]
 
 
@@ -2749,13 +2821,14 @@ end
 
 
 function objective_availability_from_dict(payload::AbstractDict)
-    allowed = Set(["objective_function", "cost", "num_routes", "artifact_path"])
+    allowed = Set(["objective_function", "cost", "num_routes", "artifact_path", "optimality_proven"])
     ensure_allowed_keys(payload, allowed, "ObjectiveAvailability")
     return ObjectiveAvailability(
         objective_function=require_field(payload, "objective_function"),
         cost=get(payload, "cost", nothing),
         num_routes=get(payload, "num_routes", nothing),
         artifact_path=require_field(payload, "artifact_path"),
+        optimality_proven=get(payload, "optimality_proven", false),
     )
 end
 
@@ -2878,7 +2951,7 @@ end
 
 
 function instance_list_item_from_dict(payload::AbstractDict)
-    allowed = Set(["locator", "display_name", "instance_id", "num_customers", "route_path", "artifact_vrp_json_path", "place_slug", "historical_topology_type", "historical_tw_type", "bks_count", "viewer_render_mode", "road_cache_status", "objective_availability"])
+    allowed = Set(["locator", "display_name", "instance_id", "num_customers", "route_path", "artifact_vrp_json_path", "place_slug", "sampling_method", "tw_set", "traffic_model", "traffic_intensity", "base_instance", "historical_topology_type", "historical_tw_type", "bks_count", "viewer_render_mode", "road_cache_status", "objective_availability"])
     ensure_allowed_keys(payload, allowed, "InstanceListItem")
     return InstanceListItem(
         locator=require_field(payload, "locator"),
@@ -2888,6 +2961,11 @@ function instance_list_item_from_dict(payload::AbstractDict)
         route_path=require_field(payload, "route_path"),
         artifact_vrp_json_path=require_field(payload, "artifact_vrp_json_path"),
         place_slug=get(payload, "place_slug", nothing),
+        sampling_method=get(payload, "sampling_method", nothing),
+        tw_set=get(payload, "tw_set", nothing),
+        traffic_model=get(payload, "traffic_model", nothing),
+        traffic_intensity=get(payload, "traffic_intensity", nothing),
+        base_instance=get(payload, "base_instance", nothing),
         historical_topology_type=get(payload, "historical_topology_type", nothing),
         historical_tw_type=get(payload, "historical_tw_type", nothing),
         bks_count=require_field(payload, "bks_count"),
@@ -2899,19 +2977,21 @@ end
 
 
 function site_artifact_links_from_dict(payload::AbstractDict)
-    allowed = Set(["vrp_json_path", "vrp_path", "meta_path", "manifest_path"])
+    allowed = Set(["vrp_json_path", "vrp_path", "meta_path", "manifest_path", "atf_json_path", "geo_json_path"])
     ensure_allowed_keys(payload, allowed, "SiteArtifactLinks")
     return SiteArtifactLinks(
         vrp_json_path=require_field(payload, "vrp_json_path"),
         vrp_path=get(payload, "vrp_path", nothing),
         meta_path=get(payload, "meta_path", nothing),
         manifest_path=get(payload, "manifest_path", nothing),
+        atf_json_path=get(payload, "atf_json_path", nothing),
+        geo_json_path=get(payload, "geo_json_path", nothing),
     )
 end
 
 
 function bks_page_entry_from_dict(payload::AbstractDict)
-    allowed = Set(["objective_function", "artifact_path", "num_routes", "cost", "authors", "source", "method", "validated_num_routes", "license", "license_url"])
+    allowed = Set(["objective_function", "artifact_path", "num_routes", "cost", "authors", "source", "method", "validated_num_routes", "license", "license_url", "td_schedules", "route_functions_path", "route_geometry_path", "route_geometry_sha256", "route_geometry_bks_sha256", "route_geometry_metric", "optimality"])
     ensure_allowed_keys(payload, allowed, "BKSPageEntry")
     return BKSPageEntry(
         objective_function=require_field(payload, "objective_function"),
@@ -2924,6 +3004,13 @@ function bks_page_entry_from_dict(payload::AbstractDict)
         validated_num_routes=get(payload, "validated_num_routes", nothing),
         license=get(payload, "license", nothing),
         license_url=get(payload, "license_url", nothing),
+        td_schedules=get(payload, "td_schedules", nothing),
+        route_functions_path=get(payload, "route_functions_path", nothing),
+        route_geometry_path=get(payload, "route_geometry_path", nothing),
+        route_geometry_sha256=get(payload, "route_geometry_sha256", nothing),
+        route_geometry_bks_sha256=get(payload, "route_geometry_bks_sha256", nothing),
+        route_geometry_metric=get(payload, "route_geometry_metric", nothing),
+        optimality=get(payload, "optimality", nothing),
     )
 end
 
@@ -3086,13 +3173,14 @@ end
 
 
 function site_history_ledger_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "current_snapshot_id", "entries"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "current_snapshot_id", "entries"])
     ensure_allowed_keys(payload, allowed, "SiteHistoryLedger")
     return SiteHistoryLedger(
         payload_kind=require_field(payload, "payload_kind"),
         schema_version=require_field(payload, "schema_version"),
         generated_at=require_field(payload, "generated_at"),
         snapshot=require_field(payload, "snapshot"),
+        route_path=get(payload, "route_path", "/history/"),
         current_snapshot_id=require_field(payload, "current_snapshot_id"),
         entries=require_field(payload, "entries"),
     )
@@ -3100,7 +3188,7 @@ end
 
 
 function home_page_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "hero_summary", "latest_publication_summary", "counts", "problems", "benchmarks_route_path", "project_route_path", "objectives_route_path", "history_route_path", "workbench_route_path"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "title", "subtitle", "hero_summary", "latest_publication_summary", "counts", "problems", "benchmarks_route_path", "project_route_path", "objectives_route_path", "history_route_path", "workbench_route_path", "home_preview_bundle_href"])
     ensure_allowed_keys(payload, allowed, "HomePagePayload")
     return HomePagePayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3119,6 +3207,7 @@ function home_page_payload_from_dict(payload::AbstractDict)
         objectives_route_path=get(payload, "objectives_route_path", "/objectives/"),
         history_route_path=get(payload, "history_route_path", "/history/"),
         workbench_route_path=get(payload, "workbench_route_path", "/workbench/"),
+        home_preview_bundle_href=get(payload, "home_preview_bundle_href", nothing),
     )
 end
 
@@ -3222,7 +3311,7 @@ end
 
 
 function benchmarks_index_payload_from_dict(payload::AbstractDict)
-    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "breadcrumbs", "problems"])
+    allowed = Set(["payload_kind", "schema_version", "generated_at", "snapshot", "route_path", "breadcrumbs", "problems", "items"])
     ensure_allowed_keys(payload, allowed, "BenchmarksIndexPayload")
     return BenchmarksIndexPayload(
         payload_kind=require_field(payload, "payload_kind"),
@@ -3232,6 +3321,7 @@ function benchmarks_index_payload_from_dict(payload::AbstractDict)
         route_path=require_field(payload, "route_path"),
         breadcrumbs=get(payload, "breadcrumbs", BreadcrumbItem[BreadcrumbItem("benchmarks", "/benchmarks/")]),
         problems=require_field(payload, "problems"),
+        items=get(payload, "items", InstanceListItem[]),
     )
 end
 

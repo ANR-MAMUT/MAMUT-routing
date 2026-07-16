@@ -110,7 +110,9 @@ delete window.__PAPER7_SITE_NO_BOOTSTRAP__;
 const {
   artifactHref,
   escapeHtml,
+  fetchGeometryMetaMemo,
   fetchJson,
+  fetchRouteGeometryMetaMemo,
   fetchWorkbenchJson,
   fetchWorkbenchPayloadForRoute,
   normalizeRoute,
@@ -134,8 +136,16 @@ const sourceBenchmarkBtn = document.getElementById("sourceBenchmarkBtn");
 const sourceUploadBtn = document.getElementById("sourceUploadBtn");
 const benchmarkVisualPanel = document.getElementById("benchmarkVisualPanel");
 const uploadVisualPanel = document.getElementById("uploadVisualPanel");
+const benchmarkProblemSelect = document.getElementById("benchmarkProblemSelect");
 const benchmarkCatalogSelect = document.getElementById("benchmarkCatalogSelect");
 const benchmarkInstanceSelect = document.getElementById("benchmarkInstanceSelect");
+const benchmarkMetricFilter = document.getElementById("benchmarkMetricFilter");
+const benchmarkCityFilter = document.getElementById("benchmarkCityFilter");
+const benchmarkSizeFilter = document.getElementById("benchmarkSizeFilter");
+const benchmarkMethodFilter = document.getElementById("benchmarkMethodFilter");
+const benchmarkScenarioFilter = document.getElementById("benchmarkScenarioFilter");
+const benchmarkSearchFilter = document.getElementById("benchmarkSearchFilter");
+const benchmarkSortSelect = document.getElementById("benchmarkSortSelect");
 const benchmarkStatus = document.getElementById("benchmarkStatus");
 const benchmarkRenderStatus = document.getElementById("benchmarkRenderStatus");
 const objectiveField = document.getElementById("objectiveField");
@@ -259,6 +269,7 @@ const BULK_INT_FIELDS = new Set(["demandType", "avgRouteSize", "seed", "clusterS
 const BULK_FLOAT_FIELDS = new Set(["clusterDecayMeters", "hybridPoiShare"]);
 
 const map = L.map("map", { zoomControl: true }).setView([48.8566, 2.3522], 11);
+const routeCanvasRenderer = L.canvas({ padding: 0.35, tolerance: 5 });
 const osmBaseLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 20,
   attribution: "&copy; OpenStreetMap contributors",
@@ -290,6 +301,19 @@ const state = {
   instanceRoute: runtimeParams.get("instance"),
   objectiveFunction: runtimeParams.get("objective"),
   selectedRoutes: new Set(),
+  routeView: {
+    visibleLimit: 10,
+    fadedOpacity: 0.8,
+    arrowsEnabled: true,
+    depotLegMode: "full",
+    search: "",
+    minStops: null,
+    maxStops: null,
+    minLoad: null,
+    maxLoad: null,
+    page: 1,
+    pageSize: 40,
+  },
   lastApiError: null,
   benchmark: {
     payload: null,
@@ -306,6 +330,17 @@ const state = {
     loaded: false,
     loadingPromise: null,
     selectedGroupKey: null,
+    filters: {
+      problem: runtimeParams.get("problem") || "",
+      family: runtimeParams.get("family") || "",
+      metric: runtimeParams.get("metric") || "",
+      city: runtimeParams.get("city") || "",
+      size: runtimeParams.get("size") || "",
+      method: runtimeParams.get("method") || "",
+      scenario: runtimeParams.get("scenario") || "",
+      search: runtimeParams.get("q") || "",
+      sort: runtimeParams.get("sort") || "city-size",
+    },
   },
   upload: {
     instanceData: null,
@@ -556,6 +591,39 @@ function buildBenchmarkCatalogGroups() {
   return groups;
 }
 
+function benchmarkScenarioValue(item) {
+  if (item.tw_set) return `TW: ${item.tw_set}`;
+  if (item.traffic_model || item.traffic_intensity) return `Traffic: ${item.traffic_model || "?"} / ${item.traffic_intensity || "?"}`;
+  return "";
+}
+
+function populateBenchmarkFilter(select, values, placeholder, currentValue) {
+  const counts = new Map();
+  values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  const options = Array.from(counts.keys()).sort((left, right) => String(left).localeCompare(String(right), undefined, { numeric: true }));
+  select.innerHTML = [`<option value="">${escapeHtml(placeholder)}</option>`, ...options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)} (${counts.get(value)})</option>`)].join("");
+  select.value = options.includes(currentValue) ? currentValue : "";
+  return select.value;
+}
+
+function benchmarkObjectiveNumber(item, field) {
+  const values = (item.objective_availability || []).map((entry) => Number(entry?.[field])).filter(Number.isFinite);
+  return values.length > 0 ? Math.min(...values) : Number.POSITIVE_INFINITY;
+}
+
+function compareFilteredBenchmarkItems(left, right) {
+  const filters = state.benchmarkCatalog.filters;
+  const leftLocator = benchmarkCatalogLocator(left);
+  const rightLocator = benchmarkCatalogLocator(right);
+  if (filters.sort === "size") return benchmarkCatalogCustomerCount(left) - benchmarkCatalogCustomerCount(right) || compareBenchmarkCatalogInstances(left, right);
+  if (filters.sort === "metric") return String(leftLocator.metric_variant || "").localeCompare(String(rightLocator.metric_variant || "")) || compareBenchmarkCatalogInstances(left, right);
+  if (filters.sort === "cost") return benchmarkObjectiveNumber(left, "cost") - benchmarkObjectiveNumber(right, "cost") || compareBenchmarkCatalogInstances(left, right);
+  if (filters.sort === "routes") return benchmarkObjectiveNumber(left, "num_routes") - benchmarkObjectiveNumber(right, "num_routes") || compareBenchmarkCatalogInstances(left, right);
+  if (filters.sort === "cache") return String(right.road_cache_status || "").localeCompare(String(left.road_cache_status || "")) || compareBenchmarkCatalogInstances(left, right);
+  if (filters.sort === "name") return String(left.display_name || "").localeCompare(String(right.display_name || ""), undefined, { numeric: true });
+  return String(leftLocator.place_slug || "").localeCompare(String(rightLocator.place_slug || "")) || compareBenchmarkCatalogInstances(left, right);
+}
+
 function renderBenchmarkCatalogOptions() {
   if (!state.benchmarkCatalog.loaded) {
     if (!state.benchmarkCatalog.loadingPromise && benchmarkInstanceSelect.options.length === 0) {
@@ -568,20 +636,35 @@ function renderBenchmarkCatalogOptions() {
   }
 
   const groups = buildBenchmarkCatalogGroups();
-  const sortedGroups = Array.from(groups.entries()).sort(([, left], [, right]) => left.label.localeCompare(right.label));
+  const filters = state.benchmarkCatalog.filters;
   const selectedItem = state.instanceRoute
     ? state.benchmarkCatalog.options.find((item) => normalizeRoute(item.route_path) === normalizeRoute(state.instanceRoute))
     : null;
-  const selectedGroupKey = selectedItem
+  if (selectedItem) {
+    filters.problem = benchmarkCatalogLocator(selectedItem).problem_type || filters.problem;
+    filters.family = benchmarkCatalogLocator(selectedItem).benchmark_name || filters.family;
+  }
+  const problemValues = state.benchmarkCatalog.options.map((item) => benchmarkCatalogLocator(item).problem_type).filter(Boolean);
+  const problems = Array.from(new Set(problemValues)).sort();
+  filters.problem = problems.includes(filters.problem) ? filters.problem : problems[0] || "";
+  populateBenchmarkFilter(benchmarkProblemSelect, problemValues, "All problems", filters.problem);
+  benchmarkProblemSelect.value = filters.problem;
+  const sortedGroups = Array.from(groups.entries())
+    .filter(([, group]) => !filters.problem || benchmarkCatalogLocator(group.items[0]).problem_type === filters.problem)
+    .sort(([, left], [, right]) => left.label.localeCompare(right.label));
+  const selectedGroupKey = selectedItem && (!filters.problem || benchmarkCatalogLocator(selectedItem).problem_type === filters.problem)
     ? benchmarkCatalogGroupKey(selectedItem)
-    : state.benchmarkCatalog.selectedGroupKey && groups.has(state.benchmarkCatalog.selectedGroupKey)
+    : state.benchmarkCatalog.selectedGroupKey && sortedGroups.some(([key]) => key === state.benchmarkCatalog.selectedGroupKey)
       ? state.benchmarkCatalog.selectedGroupKey
-      : sortedGroups[0]?.[0] || "";
+      : sortedGroups.find(([, group]) => benchmarkCatalogLocator(group.items[0]).benchmark_name === filters.family)?.[0]
+        || sortedGroups[0]?.[0]
+        || "";
   state.benchmarkCatalog.selectedGroupKey = selectedGroupKey || null;
+  filters.family = selectedGroupKey ? benchmarkCatalogLocator(groups.get(selectedGroupKey).items[0]).benchmark_name || "" : "";
 
   if (sortedGroups.length > 0) {
     benchmarkCatalogSelect.innerHTML = sortedGroups
-      .map(([groupKey, group]) => `<option value="${escapeHtml(groupKey)}"${groupKey === selectedGroupKey ? " selected" : ""}>${escapeHtml(group.label)}</option>`)
+      .map(([groupKey, group]) => `<option value="${escapeHtml(groupKey)}"${groupKey === selectedGroupKey ? " selected" : ""}>${escapeHtml(benchmarkCatalogLocator(group.items[0]).benchmark_name || group.label)} (${group.items.length})</option>`)
       .join("");
     benchmarkCatalogSelect.disabled = false;
   } else {
@@ -590,9 +673,31 @@ function renderBenchmarkCatalogOptions() {
   }
 
   const fragments = ['<option value="">Select a published variant…</option>'];
-  const selectedGroupItems = selectedGroupKey ? groups.get(selectedGroupKey)?.items || [] : [];
+  const rawGroupItems = selectedGroupKey ? groups.get(selectedGroupKey)?.items || [] : [];
+  filters.metric = populateBenchmarkFilter(benchmarkMetricFilter, rawGroupItems.map((item) => benchmarkCatalogLocator(item).metric_variant), "All metrics", filters.metric);
+  const metricItems = rawGroupItems.filter((item) => !filters.metric || benchmarkCatalogLocator(item).metric_variant === filters.metric);
+  filters.city = populateBenchmarkFilter(benchmarkCityFilter, metricItems.map((item) => benchmarkCatalogLocator(item).place_slug), "All cities", filters.city);
+  const cityItems = metricItems.filter((item) => !filters.city || benchmarkCatalogLocator(item).place_slug === filters.city);
+  filters.size = populateBenchmarkFilter(benchmarkSizeFilter, cityItems.map((item) => String(benchmarkCatalogCustomerCount(item))), "All sizes", filters.size);
+  const sizeItems = cityItems.filter((item) => !filters.size || String(benchmarkCatalogCustomerCount(item)) === filters.size);
+  filters.method = populateBenchmarkFilter(benchmarkMethodFilter, sizeItems.map((item) => item.sampling_method), "All methods", filters.method);
+  const methodItems = sizeItems.filter((item) => !filters.method || item.sampling_method === filters.method);
+  filters.scenario = populateBenchmarkFilter(benchmarkScenarioFilter, methodItems.map(benchmarkScenarioValue), "All scenarios", filters.scenario);
+  benchmarkSearchFilter.value = filters.search;
+  benchmarkSortSelect.value = filters.sort;
+  const search = filters.search.trim().toLowerCase();
+  const selectedGroupItems = rawGroupItems.filter((item) => {
+    const locator = benchmarkCatalogLocator(item);
+    if (filters.metric && locator.metric_variant !== filters.metric) return false;
+    if (filters.city && locator.place_slug !== filters.city) return false;
+    if (filters.size && String(benchmarkCatalogCustomerCount(item)) !== filters.size) return false;
+    if (filters.method && item.sampling_method !== filters.method) return false;
+    if (filters.scenario && benchmarkScenarioValue(item) !== filters.scenario) return false;
+    if (search && !`${item.display_name || ""} ${item.base_instance || ""} ${locator.instance_identifier || ""}`.toLowerCase().includes(search)) return false;
+    return true;
+  });
   Array.from(buildBenchmarkCatalogInstanceGroups(selectedGroupItems).values())
-    .sort((left, right) => compareBenchmarkCatalogInstances(left.head, right.head))
+    .sort((left, right) => compareFilteredBenchmarkItems(left.head, right.head))
     .forEach((group) => {
       fragments.push(`<optgroup label="${escapeHtml(benchmarkCatalogInstanceGroupLabel(group.head))}">`);
       group.items
@@ -632,26 +737,12 @@ async function loadBenchmarkCatalogOptions() {
 
   state.benchmarkCatalog.loadingPromise = (async () => {
     const benchmarksPayload = await fetchWorkbenchPayloadForRoute("/benchmarks/");
-    const problemRoutes = Array.isArray(benchmarksPayload?.problems)
-      ? benchmarksPayload.problems.map((problem) => problem?.route_path).filter(Boolean)
-      : [];
-    const problemPayloads = await Promise.all(problemRoutes.map((routePath) => fetchWorkbenchPayloadForRoute(routePath)));
-    const familyRoutes = problemPayloads.flatMap((payload) => (Array.isArray(payload?.families)
-      ? payload.families.map((family) => family?.route_path).filter(Boolean)
-      : []));
-    const familyPayloads = await Promise.all(familyRoutes.map((routePath) => fetchWorkbenchPayloadForRoute(routePath)));
-
     const itemsByRoute = new Map();
-    familyPayloads.forEach((payload) => {
-      if (!Array.isArray(payload?.items)) {
+    (Array.isArray(benchmarksPayload?.items) ? benchmarksPayload.items : []).forEach((item) => {
+      if (!item?.route_path || itemsByRoute.has(item.route_path)) {
         return;
       }
-      payload.items.forEach((item) => {
-        if (!item?.route_path || itemsByRoute.has(item.route_path)) {
-          return;
-        }
-        itemsByRoute.set(item.route_path, item);
-      });
+      itemsByRoute.set(item.route_path, item);
     });
 
     state.benchmarkCatalog.options = Array.from(itemsByRoute.values()).filter(
@@ -678,6 +769,57 @@ async function loadBenchmarkCatalogOptions() {
 
 function routeLoad(route, instanceData) {
   return route.reduce((total, stopIndex) => total + (Number(instanceData?.demands?.[stopIndex]) || 0), 0);
+}
+
+function resetRouteViewDefaults(routes) {
+  const routeCount = Array.isArray(routes) ? routes.length : 0;
+  state.selectedRoutes.clear();
+  if (routeCount <= 10) {
+    for (let index = 0; index < routeCount; index += 1) {
+      state.selectedRoutes.add(index);
+    }
+  } else if (routeCount > 0) {
+    state.selectedRoutes.add(0);
+  }
+  state.routeView.visibleLimit = routeCount >= 100 ? 99 : routeCount;
+  state.routeView.fadedOpacity = 0.8;
+  state.routeView.arrowsEnabled = routeCount <= 10;
+  state.routeView.depotLegMode = routeCount <= 10 ? "full" : "faded";
+  state.routeView.search = "";
+  state.routeView.minStops = null;
+  state.routeView.maxStops = null;
+  state.routeView.minLoad = null;
+  state.routeView.maxLoad = null;
+  state.routeView.page = 1;
+}
+
+function routeMatchesView(route, routeIndex, instanceData) {
+  const search = state.routeView.search.trim().toLowerCase();
+  if (search && !`route ${routeIndex + 1}`.includes(search) && !String(routeIndex + 1).includes(search)) {
+    return false;
+  }
+  const stops = route.length;
+  const load = routeLoad(route, instanceData);
+  if (state.routeView.minStops != null && stops < state.routeView.minStops) return false;
+  if (state.routeView.maxStops != null && stops > state.routeView.maxStops) return false;
+  if (state.routeView.minLoad != null && load < state.routeView.minLoad) return false;
+  if (state.routeView.maxLoad != null && load > state.routeView.maxLoad) return false;
+  return true;
+}
+
+function filteredRouteIndices(routes, instanceData) {
+  return routes.map((route, index) => ({ route, index }))
+    .filter(({ route, index }) => routeMatchesView(route, index, instanceData))
+    .map(({ index }) => index);
+}
+
+function visibleRouteIndices(routes, instanceData) {
+  const filtered = filteredRouteIndices(routes, instanceData);
+  const visible = new Set(filtered.slice(0, Math.max(0, state.routeView.visibleLimit)));
+  state.selectedRoutes.forEach((index) => {
+    if (filtered.includes(index)) visible.add(index);
+  });
+  return visible;
 }
 
 function clearMapLayers() {
@@ -728,11 +870,7 @@ function updateVisualModePanels() {
 }
 
 function updateRouteCheckboxStates() {
-  const allCheckbox = routeSelectorContainer.querySelector(".route-checkbox-all");
-  const routeCheckboxes = routeSelectorContainer.querySelectorAll("input.route-checkbox:not(.route-checkbox-all)");
-  if (allCheckbox) {
-    allCheckbox.checked = state.selectedRoutes.size === 0;
-  }
+  const routeCheckboxes = routeSelectorContainer.querySelectorAll("input.route-checkbox");
   routeCheckboxes.forEach((checkbox) => {
     const index = Number.parseInt(checkbox.dataset.routeIndex || "", 10);
     checkbox.checked = state.selectedRoutes.has(index);
@@ -748,35 +886,97 @@ function buildRouteSelector(routes, instanceData) {
 
   routeSelectorCard.style.display = "block";
   routeSelectorContainer.innerHTML = "";
+  const filtered = filteredRouteIndices(routes, instanceData);
+  const visible = visibleRouteIndices(routes, instanceData);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / state.routeView.pageSize));
+  state.routeView.page = Math.min(Math.max(1, state.routeView.page), totalPages);
+  const pageStart = (state.routeView.page - 1) * state.routeView.pageSize;
+  const pageIndices = filtered.slice(pageStart, pageStart + state.routeView.pageSize);
 
-  const showAllLabel = document.createElement("label");
-  showAllLabel.className = "route-checkbox-label";
-  const showAllCheck = document.createElement("input");
-  showAllCheck.type = "checkbox";
-  showAllCheck.className = "route-checkbox route-checkbox-all";
-  showAllCheck.checked = state.selectedRoutes.size === 0;
-  showAllCheck.addEventListener("change", () => {
-    if (showAllCheck.checked) {
-      state.selectedRoutes.clear();
-    } else {
-      state.selectedRoutes.clear();
-      for (let index = 0; index < routes.length; index += 1) {
-        state.selectedRoutes.add(index);
-      }
-    }
-    renderVisualState();
-    updateRouteCheckboxStates();
+  routeSelectorContainer.innerHTML = `
+    <p class="route-view-summary">${routes.length} total · ${filtered.length} filtered · ${visible.size} visible · ${state.selectedRoutes.size} full opacity · ${Math.max(0, routes.length - visible.size)} hidden</p>
+    <div class="route-view-grid">
+      <label class="field"><span>Search route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
+      <label class="field"><span>Visible limit</span><input class="route-view-limit" type="number" min="0" max="${routes.length}" value="${state.routeView.visibleLimit}" /></label>
+      <label class="field"><span>Faded opacity</span><input class="route-view-opacity" type="range" min="0.03" max="0.8" step="0.01" value="${state.routeView.fadedOpacity}" /></label>
+      <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="absent">Absent</option></select></label>
+      <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
+    </div>
+    <div class="route-view-grid route-filter-grid">
+      <label class="field"><span>Min stops</span><input data-route-filter="minStops" type="number" min="0" value="${state.routeView.minStops ?? ""}" /></label>
+      <label class="field"><span>Max stops</span><input data-route-filter="maxStops" type="number" min="0" value="${state.routeView.maxStops ?? ""}" /></label>
+      <label class="field"><span>Min load</span><input data-route-filter="minLoad" type="number" min="0" value="${state.routeView.minLoad ?? ""}" /></label>
+      <label class="field"><span>Max load</span><input data-route-filter="maxLoad" type="number" min="0" value="${state.routeView.maxLoad ?? ""}" /></label>
+    </div>
+    <div class="btn-row route-view-actions">
+      <button type="button" data-route-action="all">Show all</button>
+      <button type="button" data-route-action="filtered">Show filtered</button>
+      <button type="button" data-route-action="selected">Show selected</button>
+      <button type="button" data-route-action="none">Show none</button>
+      <button type="button" data-route-action="full-filtered">Full opacity: filtered</button>
+      <button type="button" data-route-action="fade-filtered">Fade: filtered</button>
+    </div>
+    <p class="meta-line">Checked routes use full opacity. Unchecked visible routes use the faded opacity.</p>
+  `;
+  routeSelectorContainer.querySelector(".route-view-depot").value = state.routeView.depotLegMode;
+
+  const rerender = () => renderVisualState({ fitMap: false });
+  routeSelectorContainer.querySelector(".route-view-search").addEventListener("change", (event) => {
+    state.routeView.search = event.target.value;
+    state.routeView.page = 1;
+    rerender();
   });
-  showAllLabel.appendChild(showAllCheck);
-  showAllLabel.appendChild(document.createTextNode("Show All Routes"));
-  routeSelectorContainer.appendChild(showAllLabel);
+  routeSelectorContainer.querySelector(".route-view-limit").addEventListener("change", (event) => {
+    state.routeView.visibleLimit = Math.max(0, Math.min(routes.length, Number(event.target.value) || 0));
+    rerender();
+  });
+  routeSelectorContainer.querySelector(".route-view-opacity").addEventListener("input", (event) => {
+    state.routeView.fadedOpacity = Number(event.target.value);
+    rerender();
+  });
+  routeSelectorContainer.querySelector(".route-view-depot").addEventListener("change", (event) => {
+    state.routeView.depotLegMode = event.target.value;
+    rerender();
+  });
+  routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
+    state.routeView.arrowsEnabled = event.target.checked;
+    rerender();
+  });
+  routeSelectorContainer.querySelectorAll("[data-route-filter]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const raw = input.value.trim();
+      state.routeView[input.dataset.routeFilter] = raw === "" ? null : Number(raw);
+      state.routeView.page = 1;
+      rerender();
+    });
+  });
+  routeSelectorContainer.querySelectorAll("[data-route-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.routeAction;
+      if (action === "all") {
+        state.routeView.search = "";
+        state.routeView.minStops = state.routeView.maxStops = state.routeView.minLoad = state.routeView.maxLoad = null;
+        state.routeView.visibleLimit = routes.length;
+      } else if (action === "filtered") {
+        state.routeView.visibleLimit = filtered.length;
+      } else if (action === "selected") {
+        state.routeView.visibleLimit = 0;
+      } else if (action === "none") {
+        state.routeView.visibleLimit = 0;
+        state.selectedRoutes.clear();
+      } else if (action === "full-filtered") {
+        filtered.forEach((index) => state.selectedRoutes.add(index));
+      } else if (action === "fade-filtered") {
+        filtered.forEach((index) => state.selectedRoutes.delete(index));
+      }
+      rerender();
+    });
+  });
 
-  const divider = document.createElement("hr");
-  divider.style.margin = "0.5rem 0";
-  divider.style.opacity = "0.2";
-  routeSelectorContainer.appendChild(divider);
-
-  routes.forEach((route, index) => {
+  const routeList = document.createElement("div");
+  routeList.className = "route-page-list";
+  pageIndices.forEach((index) => {
+    const route = routes[index];
     const label = document.createElement("label");
     label.className = "route-checkbox-label";
     const checkbox = document.createElement("input");
@@ -791,12 +991,19 @@ function buildRouteSelector(routes, instanceData) {
         state.selectedRoutes.delete(index);
       }
       renderVisualState();
-      updateRouteCheckboxStates();
     });
     label.appendChild(checkbox);
     label.appendChild(document.createTextNode(`Route #${index + 1} (${route.length} stops, load ${routeLoad(route, instanceData)})`));
-    routeSelectorContainer.appendChild(label);
+    routeList.appendChild(label);
   });
+  routeSelectorContainer.appendChild(routeList);
+
+  const pager = document.createElement("div");
+  pager.className = "route-pager";
+  pager.innerHTML = `<button type="button" data-page="prev"${state.routeView.page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${state.routeView.page} / ${totalPages}</span><button type="button" data-page="next"${state.routeView.page >= totalPages ? " disabled" : ""}>Next</button>`;
+  pager.querySelector('[data-page="prev"]').addEventListener("click", () => { state.routeView.page -= 1; rerender(); });
+  pager.querySelector('[data-page="next"]').addEventListener("click", () => { state.routeView.page += 1; rerender(); });
+  routeSelectorContainer.appendChild(pager);
 
   updateRouteCheckboxStates();
 }
@@ -1006,30 +1213,49 @@ function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
 
 function drawRoutes(routeLines, routes, instanceData, routeMode) {
   routeLegendEl.innerHTML = "";
+  const visible = visibleRouteIndices(routes, instanceData);
   routeLines.forEach((routeLine) => {
     const routeIndex = routeLine.routeIndex;
-    if (state.selectedRoutes.size > 0 && !state.selectedRoutes.has(routeIndex)) {
-      return;
-    }
-    const latlngs = routeLine.coordinates
-      .filter((point) => Array.isArray(point) && point.length >= 2)
-      .map((point) => [Number(point[1]), Number(point[0])]);
-    if (latlngs.length < 2) {
+    if (!visible.has(routeIndex)) {
       return;
     }
     const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
-    const polyline = L.polyline(latlngs, {
-      color,
-      weight: 4,
-      opacity: routeMode === "straight_line" ? 0.78 : 0.88,
-      lineCap: "round",
-      lineJoin: "round",
-    }).addTo(state.layers.route);
-    polyline.bindPopup(`Route #${routeIndex + 1}<br/>Stops: ${routes[routeIndex]?.length ?? "?"}`);
-    addArrowsToPolyline(polyline, color);
+    const fullOpacity = state.selectedRoutes.has(routeIndex);
+    const baseOpacity = fullOpacity ? (routeMode === "straight_line" ? 0.78 : 0.88) : state.routeView.fadedOpacity;
+    const rawSegments = Array.isArray(routeLine.segments) && routeLine.segments.length > 0
+      ? routeLine.segments
+      : [routeLine.coordinates];
+    rawSegments.forEach((segment, segmentIndex) => {
+      const isDepotLeg = segmentIndex === 0 || segmentIndex === rawSegments.length - 1;
+      if (isDepotLeg && state.routeView.depotLegMode === "absent") {
+        return;
+      }
+      const opacity = isDepotLeg && state.routeView.depotLegMode === "faded"
+        ? Math.min(baseOpacity, state.routeView.fadedOpacity)
+        : baseOpacity;
+      const latlngs = segment
+        .filter((point) => Array.isArray(point) && point.length >= 2)
+        .map((point) => [Number(point[1]), Number(point[0])]);
+      if (latlngs.length < 2) {
+        return;
+      }
+      const polyline = L.polyline(latlngs, {
+        renderer: routeCanvasRenderer,
+        color,
+        weight: fullOpacity ? 4 : 3,
+        opacity,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(state.layers.route);
+      polyline.bindPopup(`Route #${routeIndex + 1}<br/>Stops: ${routes[routeIndex]?.length ?? "?"}`);
+      if (state.routeView.arrowsEnabled) {
+        addArrowsToPolyline(polyline, color);
+      }
+    });
 
     const legendItem = document.createElement("li");
-    legendItem.innerHTML = `<span class="swatch" style="background:${color}"></span><span>Route #${routeIndex + 1}: ${routes[routeIndex]?.length ?? 0} stops, load ${routeLoad(routes[routeIndex] || [], instanceData)} (${escapeHtml(routeMode)})</span>`;
+    legendItem.style.opacity = fullOpacity ? "1" : String(Math.max(0.35, state.routeView.fadedOpacity));
+    legendItem.innerHTML = `<span class="swatch" style="background:${color}"></span><span>Route #${routeIndex + 1}: ${routes[routeIndex]?.length ?? 0} stops, load ${routeLoad(routes[routeIndex] || [], instanceData)} (${fullOpacity ? "full" : "faded"}, ${escapeHtml(routeMode)})</span>`;
     routeLegendEl.appendChild(legendItem);
   });
 }
@@ -1150,6 +1376,22 @@ function syncWorkbenchUrl() {
   } else {
     nextParams.delete("objective");
   }
+  const catalogQueryKeys = {
+    problem: "problem",
+    family: "family",
+    metric: "metric",
+    city: "city",
+    size: "size",
+    method: "method",
+    scenario: "scenario",
+    search: "q",
+    sort: "sort",
+  };
+  Object.entries(catalogQueryKeys).forEach(([stateKey, queryKey]) => {
+    const value = state.benchmarkCatalog.filters[stateKey];
+    if (value && !(stateKey === "sort" && value === "city-size")) nextParams.set(queryKey, value);
+    else nextParams.delete(queryKey);
+  });
   nextParams.delete("deriveTarget");
   const nextQuery = nextParams.toString();
   const nextUrl = `${CANONICAL_WORKBENCH_ROUTE}${nextQuery ? `?${nextQuery}` : ""}`;
@@ -1244,6 +1486,22 @@ async function autoRenderBenchmarkRoadGeometry(options = {}) {
   const metric = ["shortest", "fastest", "euclidean"].includes(String(benchmark.payload?.summary?.metric_variant || "").toLowerCase())
     ? String(benchmark.payload.summary.metric_variant).toLowerCase()
     : "shortest";
+  if (benchmark.meta?.road_cache?.[metric]) {
+    const straightFallbackCount = Array.isArray(benchmark.meta.route_geometry_straight_fallback_paths)
+      ? benchmark.meta.route_geometry_straight_fallback_paths.length
+      : 0;
+    benchmark.renderSummary = {
+      metric,
+      route_count: benchmark.routes.length,
+      render_mode: straightFallbackCount > 0 ? "mixed" : "cached_road",
+      used_cache: true,
+      cache_miss_count: 0,
+      straight_fallback_count: straightFallbackCount,
+      cache_persisted: false,
+    };
+    updateBenchmarkContextUi();
+    return;
+  }
   const routes = uploadedPreviewRoutesToMetaRoutes(benchmark.routes, benchmark.meta);
   const requestPayload = {
     routes,
@@ -1330,12 +1588,23 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
       || null;
     const bksData = objectiveEntry ? await fetchJson(artifactHref(objectiveEntry.artifact_path)) : { routes: [] };
     let meta = null;
-    if (payload.artifact_links.meta_path) {
-      try {
-        meta = await fetchJson(artifactHref(payload.artifact_links.meta_path));
-      } catch (error) {
-        console.warn("Unable to load benchmark sidecar", error);
+    try {
+      const [geometryMeta, routeGeometryMeta] = await Promise.all([
+        fetchGeometryMetaMemo(payload.artifact_links),
+        fetchRouteGeometryMetaMemo(objectiveEntry),
+      ]);
+      if (geometryMeta || routeGeometryMeta) {
+        meta = {
+          ...(geometryMeta || {}),
+          ...(routeGeometryMeta || {}),
+          road_cache: {
+            ...(geometryMeta?.road_cache || {}),
+            ...(routeGeometryMeta?.road_cache || {}),
+          },
+        };
       }
+    } catch (error) {
+      console.warn("Unable to load benchmark geometry sidecar", error);
     }
     state.instanceRoute = payload.route_path;
     state.objectiveFunction = objectiveEntry?.objective_function || null;
@@ -1356,7 +1625,7 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
     if (fitMap) {
       requestVisualFit();
     }
-    state.selectedRoutes.clear();
+    resetRouteViewDefaults(state.benchmark.routes);
     updateBenchmarkContextUi();
     syncGenerationControlsFromBenchmark();
     syncWorkbenchUrl();
@@ -2122,8 +2391,48 @@ benchmarkObjectiveSelect.addEventListener("change", async (event) => {
   await loadBenchmarkInstance(state.instanceRoute, state.objectiveFunction, { quiet: true, fitMap: false });
 });
 
+benchmarkProblemSelect.addEventListener("change", async (event) => {
+  state.benchmarkCatalog.filters.problem = event.target.value || "";
+  state.benchmarkCatalog.filters.family = "";
+  ["metric", "city", "size", "method", "scenario"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
+  state.benchmarkCatalog.selectedGroupKey = null;
+  await loadBenchmarkInstance(null, null, { quiet: true, fitMap: false });
+  renderBenchmarkCatalogOptions();
+  syncWorkbenchUrl();
+});
+
+const benchmarkCascadeControls = [
+  [benchmarkMetricFilter, "metric"],
+  [benchmarkCityFilter, "city"],
+  [benchmarkSizeFilter, "size"],
+  [benchmarkMethodFilter, "method"],
+  [benchmarkScenarioFilter, "scenario"],
+];
+benchmarkCascadeControls.forEach(([control, key], controlIndex) => {
+  control.addEventListener("change", (event) => {
+    state.benchmarkCatalog.filters[key] = event.target.value || "";
+    benchmarkCascadeControls.slice(controlIndex + 1).forEach(([, laterKey]) => { state.benchmarkCatalog.filters[laterKey] = ""; });
+    renderBenchmarkCatalogOptions();
+    syncWorkbenchUrl();
+  });
+});
+benchmarkSortSelect.addEventListener("change", (event) => {
+  state.benchmarkCatalog.filters.sort = event.target.value || "city-size";
+  renderBenchmarkCatalogOptions();
+  syncWorkbenchUrl();
+});
+
+benchmarkSearchFilter.addEventListener("change", (event) => {
+  state.benchmarkCatalog.filters.search = event.target.value;
+  renderBenchmarkCatalogOptions();
+  syncWorkbenchUrl();
+});
+
 benchmarkCatalogSelect.addEventListener("change", async (event) => {
   state.benchmarkCatalog.selectedGroupKey = event.target.value || null;
+  const selectedGroupItem = state.benchmarkCatalog.options.find((item) => benchmarkCatalogGroupKey(item) === state.benchmarkCatalog.selectedGroupKey);
+  state.benchmarkCatalog.filters.family = benchmarkCatalogLocator(selectedGroupItem).benchmark_name || "";
+  ["metric", "city", "size", "method", "scenario"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
   const activeItem = state.instanceRoute
     ? state.benchmarkCatalog.options.find((item) => normalizeRoute(item.route_path) === normalizeRoute(state.instanceRoute))
     : null;
@@ -2133,6 +2442,7 @@ benchmarkCatalogSelect.addEventListener("change", async (event) => {
     renderBenchmarkCatalogOptions();
   }
   setActiveTab("visualize");
+  syncWorkbenchUrl();
 });
 
 benchmarkInstanceSelect.addEventListener("change", async (event) => {
@@ -2161,7 +2471,7 @@ vrpInput.addEventListener("change", async (event) => {
     state.upload.solutionInfo = null;
     state.upload.roadGeojson = null;
     state.upload.renderSummary = null;
-    state.selectedRoutes.clear();
+    resetRouteViewDefaults(state.upload.routes);
     requestVisualFit();
     await setSourceKind("upload", { fitMap: true });
     setActiveTab("visualize");
@@ -2188,7 +2498,7 @@ solInput.addEventListener("change", async (event) => {
     state.upload.solutionInfo = solutionPayload.info;
     state.upload.roadGeojson = null;
     state.upload.renderSummary = null;
-    state.selectedRoutes.clear();
+    resetRouteViewDefaults(state.upload.routes);
     await setSourceKind("upload", { fitMap: false });
     setActiveTab("visualize");
     showToast(`Loaded solution with ${state.upload.routes.length} route(s)`);
@@ -2308,7 +2618,7 @@ solveBtn.addEventListener("click", async () => {
     state.upload.solutionInfo = { ...solutionPayload.info, source: "hgs", cost: response.cost, solveTime: response.time };
     state.upload.roadGeojson = null;
     state.upload.renderSummary = null;
-    state.selectedRoutes.clear();
+    resetRouteViewDefaults(state.upload.routes);
     state.lastApiError = null;
     await setSourceKind("upload", { sync: false });
     renderVisualState({ fitMap: false });

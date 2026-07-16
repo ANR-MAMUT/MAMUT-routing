@@ -266,12 +266,27 @@ def _render_workbench_shell_html(
                     <div class="card-heading">
                         <h2>Benchmark Instance</h2>
                     </div>
+                    <div class="benchmark-filter-grid">
                     <label class="field">
-                        <span>Problem + family</span>
+                        <span>Problem</span>
+                        <select id="benchmarkProblemSelect">
+                            <option value="">Loading published problems...</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Family</span>
                         <select id="benchmarkCatalogSelect">
                             <option value="">Loading published families...</option>
                         </select>
                     </label>
+                    <label class="field"><span>Metric</span><select id="benchmarkMetricFilter"><option value="">All metrics</option></select></label>
+                    <label class="field"><span>City</span><select id="benchmarkCityFilter"><option value="">All cities</option></select></label>
+                    <label class="field"><span>Size</span><select id="benchmarkSizeFilter"><option value="">All sizes</option></select></label>
+                    <label class="field"><span>Method</span><select id="benchmarkMethodFilter"><option value="">All methods</option></select></label>
+                    <label class="field"><span>TW / traffic</span><select id="benchmarkScenarioFilter"><option value="">All scenarios</option></select></label>
+                    <label class="field"><span>Search</span><input id="benchmarkSearchFilter" type="search" placeholder="Instance or base name" /></label>
+                    <label class="field"><span>Sort</span><select id="benchmarkSortSelect"><option value="city-size">City, size</option><option value="size">Numerical size</option><option value="metric">Metric</option><option value="cost">BKS cost</option><option value="routes">Routes</option><option value="cache">Geometry cache</option><option value="name">Name</option></select></label>
+                    </div>
                     <label class="field">
                         <span>Published variant</span>
                         <select id="benchmarkInstanceSelect">
@@ -724,21 +739,22 @@ def generate_site_webapp(
             html_paths.append(html_path)
             task.update(detail=route_path)
 
-    history_html_path = _route_html_path(site_output, "/history/")
-    history_html_path.parent.mkdir(parents=True, exist_ok=True)
-    history_html_path.write_text(
-        _render_shell_html(
-            site_output,
-            "/history/",
-            payload_source_path=site_output / "site" / "history.json",
-            page_kind="payload",
-            payload_mode=payload_mode,
-            payload_api_prefix=payload_api_prefix,
-            payload_static_root=payload_static_root,
-        ),
-        encoding="utf-8",
-    )
-    html_paths.append(history_html_path)
+    if "/history/" not in route_payloads:
+        history_html_path = _route_html_path(site_output, "/history/")
+        history_html_path.parent.mkdir(parents=True, exist_ok=True)
+        history_html_path.write_text(
+            _render_shell_html(
+                site_output,
+                "/history/",
+                payload_source_path=site_output / "site" / "history.json",
+                page_kind="payload",
+                payload_mode=payload_mode,
+                payload_api_prefix=payload_api_prefix,
+                payload_static_root=payload_static_root,
+            ),
+            encoding="utf-8",
+        )
+        html_paths.append(history_html_path)
 
     placeholder_pages_written = 0
     for route_path, workbench_mode in [

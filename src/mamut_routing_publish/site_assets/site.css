@@ -670,6 +670,11 @@ a.vrp-link:focus-visible {
 
 .stage {
   padding: 1rem;
+  min-width: 0;
+}
+
+.panel {
+  min-width: 0;
 }
 
 .hero-card {
@@ -1264,6 +1269,55 @@ a.vrp-link:focus-visible {
   font-size: 0.86rem;
 }
 
+.catalog-filter-card {
+  margin-top: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  color: var(--text);
+  padding: 0.6rem 0.7rem;
+  font: inherit;
+}
+
+.catalog-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 0.65rem;
+}
+
+.collection-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.collection-filter-reset {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.catalog-results {
+  margin-top: 1rem;
+}
+
 .checkbox-field {
   grid-template-columns: auto 1fr;
   align-items: start;
@@ -1285,13 +1339,20 @@ a.vrp-link:focus-visible {
 .problem-grid > .mini-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .family-grid > .mini-card > .inline-actions,
 .problem-grid > .mini-card > .inline-actions {
   margin-top: auto;
   padding-top: 0.9rem;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+}
+
+.family-grid > .mini-card > .inline-actions > *,
+.problem-grid > .mini-card > .inline-actions > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .mini-card h3,
@@ -1609,6 +1670,19 @@ th {
 }
 
 @media (max-width: 720px) {
+  .collection-filter-grid,
+  .catalog-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .problem-grid,
+  .family-grid,
+  .summary-grid,
+  .detail-grid,
+  .explainer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   body[data-route-path="/"] .theme-toggle {
     top: 0.75rem;
     right: 0.75rem;

@@ -73,8 +73,20 @@ def fetch_city(repo_root: Path, *, city: str, country: str = "", max_radius_km: 
     return _run_julia_call(repo_root, "fetch_and_store_city_osm(payload)", payload)
 
 
+def avg_route_size_for_n(n_customers: int) -> int:
+    """Mamut2026 size-aware route-size category."""
+    if n_customers <= 10:
+        return 1  # 3-5 customers per route
+    if n_customers <= 25:
+        return 2  # 5-8 customers per route
+    return 4  # 12-16 customers per route
+
+
 def generate_base(repo_root: Path, *, city: str, n_customers: int, method: str, seed: int,
-                  osm_path: str | None = None, demand_type: int = 7, avg_route_size: int = 4) -> dict:
+                  osm_path: str | None = None, demand_type: int = 7,
+                  avg_route_size: int | None = None) -> dict:
+    if avg_route_size is None:
+        avg_route_size = avg_route_size_for_n(n_customers)
     payload: dict[str, Any] = {
         "city": city,
         "nCustomers": n_customers,

@@ -15,6 +15,27 @@ const state = {
   breadcrumbs: document.getElementById("breadcrumbTrail"),
   layout: document.getElementById("pageLayout"),
   status: document.getElementById("pageStatus"),
+  catalogFilters: {
+    problem: runtimeParams.get("problem") || "",
+    family: runtimeParams.get("family") || "",
+    metric: runtimeParams.get("metric") || "",
+    city: runtimeParams.get("city") || "",
+    size: runtimeParams.get("size") || "",
+    method: runtimeParams.get("method") || "",
+    scenario: runtimeParams.get("scenario") || "",
+    search: runtimeParams.get("q") || "",
+    sort: runtimeParams.get("sort") || "city-size",
+  },
+  collectionFilters: {
+    size_bucket: runtimeParams.get("size") || "",
+    historical_topology_type: runtimeParams.get("topology") || "",
+    historical_tw_type: runtimeParams.get("tw") || "",
+    place_slug: runtimeParams.get("city") || "",
+    objective_function: runtimeParams.get("objective") || "",
+    has_bks: runtimeParams.get("bks") || "",
+    search: runtimeParams.get("q") || "",
+    sort: runtimeParams.get("sort") || "size-name",
+  },
 };
 
 const PALETTE = [
@@ -213,6 +234,33 @@ function geometryMetaFromGeoSidecar(geo) {
   return { nodes, depot_instance_node_id: 0, road_cache: roadCache };
 }
 
+function geometryMetaFromRouteSidecar(routeGeometry) {
+  const vertexTable = Array.isArray(routeGeometry?.vertex_lonlat) ? routeGeometry.vertex_lonlat : [];
+  const converted = {};
+  Object.entries(routeGeometry?.paths || {}).forEach(([key, indexes]) => {
+    const separator = key.indexOf("-");
+    if (separator <= 0 || !Array.isArray(indexes)) {
+      return;
+    }
+    const fromNode = key.slice(0, separator);
+    const toNode = key.slice(separator + 1);
+    const polyline = indexes
+      .map((vertexIndex) => vertexTable[vertexIndex])
+      .filter((point) => Array.isArray(point) && point.length === 2);
+    if (polyline.length >= 2) {
+      converted[`node:${fromNode}_${toNode}`] = polyline;
+    }
+  });
+  return {
+    road_cache: {
+      [String(routeGeometry?.metric || "fastest").toLowerCase()]: converted,
+    },
+    route_geometry_straight_fallback_paths: Array.isArray(routeGeometry?.straight_fallback_paths)
+      ? routeGeometry.straight_fallback_paths
+      : [],
+  };
+}
+
 function fetchGeometryMetaMemo(artifactLinks) {
   const sourcePath = geometryMetaSourcePath(artifactLinks);
   if (!sourcePath) {
@@ -226,6 +274,23 @@ function fetchGeometryMetaMemo(artifactLinks) {
     ? fetchJsonMemo(href)
     : fetchGeoSidecarJson(href).then(geometryMetaFromGeoSidecar)
   ).catch((error) => {
+    GEOMETRY_META_CACHE.delete(href);
+    throw error;
+  });
+  GEOMETRY_META_CACHE.set(href, promise);
+  return promise;
+}
+
+function fetchRouteGeometryMetaMemo(bksEntry) {
+  const sourcePath = bksEntry?.route_geometry_path;
+  if (!sourcePath) {
+    return Promise.resolve(null);
+  }
+  const href = artifactHref(sourcePath);
+  if (GEOMETRY_META_CACHE.has(href)) {
+    return GEOMETRY_META_CACHE.get(href);
+  }
+  const promise = fetchGeoSidecarJson(href).then(geometryMetaFromRouteSidecar).catch((error) => {
     GEOMETRY_META_CACHE.delete(href);
     throw error;
   });
@@ -666,6 +731,97 @@ function renderFacetList(facets) {
   );
 }
 
+const COLLECTION_FILTER_QUERY_KEYS = {
+  size_bucket: "size",
+  historical_topology_type: "topology",
+  historical_tw_type: "tw",
+  place_slug: "city",
+  objective_function: "objective",
+  has_bks: "bks",
+};
+
+function collectionFacetValues(item, key) {
+  if (key === "size_bucket") return [item.locator?.size_bucket || ""];
+  if (key === "historical_topology_type") return [item.historical_topology_type || ""];
+  if (key === "historical_tw_type") return [item.historical_tw_type || ""];
+  if (key === "place_slug") return [item.place_slug || item.locator?.place_slug || ""];
+  if (key === "objective_function") return (item.objective_availability || []).map((entry) => entry.objective_function);
+  if (key === "has_bks") return [item.bks_count > 0 ? "yes" : "no"];
+  return [];
+}
+
+function collectionItemMatchesFacets(item, ignoredKey = null) {
+  return Object.keys(COLLECTION_FILTER_QUERY_KEYS).every((key) => {
+    if (key === ignoredKey || !state.collectionFilters[key]) return true;
+    return collectionFacetValues(item, key).includes(state.collectionFilters[key]);
+  });
+}
+
+function collectionFacetOptions(payload, facet) {
+  const labels = new Map((facet.options || []).map((option) => [option.value, option.label]));
+  const counts = new Map();
+  payload.items.filter((item) => collectionItemMatchesFacets(item, facet.key)).forEach((item) => {
+    new Set(collectionFacetValues(item, facet.key).filter(Boolean)).forEach((value) => {
+      counts.set(value, (counts.get(value) || 0) + 1);
+    });
+  });
+  return Array.from(counts, ([value, count]) => ({ value, label: labels.get(value) || value, count }))
+    .sort((left, right) => String(left.label).localeCompare(String(right.label), undefined, { numeric: true }));
+}
+
+function renderCollectionFilterSelect(payload, facet) {
+  const options = collectionFacetOptions(payload, facet);
+  const selected = state.collectionFilters[facet.key];
+  if (selected && !options.some((option) => option.value === selected)) {
+    const sourceOption = (facet.options || []).find((option) => option.value === selected);
+    options.push({ value: selected, label: sourceOption?.label || selected, count: 0 });
+  }
+  return `<label class="field"><span>${escapeHtml(facet.label)}</span><select data-collection-filter="${escapeHtml(facet.key)}"><option value="">All</option>${options.map((option) => `<option value="${escapeHtml(option.value)}"${state.collectionFilters[facet.key] === option.value ? " selected" : ""}>${escapeHtml(option.label)} (${option.count})</option>`).join("")}</select></label>`;
+}
+
+function collectionSearchMatches(item) {
+  const search = state.collectionFilters.search.trim().toLowerCase();
+  if (!search) return true;
+  return `${item.display_name || ""} ${item.instance_id || ""} ${item.base_instance || ""}`.toLowerCase().includes(search);
+}
+
+function compareCollectionItems(left, right) {
+  const sort = state.collectionFilters.sort;
+  if (sort === "name") return left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  if (sort === "cost") return publicCatalogObjectiveNumber(left, "cost") - publicCatalogObjectiveNumber(right, "cost") || left.num_customers - right.num_customers;
+  if (sort === "routes") return publicCatalogObjectiveNumber(left, "num_routes") - publicCatalogObjectiveNumber(right, "num_routes") || left.num_customers - right.num_customers;
+  return left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+}
+
+function filteredCollectionItems(payload) {
+  return payload.items
+    .filter((item) => collectionItemMatchesFacets(item) && collectionSearchMatches(item))
+    .slice()
+    .sort(compareCollectionItems);
+}
+
+function syncCollectionFilterUrl() {
+  const params = new URLSearchParams(window.location.search);
+  Object.entries(COLLECTION_FILTER_QUERY_KEYS).forEach(([stateKey, queryKey]) => {
+    const value = state.collectionFilters[stateKey];
+    if (value) params.set(queryKey, value);
+    else params.delete(queryKey);
+  });
+  if (state.collectionFilters.search) params.set("q", state.collectionFilters.search);
+  else params.delete("q");
+  if (state.collectionFilters.sort !== "size-name") params.set("sort", state.collectionFilters.sort);
+  else params.delete("sort");
+  const query = params.toString();
+  window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
+function renderCollectionFilterCard(payload, matchingCount) {
+  return renderCard(
+    "Filter instances",
+    `<div class="collection-filter-grid">${(payload.filter_facets || []).map((facet) => renderCollectionFilterSelect(payload, facet)).join("")}<label class="field"><span>Search</span><input data-collection-search type="search" value="${escapeHtml(state.collectionFilters.search)}" placeholder="Instance or base name" /></label><label class="field"><span>Sort</span><select data-collection-sort><option value="size-name">Size, name</option><option value="name">Name</option><option value="cost">BKS cost</option><option value="routes">Routes</option></select></label></div><p class="meta-line" data-collection-count>${matchingCount} of ${payload.items.length} instances</p><button class="button-link collection-filter-reset" type="button" data-collection-reset>Reset filters</button>`,
+  );
+}
+
 function renderProblemCards(problems) {
   return `<div class="problem-grid">${problems
     .map(
@@ -806,11 +962,10 @@ function homePreviewSampleKey(sample) {
 // Mirror of HOME_PREVIEW_SEEDS in src/mamut_routing_publish/site_payloads.py,
 // only used by the seed-walker fallback below.
 const HOME_PREVIEW_SEEDS = [
-  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "MonoCost" },
-  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "shortest", placeSlug: "london", objectiveFunction: "MonoCost" },
-  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "euclidean", placeSlug: "brest", objectiveFunction: "MonoCost" },
-  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "brest", objectiveFunction: "HierarchicalVehicleCost" },
-  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "london", objectiveFunction: "HierarchicalVehicleCost" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
+  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
+  { problemType: "TDVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
+  { problemType: "TDVRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
 ];
 
 async function loadHomePreviewSample(seed) {
@@ -950,7 +1105,7 @@ function variantSortKey(variant) {
   return idx === -1 ? VARIANT_SORT_ORDER.length : idx;
 }
 
-function renderInstanceGroups(items) {
+function renderInstanceGroups(items, preserveOrder = false) {
   if (!items || items.length === 0) {
     return `<div class="empty-state">No instances are present in this slice.</div>`;
   }
@@ -960,7 +1115,8 @@ function renderInstanceGroups(items) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
-  const orderedKeys = [...groups.keys()].sort((a, b) => {
+  const orderedKeys = [...groups.keys()];
+  if (!preserveOrder) orderedKeys.sort((a, b) => {
     const ga = groups.get(a)[0];
     const gb = groups.get(b)[0];
     return (
@@ -1148,6 +1304,108 @@ async function hydrateHomePreviewShowcase(payload) {
   activateHomePreviewLibrary(samples);
 }
 
+function publicCatalogValue(item, key) {
+  const locator = item.locator || {};
+  if (key === "problem") return locator.problem_type || "";
+  if (key === "family") return locator.benchmark_name || "";
+  if (key === "metric") return locator.metric_variant || "";
+  if (key === "city") return locator.place_slug || item.place_slug || "";
+  if (key === "size") return String(item.num_customers ?? "");
+  if (key === "method") return item.sampling_method || "";
+  if (key === "scenario") {
+    if (item.tw_set) return `TW: ${item.tw_set}`;
+    if (item.traffic_model || item.traffic_intensity) return `Traffic: ${item.traffic_model || "?"} / ${item.traffic_intensity || "?"}`;
+  }
+  return "";
+}
+
+const PUBLIC_CATALOG_FILTER_ORDER = ["problem", "family", "metric", "city", "size", "method", "scenario"];
+const PUBLIC_PROBLEM_ORDER = ["CVRP", "VRPTW", "TDVRPTW", "TDVRP"];
+
+function publicCatalogOptions(items, key) {
+  const keyIndex = PUBLIC_CATALOG_FILTER_ORDER.indexOf(key);
+  const eligible = items.filter((item) => PUBLIC_CATALOG_FILTER_ORDER.slice(0, keyIndex).every((prior) => {
+    const selected = state.catalogFilters[prior];
+    return !selected || publicCatalogValue(item, prior) === selected;
+  }));
+  const counts = new Map();
+  eligible.forEach((item) => {
+    const value = publicCatalogValue(item, key);
+    if (value) counts.set(value, (counts.get(value) || 0) + 1);
+  });
+  return Array.from(counts, ([value, count]) => ({ value, count }))
+    .sort((left, right) => key === "problem"
+      ? PUBLIC_PROBLEM_ORDER.indexOf(left.value) - PUBLIC_PROBLEM_ORDER.indexOf(right.value)
+      : String(left.value).localeCompare(String(right.value), undefined, { numeric: true }));
+}
+
+function publicCatalogSelect(key, label, items) {
+  if (key === "size" && !state.catalogFilters.family) {
+    state.catalogFilters.size = "";
+    return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}" disabled><option value="">Choose a family first</option></select></label>`;
+  }
+  const options = publicCatalogOptions(items, key);
+  if (!options.some((option) => option.value === state.catalogFilters[key])) state.catalogFilters[key] = "";
+  return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}"><option value="">All</option>${options.map(({ value, count }) => `<option value="${escapeHtml(value)}"${state.catalogFilters[key] === value ? " selected" : ""}>${escapeHtml(value)} (${count})</option>`).join("")}</select></label>`;
+}
+
+function publicCatalogObjectiveNumber(item, field) {
+  const values = (item.objective_availability || []).map((entry) => Number(entry?.[field])).filter(Number.isFinite);
+  return values.length > 0 ? Math.min(...values) : Number.POSITIVE_INFINITY;
+}
+
+function comparePublicCatalogItems(left, right) {
+  const sort = state.catalogFilters.sort;
+  if (sort === "size") return left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name);
+  if (sort === "metric") return publicCatalogValue(left, "metric").localeCompare(publicCatalogValue(right, "metric")) || left.num_customers - right.num_customers;
+  if (sort === "cost") return publicCatalogObjectiveNumber(left, "cost") - publicCatalogObjectiveNumber(right, "cost") || left.num_customers - right.num_customers;
+  if (sort === "routes") return publicCatalogObjectiveNumber(left, "num_routes") - publicCatalogObjectiveNumber(right, "num_routes") || left.num_customers - right.num_customers;
+  if (sort === "cache") return String(right.road_cache_status || "").localeCompare(String(left.road_cache_status || "")) || left.num_customers - right.num_customers;
+  if (sort === "name") return left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  return publicCatalogValue(left, "city").localeCompare(publicCatalogValue(right, "city")) || left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name);
+}
+
+function syncPublicCatalogUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const queryKeys = { problem: "problem", family: "family", metric: "metric", city: "city", size: "size", method: "method", scenario: "scenario", search: "q", sort: "sort" };
+  Object.entries(queryKeys).forEach(([stateKey, queryKey]) => {
+    const value = state.catalogFilters[stateKey];
+    if (value && !(stateKey === "sort" && value === "city-size")) params.set(queryKey, value);
+    else params.delete(queryKey);
+  });
+  const query = params.toString();
+  window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
+function renderPublicCatalogExplorer(items) {
+  const search = state.catalogFilters.search.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    if (!PUBLIC_CATALOG_FILTER_ORDER.every((key) => !state.catalogFilters[key] || publicCatalogValue(item, key) === state.catalogFilters[key])) return false;
+    if (search && !`${item.display_name || ""} ${item.base_instance || ""} ${item.instance_id || ""}`.toLowerCase().includes(search)) return false;
+    return true;
+  }).sort(comparePublicCatalogItems);
+  const shown = filtered.slice(0, 100);
+  const controls = `<section class="card catalog-filter-card"><h2>Filter instances</h2><div class="catalog-filter-grid">${publicCatalogSelect("problem", "Problem", items)}${publicCatalogSelect("family", "Family", items)}${publicCatalogSelect("metric", "Metric", items)}${publicCatalogSelect("city", "City", items)}${publicCatalogSelect("size", "Size", items)}${publicCatalogSelect("method", "Method", items)}${publicCatalogSelect("scenario", "TW / traffic", items)}<label class="field"><span>Search</span><input data-public-search type="search" value="${escapeHtml(state.catalogFilters.search)}" placeholder="Instance or base name" /></label><label class="field"><span>Sort</span><select data-public-sort><option value="city-size">City, size</option><option value="size">Numerical size</option><option value="metric">Metric</option><option value="cost">BKS cost</option><option value="routes">Routes</option><option value="cache">Geometry cache</option><option value="name">Name</option></select></label></div><p class="meta-line">${filtered.length} matching instances${filtered.length > shown.length ? ` · showing the first ${shown.length}` : ""}</p></section>`;
+  const problemNames = items.length
+    ? Array.from(new Set(items.map((item) => publicCatalogValue(item, "problem"))))
+      .sort((left, right) => PUBLIC_PROBLEM_ORDER.indexOf(left) - PUBLIC_PROBLEM_ORDER.indexOf(right))
+    : [];
+  const problemCards = problemNames.map((problem) => ({ problem_type: problem, route_path: `/benchmarks/${problem.toLowerCase()}/`, family_count: new Set(items.filter((item) => publicCatalogValue(item, "problem") === problem).map((item) => publicCatalogValue(item, "family"))).size, instance_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).length, bks_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).reduce((total, item) => total + item.bks_count, 0), supported_objective_functions: [] }));
+  state.stage.innerHTML = `${renderProblemCards(problemCards)}${controls}<section class="catalog-results">${renderInstanceRows(shown)}</section>`;
+  state.stage.querySelector("[data-public-sort]").value = state.catalogFilters.sort;
+  state.stage.querySelectorAll("[data-public-filter]").forEach((select) => select.addEventListener("change", () => {
+    const key = select.dataset.publicFilter;
+    state.catalogFilters[key] = select.value;
+    const keyIndex = PUBLIC_CATALOG_FILTER_ORDER.indexOf(key);
+    PUBLIC_CATALOG_FILTER_ORDER.slice(keyIndex + 1).forEach((later) => { state.catalogFilters[later] = ""; });
+    syncPublicCatalogUrl();
+    renderPublicCatalogExplorer(items);
+  }));
+  state.stage.querySelector("[data-public-search]").addEventListener("change", (event) => { state.catalogFilters.search = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
+  state.stage.querySelector("[data-public-sort]").addEventListener("change", (event) => { state.catalogFilters.sort = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
+  setStatus(`Loaded ${filtered.length} matching instances`);
+}
+
 function renderBenchmarksIndex(payload) {
   const breadcrumbs = payload.breadcrumbs || [{ label: "benchmarks", route_path: "/benchmarks/" }];
   setPage("Benchmarks", "Choose a problem class first, then narrow to a benchmark family or generated variant.", breadcrumbs, "catalog");
@@ -1161,8 +1419,12 @@ function renderBenchmarksIndex(payload) {
       ])}`,
     ),
   ].join("");
-  state.stage.innerHTML = renderProblemCards(payload.problems);
-  setStatus(`Loaded ${payload.problems.length} problem classes`);
+  if (Array.isArray(payload.items) && payload.items.length > 0) {
+    renderPublicCatalogExplorer(payload.items);
+  } else {
+    state.stage.innerHTML = renderProblemCards(payload.problems);
+    setStatus(`Loaded ${payload.problems.length} problem classes`);
+  }
 }
 
 function renderProblemIndex(payload) {
@@ -1182,6 +1444,7 @@ function renderProblemIndex(payload) {
 
 function renderCatalogIndex(payload) {
   setPage(payload.title, payload.description || `Static listing for ${payload.benchmark_name}.`, payload.breadcrumbs, "catalog");
+  const filteredItems = filteredCollectionItems(payload);
   const descriptionCard = payload.context_route_path
     ? renderCard(
         "Description",
@@ -1198,19 +1461,43 @@ function renderCatalogIndex(payload) {
         ["Places", payload.summary.place_count],
       ])}<div class="badge-row">${payload.summary.supported_objective_functions.map((objective) => badge(objective)).join("")}</div>`,
     ),
+    renderCollectionFilterCard(payload, filteredItems.length),
     descriptionCard,
     renderSubrouteList("Variants", payload.variant_routes),
     renderSubrouteList("Subsets", payload.subset_routes),
     renderSubrouteList("Places", payload.place_routes),
     renderSubrouteList("Sizes", payload.size_routes),
-    renderFacetList(payload.filter_facets),
   ].join("");
   const isMamut2026FamilyPage =
     payload.payload_kind === "family_index" && payload.benchmark_name === "Mamut2026";
   state.stage.innerHTML = isMamut2026FamilyPage
-    ? renderInstanceGroups(payload.items)
-    : renderInstanceRows(payload.items);
-  setStatus(`Loaded ${payload.items.length} instances`);
+    ? renderInstanceGroups(filteredItems, true)
+    : renderInstanceRows(filteredItems);
+  const sortSelect = state.aside.querySelector("[data-collection-sort]");
+  if (sortSelect) sortSelect.value = state.collectionFilters.sort;
+  state.aside.querySelectorAll("[data-collection-filter]").forEach((select) => select.addEventListener("change", () => {
+    state.collectionFilters[select.dataset.collectionFilter] = select.value;
+    syncCollectionFilterUrl();
+    renderCatalogIndex(payload);
+  }));
+  state.aside.querySelector("[data-collection-search]")?.addEventListener("change", (event) => {
+    state.collectionFilters.search = event.target.value;
+    syncCollectionFilterUrl();
+    renderCatalogIndex(payload);
+  });
+  sortSelect?.addEventListener("change", (event) => {
+    state.collectionFilters.sort = event.target.value;
+    syncCollectionFilterUrl();
+    renderCatalogIndex(payload);
+  });
+  state.aside.querySelector("[data-collection-reset]")?.addEventListener("click", () => {
+    Object.keys(COLLECTION_FILTER_QUERY_KEYS).forEach((key) => { state.collectionFilters[key] = ""; });
+    state.collectionFilters.search = "";
+    state.collectionFilters.sort = "size-name";
+    syncCollectionFilterUrl();
+    renderCatalogIndex(payload);
+  });
+  setStatus(`Loaded ${filteredItems.length} of ${payload.items.length} instances`);
 }
 
 function renderFamilyContext(payload) {
@@ -1457,7 +1744,7 @@ function cachedSegmentFromKeys(metricCache, key, reverseKey, expectedFrom, expec
   return cachedSegmentMatchesEndpoints(normalizedSegment, expectedFrom, expectedTo) ? normalizedSegment : null;
 }
 
-function cachedRouteCoordinates(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds) {
+function cachedRouteSegments(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds) {
   if (!metricCache || typeof metricCache !== "object") {
     return null;
   }
@@ -1497,7 +1784,12 @@ function cachedRouteCoordinates(sequence, metricCache, graphVertexIds, nodeCoord
     segments.push(normalizedSegment);
   }
 
-  return mergeGeometrySegments(segments);
+  return segments;
+}
+
+function cachedRouteCoordinates(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds) {
+  const segments = cachedRouteSegments(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds);
+  return segments ? mergeGeometrySegments(segments) : null;
 }
 
 function routeNodeLookup(routes) {
@@ -1529,16 +1821,24 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
   const routes = Array.isArray(bksData?.routes) ? bksData.routes : [];
   const metricCache = geometryMeta?.road_cache?.[metricVariant];
   const cachedRoadAvailable = options.viewerRenderMode === "cached_road" && options.roadCacheStatus === "complete" && metricCache;
+  const straightFallbackPaths = new Set(geometryMeta?.route_geometry_straight_fallback_paths || []);
 
   const routeLines = routes.map((route, routeIndex) => {
     const sequence = [depotIndex, ...route.map((nodeIndex) => Number(nodeIndex)), depotIndex];
-    const cachedCoordinates = cachedRoadAvailable ? cachedRouteCoordinates(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds) : null;
+    const cachedSegments = cachedRoadAvailable ? cachedRouteSegments(sequence, metricCache, graphVertexIds, nodeCoordinates, instanceNodeIds) : null;
+    const cachedCoordinates = cachedSegments ? mergeGeometrySegments(cachedSegments) : null;
+    const hasStraightFallback = sequence.slice(1).some((toNode, edgeIndex) => straightFallbackPaths.has(`${sequence[edgeIndex]}-${toNode}`));
     const routeCoordinates = cachedCoordinates || sequence.map((nodeIndex) => normalizeGeometryPoint(nodeCoordinates[nodeIndex])).filter(Boolean);
+    const segments = cachedSegments || sequence.slice(0, -1).map((_, segmentIndex) => [
+      normalizeGeometryPoint(nodeCoordinates[sequence[segmentIndex]]),
+      normalizeGeometryPoint(nodeCoordinates[sequence[segmentIndex + 1]]),
+    ].filter(Boolean));
     return {
       routeIndex,
       sequence,
       coordinates: routeCoordinates,
-      source: cachedCoordinates ? "cached_road" : "straight_line",
+      segments,
+      source: cachedCoordinates ? (hasStraightFallback ? "mixed" : "cached_road") : "straight_line",
       stopCount: route.length,
     };
   });
@@ -4002,6 +4302,8 @@ export {
   buildGenerationPreviewPayload,
   escapeHtml,
   fetchJson,
+  fetchGeometryMetaMemo,
+  fetchRouteGeometryMetaMemo,
   fetchWorkbenchJson,
   fetchWorkbenchPayloadForRoute,
   loadWorkbenchInstanceContext,

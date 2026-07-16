@@ -233,6 +233,33 @@ def site_materialize_atf_cmd(
     typer.echo(json.dumps(summary.as_dict(), indent=1))
 
 
+@site_app.command("materialize-route-geometry")
+def site_materialize_route_geometry_cmd(
+    output_repo_dir: Annotated[
+        Optional[Path],
+        typer.Option("--output-repo-dir", help=_OUTPUT_REPO_DIR_HELP),
+    ] = None,
+    min_n: Annotated[
+        int,
+        typer.Option(
+            "--min-n",
+            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers.",
+        ),
+    ] = 101,
+) -> None:
+    """Materialize hash-addressed BKS road geometry into dist/.
+
+    The cache is publication-only and incremental by exact BKS bytes. A
+    changed BKS receives a new sidecar; unchanged BKS reuse their existing
+    hash-addressed artifact.
+    """
+    from mamut_routing_publish.route_geometry import materialize_route_geometry
+
+    repo_dir = _resolve_repo_dir(output_repo_dir)
+    summary = materialize_route_geometry(repo_dir, min_customers=min_n)
+    typer.echo(json.dumps(summary, indent=1))
+
+
 @site_app.command("payloads")
 def site_payloads_cmd(
     output_repo_dir: Annotated[
@@ -639,6 +666,9 @@ def _find_stage1_meta(repo_dir: Path, city_slug: str, n: int, method: str, seed:
     non-atomically) parse as partial JSON; they are skipped: a concurrent
     writer is never writing the meta this call is looking for.
     """
+    from mamut_routing_publish.td_generation.julia_driver import avg_route_size_for_n
+
+    expected_route_size = avg_route_size_for_n(n)
     for meta_path in sorted((repo_dir / "instances_v2" / "osm" / city_slug).glob("*/*_meta.json")):
         try:
             params = json.loads(meta_path.read_text()).get("generation_params", {})
@@ -648,6 +678,7 @@ def _find_stage1_meta(repo_dir: Path, city_slug: str, n: int, method: str, seed:
             int(params.get("n_customers", -1)) == n
             and str(params.get("method", "")) == method
             and int(params.get("seed", -1)) == seed
+            and int(params.get("avg_route_size", -1)) == expected_route_size
         ):
             return meta_path
     return None
@@ -898,6 +929,8 @@ def workbench_build_td_cmd(
     generated_at: Annotated[Optional[str], typer.Option(help="ISO date stamped in metadata.")] = None,
     force: Annotated[bool, typer.Option(help="Rebuild twins whose instance files already exist.")] = False,
     verify: Annotated[bool, typer.Option(help="Full sha-verified reload of every written twin.")] = True,
+    tdvrptw_only: Annotated[bool, typer.Option(help="Rewrite only TDVRPTW twins and preserve existing TDVRP/traffic artifacts.")] = False,
+    reuse_traffic: Annotated[bool, typer.Option(help="Reuse existing traffic overlays and ATF hashes instead of rebuilding traffic artifacts.")] = False,
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
     """Build the TD layer of each base: 6 traffic overlays, the shared TW lift
@@ -916,12 +949,13 @@ def workbench_build_td_cmd(
     bridge_dir = _bridge_dir(repo_dir, city_slug)
     graph = load_bridge_graph(bridge_dir / "graph.json")
     speeds_by_combo = {}
-    for combo_model in TD_MODELS:
-        for combo_intensity in TD_INTENSITIES:
-            speeds_path = bridge_dir / f"speeds-{combo_model}-{combo_intensity}.json"
-            if not speeds_path.exists():
-                raise typer.BadParameter(f"missing {speeds_path} (run 'workbench traffic-sim' first)")
-            speeds_by_combo[(combo_model, combo_intensity)] = load_bridge_speeds(speeds_path, graph)
+    if not (reuse_traffic or tdvrptw_only):
+        for combo_model in TD_MODELS:
+            for combo_intensity in TD_INTENSITIES:
+                speeds_path = bridge_dir / f"speeds-{combo_model}-{combo_intensity}.json"
+                if not speeds_path.exists():
+                    raise typer.BadParameter(f"missing {speeds_path} (run 'workbench traffic-sim' first)")
+                speeds_by_combo[(combo_model, combo_intensity)] = load_bridge_speeds(speeds_path, graph)
 
     started = time.perf_counter()
     built = skipped = 0
@@ -937,6 +971,8 @@ def workbench_build_td_cmd(
                 generated_at=generated_at,
                 force=force,
                 verify=verify,
+                tdvrptw_only=tdvrptw_only,
+                reuse_traffic=reuse_traffic,
             )
             if result is None:
                 skipped += 1
@@ -976,7 +1012,15 @@ def workbench_build_family_cmd(
     workbench_generate_base_cmd(city, generated_at=generated_at, force=force, force_stage1=False, osm_path=None, **ctx_args)
     workbench_derive_vrptw_cmd(city, generated_at=generated_at, force=force, **ctx_args)
     workbench_traffic_sim_cmd(city, model=None, intensity=None, seed=traffic_seed, force=False, osm_path=None, source_repo_dir=source_repo_dir)
-    workbench_build_td_cmd(city, generated_at=generated_at, force=force, verify=True, **ctx_args)
+    workbench_build_td_cmd(
+        city,
+        generated_at=generated_at,
+        force=force,
+        verify=True,
+        tdvrptw_only=False,
+        reuse_traffic=False,
+        **ctx_args,
+    )
     if validate:
         out = _resolve_out_root(repo_dir, out_root)
         workbench_validate_cmd(out, verify_sha256=True)
@@ -1001,9 +1045,35 @@ def workbench_validate_cmd(
     failures = 0
     started = time.perf_counter()
     geo_checked: set[str] = set()
+    base_attributes: dict[str, tuple[tuple[int, ...], int]] = {}
+    min_lb_cap: int | None = None
+    zero_width_windows = 0
     for path in paths:
         try:
             payload = json.loads(path.read_text())
+            demands = tuple(int(value) for value in payload["demands"])
+            capacity = int(payload["vehicle_capacity"])
+            from mamut_routing_publish.td_generation.family import capacity_lower_bound
+
+            lb_cap = capacity_lower_bound(list(demands), capacity)
+            min_lb_cap = lb_cap if min_lb_cap is None else min(min_lb_cap, lb_cap)
+            if lb_cap < 2:
+                raise ValueError(f"LB_cap={lb_cap}; Mamut2026 requires at least two routes")
+            if max(demands[1:], default=0) > capacity:
+                raise ValueError("customer demand exceeds vehicle capacity")
+            base_name = str(payload.get("metadata", {}).get("base_instance_name", payload["instance_name"]))
+            attributes = (demands, capacity)
+            previous = base_attributes.setdefault(base_name, attributes)
+            if previous != attributes:
+                raise ValueError(f"base attributes disagree across variants of {base_name}")
+            windows = payload.get("time_windows")
+            if windows is not None:
+                collapsed = [index for index, (earliest, latest) in enumerate(windows[1:], 1) if earliest >= latest]
+                zero_width_windows += len(collapsed)
+                if collapsed:
+                    raise ValueError(
+                        f"{len(collapsed)} non-positive-width client windows; first customers {collapsed[:10]}"
+                    )
             if "td" in payload:
                 load_td_instance(path, verify_sha256=verify_sha256)
             else:
@@ -1025,7 +1095,8 @@ def workbench_validate_cmd(
             typer.echo(f"FAIL {path}: {error}", err=True)
     typer.echo(
         f"validated {len(paths) - failures}/{len(paths)} instances "
-        f"({len(geo_checked)} geo sidecars) in {_format_duration(time.perf_counter() - started)}"
+        f"({len(geo_checked)} geo sidecars, min LB_cap={min_lb_cap}, "
+        f"zero-width windows={zero_width_windows}) in {_format_duration(time.perf_counter() - started)}"
     )
     if failures:
         raise typer.Exit(code=1)

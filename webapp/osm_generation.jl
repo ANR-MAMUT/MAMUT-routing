@@ -1078,9 +1078,12 @@ function capacity_from_avg_route_size(r::Float64, demands::Vector{Int})
     total = sum(demands)
     max_demand = isempty(demands) ? 0 : maximum(demands)
     if total == length(demands)
-        return floor(Int, r)
+        candidate = floor(Int, r)
+    else
+        candidate = max(max_demand, ceil(Int, r * total / length(demands)))
     end
-    return max(max_demand, ceil(Int, r * total / length(demands)))
+    length(demands) >= 2 || return max(max_demand, candidate)
+    return clamp(candidate, max_demand, total - 1)
 end
 
 function sanitize_city_filename(city::String)

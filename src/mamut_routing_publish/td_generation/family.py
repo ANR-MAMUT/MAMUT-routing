@@ -20,8 +20,8 @@ The Python side of the deliberately 3-stepped generation. Per base
 
 3. ``build_td`` (stage ``build-td``): aligns the 6 traffic overlays to the
    trimmed graph (clamped at each edge's free-flow limit), materializes the
-   canonical ATFs per subinstance, audits every customer's TW under all 6
-   overlays and applies the minimal shared deadline lift (finalizing the
+   canonical ATFs per subinstance, certifies the complete anchor routes under
+   all 6 overlays and applies minimal shared deadline lifts (finalizing the
    VRPTW instance, ``metadata.tw_repair``), then emits the 12 slim TD twins
    with sha-pinned td blocks. Generation gates: the published
    ``distances-fastest`` equals the road graph's free-flow node times after
@@ -33,6 +33,7 @@ byte is canonical JSON written here; Julia only feeds the git-ignored bridge.
 
 from __future__ import annotations
 
+import math
 import time
 import zlib
 from dataclasses import dataclass, field
@@ -65,8 +66,10 @@ from mamut_routing_lib.td import (
     compute_traffic_overlay_sha256,
     free_flow_node_times,
     load_instance_road_graph,
+    load_traffic_overlay,
     load_td_instance,
     materialize_instance_atfs_roadgraph,
+    materialize_selected_atfs_roadgraph,
     save_instance_road_graph,
     save_traffic_overlay,
     td_instance_from_payload,
@@ -94,10 +97,11 @@ from mamut_routing_publish.td_generation.tw_synthesis import (
     TIGHT_TW_WIDTH_RATIO_MEAN,
     TIGHT_TW_WIDTH_RATIO_MIN,
     TIGHT_TW_WIDTH_RATIO_STD,
-    nearest_neighbour_visit_times,
+    construct_anchor_routes,
     synthesize_service_times,
     synthesize_time_windows,
     synthesize_time_windows_spread,
+    validate_static_anchor,
 )
 
 TD_HORIZON = (0.0, 86400.0)
@@ -109,8 +113,15 @@ VRP_EXPORT_MAX_N = 100
 TD_MODELS = ("bpr", "wave")
 TD_INTENSITIES = ("light", "moderate", "heavy")
 GENERATOR_NAME = "mamut-routing-workbench"
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 AUTHORS = "MAMUT-routing workbench (generated instance)"
+
+
+def capacity_lower_bound(demands: list[int], capacity: int) -> int:
+    """Return the standard capacity lower bound, excluding the depot demand."""
+    if capacity <= 0:
+        raise ValueError("vehicle capacity must be positive")
+    return math.ceil(sum(demands[1:]) / capacity)
 
 
 def simplify_tolerance_for(num_customers: int) -> float:
@@ -397,15 +408,22 @@ def _static_instance_payload(
 ) -> dict[str, Any]:
     nodes = meta["nodes"]
     reference_lla = meta["reference_lla"]
+    demands = [int(node["demand"]) for node in nodes]
+    capacity = int(manifest["capacity"])
+    lb_cap = capacity_lower_bound(demands, capacity)
+    if lb_cap < 2:
+        raise ValueError(f"{base}: LB_cap={lb_cap}; Mamut2026 instances must be genuine VRPs")
+    if max(demands[1:], default=0) > capacity:
+        raise ValueError(f"{base}: a customer demand exceeds vehicle capacity")
     return {
         "instance_name": base,
         "instance_origin": "OsmCvrpGen",
         "benchmark_name": FAMILY,
         "num_customers": len(nodes) - 1,
         "num_vehicles": None,
-        "vehicle_capacity": int(manifest["capacity"]),
+        "vehicle_capacity": capacity,
         "coordinates": [[float(node["enu_x"]), float(node["enu_y"])] for node in nodes],
-        "demands": [int(node["demand"]) for node in nodes],
+        "demands": demands,
         "depot": 0,
         "reference_lla": {
             "lat": float(reference_lla["lat"]),
@@ -422,7 +440,7 @@ def _static_instance_payload(
             "city": city,
             "method": method_tag,
             "base_instance_name": base,
-            "num_vehicles_lb": int(manifest["route_count"]),
+            "num_vehicles_lb": lb_cap,
             "generator": _base_generator(
                 "generate-base",
                 {
@@ -739,7 +757,11 @@ def derive_vrptw(
         time_windows = synthesize_time_windows_spread(tw_rng, fastest, service_times)
     else:
         tw_anchor = "free-flow-fastest"
-        visit_times = nearest_neighbour_visit_times(fastest, service_times)
+        demands = [int(value) for value in cvrp_payload["demands"]]
+        capacity = int(cvrp_payload["vehicle_capacity"])
+        anchor_routes, visit_times = construct_anchor_routes(
+            fastest, demands, capacity, service_times
+        )
         if tw_set == TW_SET_TIGHT:
             time_windows = synthesize_time_windows(
                 tw_rng,
@@ -753,6 +775,14 @@ def derive_vrptw(
             )
         else:
             time_windows = synthesize_time_windows(tw_rng, fastest, service_times, visit_times)
+        validate_static_anchor(
+            anchor_routes,
+            fastest,
+            demands,
+            capacity,
+            service_times,
+            time_windows,
+        )
 
     generator_extra: dict[str, Any] = {
         "city": city,
@@ -774,6 +804,14 @@ def derive_vrptw(
     if generated_at:
         metadata["generated_at"] = generated_at
     metadata["tw_set"] = TW_SET_METADATA[tw_set]
+    if tw_set != TW_SET_SPREAD:
+        metadata["tw_anchor"] = {
+            "policy": "deterministic-capacity-horizon-nearest-neighbour",
+            "routes": anchor_routes,
+            "num_routes": len(anchor_routes),
+            "min_customers_per_route": min(map(len, anchor_routes)),
+            "max_customers_per_route": max(map(len, anchor_routes)),
+        }
     payload["metadata"] = metadata
     target_dir.mkdir(parents=True, exist_ok=True)
     save_json_to_file(payload, target)
@@ -830,110 +868,71 @@ def _align_overlay(
     )
 
 
-def _latest_departure_at_or_below(atf: Any, arrival_bound: float) -> float:
-    """Largest departure ``x`` in the ATF domain with ``atf(x) <= arrival_bound``."""
-    from bisect import bisect_right
-
-    if atf.ys[0] > arrival_bound:
-        raise ValueError(f"arrival bound {arrival_bound} unreachable (min arrival {atf.ys[0]})")
-    k = bisect_right(atf.ys, arrival_bound) - 1
-    if k >= atf.num_breakpoints() - 1:
-        return atf.xs[-1]
-    x_lo, x_hi = atf.xs[k], atf.xs[k + 1]
-    y_lo, y_hi = atf.ys[k], atf.ys[k + 1]
-    if x_lo == x_hi or y_hi == y_lo:
-        return x_lo
-    return x_lo + (arrival_bound - y_lo) / (y_hi - y_lo) * (x_hi - x_lo)
-
-
 def _audit_and_lift(
     time_windows: list[tuple[int, int]],
     service_times: list[int],
-    depot_arcs_by_sub: dict[str, dict[tuple[int, int], Any]],
+    anchor_routes: list[list[int]],
+    anchor_arcs_by_sub: dict[str, dict[tuple[int, int], Any]],
     horizon_end: float,
 ) -> tuple[list[tuple[int, int]], dict[str, Any]]:
-    """Minimal shared TW repair over all overlays + hard feasibility audit.
+    """Lift shared deadlines enough to certify the full anchor solution.
 
-    Two symmetric minimal repairs per customer, shared across the whole base
-    (one TW set per base), both recorded in ``metadata.tw_repair``:
-
-    - **deadline lift**: the deadline becomes the smallest integer >= both
-      the original deadline and the earliest TD arrival from the depot
-      (departing at the horizon start) under every overlay, so the customer
-      stays reachable;
-    - **earliest reduction**: the earliest bound becomes the largest integer
-      <= both the original bound and the latest TD-feasible service start
-      (the start whose service completion still returns to the depot by the
-      horizon end) under every overlay. Free-flow-anchored route-centered
-      windows can place the earliest bound so late in the day that the TD
-      return leg under traffic overruns the horizon; a deadline lift cannot
-      repair that.
-
-    After both repairs, a feasible service start must exist under every
-    overlay (earliest TD arrival <= latest TD-feasible start; hard error
-    otherwise: the customer is genuinely unserveable). Deadlines may still
-    exceed an overlay's latest feasible start: traffic narrowing the usable
-    window is the family's design, individual serveability is the contract.
-    Only the depot arcs of each overlay's ATFs are consulted.
+    Each anchor route is simulated from time zero with waiting under every
+    traffic overlay. Earliest bounds are never reduced. Deadlines receive the
+    smallest shared integer lift containing every resulting service start.
+    The same routes are then rechecked globally, including their depot return.
     """
-    import math
-
     lifted = [tuple(window) for window in time_windows]
     repairs: dict[str, Any] = {}
-    num_nodes = len(time_windows)
-    for i in range(1, num_nodes):
-        earliest, latest = lifted[i]
-        entry: dict[str, Any] = {}
+    needed_deadlines = [latest for _, latest in lifted]
+    binding: list[str | None] = [None] * len(lifted)
+    for sub, arcs in anchor_arcs_by_sub.items():
+        for route in anchor_routes:
+            clock = 0.0
+            previous = 0
+            for customer in route:
+                arrival = arcs[(previous, customer)].evaluate(clock)
+                clock = max(arrival, float(lifted[customer][0]))
+                needed = math.ceil(clock)
+                if needed > needed_deadlines[customer]:
+                    needed_deadlines[customer] = needed
+                    binding[customer] = sub
+                clock += service_times[customer]
+                previous = customer
+            returned = arcs[(previous, 0)].evaluate(clock)
+            if returned > horizon_end:
+                raise AssertionError(
+                    f"anchor route {route} returns at {returned} after the horizon under {sub}"
+                )
 
-        needed = latest
-        binding_lift = None
-        for sub, arcs in depot_arcs_by_sub.items():
-            bound = math.ceil(arcs[(0, i)].evaluate(0.0))
-            if bound > needed:
-                needed = bound
-                binding_lift = sub
+    for customer in range(1, len(lifted)):
+        earliest, latest = lifted[customer]
+        needed = needed_deadlines[customer]
         if needed > latest:
-            entry.update(
-                deadline_before=latest, deadline_after=needed, deadline_binding_overlay=binding_lift
-            )
-            latest = needed
+            repairs[str(customer)] = {
+                "deadline_before": latest,
+                "deadline_after": needed,
+                "deadline_binding_overlay": binding[customer],
+            }
+            lifted[customer] = (earliest, needed)
+        if lifted[customer][0] >= lifted[customer][1]:
+            raise AssertionError(f"customer {customer} has a zero-width time window")
 
-        max_start = float(earliest)
-        binding_cut = None
-        for sub, arcs in depot_arcs_by_sub.items():
-            latest_return_departure = _latest_departure_at_or_below(arcs[(i, 0)], horizon_end)
-            start_bound = math.floor(latest_return_departure - service_times[i])
-            if start_bound < max_start:
-                max_start = start_bound
-                binding_cut = sub
-        if binding_cut is not None:
-            entry.update(
-                earliest_before=earliest,
-                earliest_after=int(max_start),
-                earliest_binding_overlay=binding_cut,
-            )
-            earliest = int(max_start)
-            if earliest < 0:
-                raise AssertionError(f"customer {i}: earliest reduction below the horizon start")
-
-        lifted[i] = (earliest, latest)
-        if entry:
-            repairs[str(i)] = entry
-
-        for sub, arcs in depot_arcs_by_sub.items():
-            arrival = arcs[(0, i)].evaluate(0.0)
-            start = max(float(earliest), arrival)
-            completion = start + service_times[i]
-            if completion > horizon_end:
-                raise AssertionError(
-                    f"customer {i} unserveable under {sub}: earliest completion {completion}"
-                )
-            back = arcs[(i, 0)].evaluate(completion)
-            if back > horizon_end:
-                raise AssertionError(
-                    f"customer {i} unserveable under {sub}: earliest return {back} "
-                    f"past the horizon end"
-                )
+    for sub, arcs in anchor_arcs_by_sub.items():
+        for route in anchor_routes:
+            clock = 0.0
+            previous = 0
+            for customer in route:
+                arrival = arcs[(previous, customer)].evaluate(clock)
+                clock = max(arrival, float(lifted[customer][0]))
+                if clock > lifted[customer][1]:
+                    raise AssertionError(
+                        f"anchor misses customer {customer} under {sub}: {clock} > {lifted[customer][1]}"
+                    )
+                clock += service_times[customer]
+                previous = customer
+            if arcs[(previous, 0)].evaluate(clock) > horizon_end:
+                raise AssertionError(f"anchor route returns after the horizon under {sub}")
     return lifted, repairs
 
 
@@ -948,8 +947,11 @@ def build_td(
     generated_at: str | None = None,
     force: bool = False,
     verify: bool = True,
+    tdvrptw_only: bool = False,
+    reuse_traffic: bool = False,
 ) -> BuiltTDBase | None:
     """Publish the TD layer of a base: 6 overlays, TW lift, 12 slim twins."""
+    reuse_traffic = reuse_traffic or tdvrptw_only
     started = time.perf_counter()
     root = Path(collection_root)
     base = base_instance_name(city, num_customers, method_tag)
@@ -966,7 +968,7 @@ def build_td(
         for model in TD_MODELS
         for intensity in TD_INTENSITIES
     ]
-    missing = [combo for combo in combos if combo not in speeds_by_combo]
+    missing = [combo for combo in combos if combo not in speeds_by_combo] if not reuse_traffic else []
     if missing:
         raise ValueError(f"missing traffic speeds for {base}: {missing}")
 
@@ -977,7 +979,12 @@ def build_td(
         for pt in ("TDVRP", "TDVRPTW")
         for sub in subs
     }
-    if not force and all(path.exists() for path in twin_paths.values()):
+    target_problem_types = ("TDVRPTW",) if tdvrptw_only else ("TDVRP", "TDVRPTW")
+    if not force and all(
+        twin_paths[(problem_type, sub)].exists()
+        for problem_type in target_problem_types
+        for sub in subs
+    ):
         return None
 
     road = load_instance_road_graph(road_path)
@@ -995,19 +1002,37 @@ def build_td(
     vrptw_payload = _json.loads(vrptw_path.read_text())
     service_times = [int(v) for v in vrptw_payload["service_times"]]
     time_windows = [tuple(int(v) for v in window) for window in vrptw_payload["time_windows"]]
+    anchor_routes = [
+        [int(customer) for customer in route]
+        for route in vrptw_payload.get("metadata", {}).get("tw_anchor", {}).get("routes", [])
+    ]
+    if not anchor_routes:
+        raise ValueError(f"route-centered TW anchor missing for {base}: re-run derive-vrptw")
+    anchor_arc_keys = {
+        (previous, customer)
+        for route in anchor_routes
+        for previous, customer in zip([0, *route], [*route, 0])
+    }
 
     # Overlays + per-subinstance materialization (ATFs are TW-independent).
-    # Only the depot arcs are retained for the TW audit: full n=1000 ATF sets
-    # are heavy and the audit needs alpha_0i / alpha_i0 alone.
+    # Only the anchor arcs are retained for the global TW certificate: full
+    # n=1000 ATF sets are heavy and all other arcs are irrelevant here.
     overlay_sha: dict[str, str] = {}
     atf_sha: dict[str, str] = {}
-    depot_arcs_by_sub: dict[str, dict[tuple[int, int], Any]] = {}
+    anchor_arcs_by_sub: dict[str, dict[tuple[int, int], Any]] = {}
     overlay_refs: dict[str, dict[str, str]] = {}
+    existing_tdvrp_payloads: dict[str, dict[str, Any]] = {}
     for model, intensity in combos:
         sub = subinstance_name(model, intensity)
-        overlay = _align_overlay(road, graph, speeds_by_combo[(model, intensity)])
         overlay_file = f"{base}.traffic-{sub}.json.gz"
-        save_traffic_overlay(overlay, side_dir / overlay_file)
+        overlay_path = side_dir / overlay_file
+        if reuse_traffic and overlay_path.exists():
+            overlay = load_traffic_overlay(overlay_path)
+        else:
+            if (model, intensity) not in speeds_by_combo:
+                raise ValueError(f"missing traffic speeds for {base}: {(model, intensity)}")
+            overlay = _align_overlay(road, graph, speeds_by_combo[(model, intensity)])
+            save_traffic_overlay(overlay, overlay_path)
         overlay_sha[sub] = compute_traffic_overlay_sha256(overlay)
         overlay_refs[sub] = {
             "path": sidecar_relpath(city, num_customers, base, overlay_file),
@@ -1039,30 +1064,44 @@ def build_td(
             "metadata": {},
         }
         instance = td_instance_from_payload(probe_payload)
-        atfs = materialize_instance_atfs_roadgraph(instance, road, overlay)
-        atf_sha[sub] = compute_atf_sha256(atfs)
-        depot_arcs_by_sub[sub] = {
-            key: atf for key, atf in atfs.arcs.items() if key[0] == 0 or key[1] == 0
-        }
-        del atfs
+        anchor_arcs_by_sub[sub] = materialize_selected_atfs_roadgraph(
+            instance, road, overlay, anchor_arc_keys
+        )
+        existing_tdvrp_path = twin_paths[("TDVRP", sub)]
+        if existing_tdvrp_path.exists():
+            existing_tdvrp = _json.loads(existing_tdvrp_path.read_text())
+            existing_tdvrp_payloads[sub] = existing_tdvrp
+            atf_sha[sub] = str(existing_tdvrp["td"]["atf_sha256"])
+        else:
+            atfs = materialize_instance_atfs_roadgraph(instance, road, overlay)
+            atf_sha[sub] = compute_atf_sha256(atfs)
+            del atfs
+        missing_anchor_arcs = anchor_arc_keys - anchor_arcs_by_sub[sub].keys()
+        if missing_anchor_arcs:
+            raise AssertionError(f"missing anchor arcs under {sub}: {sorted(missing_anchor_arcs)}")
 
-    # TW audit + minimal shared repair; finalize the VRPTW instance.
-    lifted, repairs = _audit_and_lift(time_windows, service_times, depot_arcs_by_sub, TD_HORIZON[1])
+    # Global anchor audit + minimal shared deadline repair; finalize VRPTW.
+    lifted, repairs = _audit_and_lift(
+        time_windows,
+        service_times,
+        anchor_routes,
+        anchor_arcs_by_sub,
+        TD_HORIZON[1],
+    )
     vrptw_payload["time_windows"] = [list(window) for window in lifted]
     vrptw_metadata = dict(vrptw_payload["metadata"])
     lift_entries = [e for e in repairs.values() if "deadline_after" in e]
     cut_entries = [e for e in repairs.values() if "earliest_after" in e]
     vrptw_metadata["tw_repair"] = {
-        "policy": "minimal-shared-tw-repair",
+        "policy": "global-anchor-minimal-shared-deadline-lift",
         "overlays_audited": subs,
         "lifted_customers": len(lift_entries),
         "max_lift_seconds": max(
             (e["deadline_after"] - e["deadline_before"] for e in lift_entries), default=0
         ),
-        "reduced_customers": len(cut_entries),
-        "max_reduction_seconds": max(
-            (e["earliest_before"] - e["earliest_after"] for e in cut_entries), default=0
-        ),
+        "reduced_customers": 0,
+        "max_reduction_seconds": 0,
+        "anchor_routes": len(anchor_routes),
         "repairs": repairs,
     }
     if generated_at:
@@ -1076,33 +1115,42 @@ def build_td(
     for model, intensity in combos:
         sub = subinstance_name(model, intensity)
         name = td_instance_name(base, model, intensity)
-        speeds = speeds_by_combo[(model, intensity)]
-        td_metadata = {
-            "authors": AUTHORS,
-            "generated_at": generated_at or vrptw_metadata.get("generated_at", ""),
-            "city": city,
-            "method": method_tag,
-            "base_instance_name": base,
-            "subinstance": sub,
-            "generator": _base_generator(
+        if reuse_traffic:
+            td_metadata = dict(existing_tdvrp_payloads[sub]["metadata"])
+            td_metadata.pop("problem_type", None)
+            td_metadata["generated_at"] = generated_at or td_metadata.get("generated_at", "")
+            td_metadata["generator"] = _base_generator(
                 "build-td", {"city": city, "method": method_tag}
-            ),
-            "traffic": {
-                "model": speeds.model,
-                "intensity": speeds.intensity,
-                "seed": speeds.seed,
-                "num_trips": speeds.num_trips,
-                "params": speeds.params,
-            },
-            "sidecars": {"geo": dict(geo_ref)} if geo_ref else {},
-            "notes": (
-                "Time dependence derives from the city's OSM road network: the shared "
-                "road-graph sidecar pins free-flow fastest paths per base; this "
-                "subinstance's traffic overlay carries per-edge hourly speeds; "
-                "arrival-time functions are materialized deterministically on load "
-                "and pinned by td.atf_sha256."
-            ),
-        }
+            )
+            td_metadata["sidecars"] = {"geo": dict(geo_ref)} if geo_ref else {}
+        else:
+            speeds = speeds_by_combo[(model, intensity)]
+            td_metadata = {
+                "authors": AUTHORS,
+                "generated_at": generated_at or vrptw_metadata.get("generated_at", ""),
+                "city": city,
+                "method": method_tag,
+                "base_instance_name": base,
+                "subinstance": sub,
+                "generator": _base_generator(
+                    "build-td", {"city": city, "method": method_tag}
+                ),
+                "traffic": {
+                    "model": speeds.model,
+                    "intensity": speeds.intensity,
+                    "seed": speeds.seed,
+                    "num_trips": speeds.num_trips,
+                    "params": speeds.params,
+                },
+                "sidecars": {"geo": dict(geo_ref)} if geo_ref else {},
+                "notes": (
+                    "Time dependence derives from the city's OSM road network: the shared "
+                    "road-graph sidecar pins free-flow fastest paths per base; this "
+                    "subinstance's traffic overlay carries per-edge hourly speeds; "
+                    "arrival-time functions are materialized deterministically on load "
+                    "and pinned by td.atf_sha256."
+                ),
+            }
         common = {
             "instance_name": name,
             "instance_origin": "OsmCvrpGen",
@@ -1137,7 +1185,11 @@ def build_td(
             "problem_type": "TDVRPTW",
             "tw_repair": vrptw_metadata["tw_repair"],
         }
-        for pt, payload in (("TDVRP", tdvrp_payload), ("TDVRPTW", tdvrptw_payload)):
+        payloads = (("TDVRPTW", tdvrptw_payload),) if tdvrptw_only else (
+            ("TDVRP", tdvrp_payload),
+            ("TDVRPTW", tdvrptw_payload),
+        )
+        for pt, payload in payloads:
             target = twin_paths[(pt, sub)]
             target.parent.mkdir(parents=True, exist_ok=True)
             save_json_to_file(payload, target)
@@ -1153,9 +1205,7 @@ def build_td(
         max_lift_seconds=max(
             (e["deadline_after"] - e["deadline_before"] for e in lift_entries), default=0
         ),
-        reduced_customers=len(cut_entries),
-        max_reduction_seconds=max(
-            (e["earliest_before"] - e["earliest_after"] for e in cut_entries), default=0
-        ),
+        reduced_customers=0,
+        max_reduction_seconds=0,
         build_seconds=time.perf_counter() - started,
     )
