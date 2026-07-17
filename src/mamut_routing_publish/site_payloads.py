@@ -25,12 +25,12 @@ from mamut_routing_lib.sidecars import find_collection_root
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
-from mamut_routing_publish.atf_cache import atf_cache_path
+from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, atf_cache_path
+from mamut_routing_publish.publish_roots import PublishRoots, hardlink_tree, migrate_legacy_state
 from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
-from .road_cache import enforce_full_road_cache
 from .route_geometry import route_geometry_for_bks
 
 
@@ -1040,14 +1040,21 @@ def _artifact_path_to_route_path(output_repo_dir: Path, artifact_path_str: str) 
     raise ValueError(f"Unsupported artifact path for route derivation: {artifact_path_str}")
 
 
-def _resolve_atf_sidecar(output_repo_dir: Path, instance_path: Path, instance: AnyBenchmarkInstance) -> tuple[Path, bool] | None:
+def _resolve_atf_sidecar(
+    output_repo_dir: Path,
+    instance_path: Path,
+    instance: AnyBenchmarkInstance,
+    atf_cache_dir: Path | None = None,
+) -> tuple[Path, bool] | None:
     """Candidate ATF sidecar path of a TD instance, or None for non-TD instances.
 
     Returns ``(path, is_committed)``. Committed-sidecar families (atf-ndcpwlf)
     resolve through the td block's ``atf_path``, relative to the instance file;
     materialized-model families (igp-profile, road-graph) resolve into the
-    build-time ``dist/atf-cache``. The path is not checked for existence:
-    each caller applies its own missing-file policy.
+    build-time ATF cache (``atf_cache_dir`` when given, so staging builds
+    check the cache they actually materialized; ``<repo>/dist/atf-cache``
+    otherwise). The path is not checked for existence: each caller applies
+    its own missing-file policy.
     """
     td_block = getattr(instance, "td", None)
     if td_block is None:
@@ -1055,10 +1062,17 @@ def _resolve_atf_sidecar(output_repo_dir: Path, instance_path: Path, instance: A
     atf_name = td_block.get("atf_path") if isinstance(td_block, dict) else getattr(td_block, "atf_path", None)
     if atf_name:
         return get_atf_path_for_instance(instance_path, str(atf_name)), True
+    if atf_cache_dir is not None:
+        return atf_cache_file(atf_cache_dir, str(instance.benchmark_name.value), instance.instance_name), False
     return atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name), False
 
 
-def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: AnyBenchmarkInstance) -> SiteArtifactLinks:
+def _build_artifact_links(
+    output_repo_dir: Path,
+    instance_path: Path,
+    instance: AnyBenchmarkInstance,
+    atf_cache_dir: Path | None = None,
+) -> SiteArtifactLinks:
     if has_structured_metadata(instance):
         artifact_paths = instance.metadata.artifact_paths
         return SiteArtifactLinks(
@@ -1077,9 +1091,17 @@ def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: 
     # dist/atf-cache for materialized-model families); the link only exists
     # when the file does.
     atf_json_path: str | None = None
-    atf_sidecar = _resolve_atf_sidecar(output_repo_dir, instance_path, instance)
+    atf_sidecar = _resolve_atf_sidecar(output_repo_dir, instance_path, instance, atf_cache_dir=atf_cache_dir)
     if atf_sidecar is not None and atf_sidecar[0].is_file():
-        atf_json_path = atf_sidecar[0].relative_to(output_repo_dir).as_posix()
+        sidecar_path, is_committed = atf_sidecar
+        if is_committed:
+            atf_json_path = sidecar_path.relative_to(output_repo_dir).as_posix()
+        else:
+            # The served link is always repo-relative dist/atf-cache/..., even
+            # when the existence check ran against a staging cache dir.
+            atf_json_path = (
+                ATF_CACHE_RELATIVE / str(instance.benchmark_name.value) / f"{instance.instance_name}.atf.json.gz"
+            ).as_posix()
     # Collection instances (Mamut2026 v2) reference their shared geo sidecar
     # through metadata.sidecars; the link is repo-relative like every other.
     geo_json_path: str | None = None
@@ -1413,7 +1435,7 @@ def _build_bks_entries(
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
 
 
-def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteInstance:
+def _resolve_instance(output_repo_dir: Path, discovered_item, atf_cache_dir: Path | None = None) -> _ResolvedSiteInstance:
     instance = discovered_item.load()
     problem_type = discovered_item.problem_type
     benchmark_name = _normalize_benchmark_name(discovered_item.benchmark_name)
@@ -1514,7 +1536,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
     if subset_value is None and isinstance(getattr(instance, "metadata", None), dict):
         subset_value = instance.metadata.get("subset")
 
-    artifact_links = _build_artifact_links(output_repo_dir, discovered_item.instance_path, instance)
+    artifact_links = _build_artifact_links(output_repo_dir, discovered_item.instance_path, instance, atf_cache_dir=atf_cache_dir)
     bks_paths = _discover_bks_paths(discovered_item.instance_path)
     geo_meta_view: dict | None = None
     if is_collection:
@@ -1531,7 +1553,11 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         meta_payload_override=geo_meta_view,
     )
     td_atfs = None
-    atf_sidecar = _resolve_atf_sidecar(output_repo_dir, discovered_item.instance_path, instance) if bks_paths else None
+    atf_sidecar = (
+        _resolve_atf_sidecar(output_repo_dir, discovered_item.instance_path, instance, atf_cache_dir=atf_cache_dir)
+        if bks_paths
+        else None
+    )
     if atf_sidecar is not None:
         # The sha256 gate lives in the population/verification tooling; payload
         # generation only needs the functions themselves.
@@ -1932,13 +1958,6 @@ def _write_payload(
     payload_path = _route_payload_path(site_output_dir, route_path, payload_root_dir)
     save_json_to_file(payload.model_dump(mode="json"), payload_path)
     return payload_path
-
-
-def _resolve_site_output_dir(output_repo_dir: Path, site_output_dir: str | Path | None) -> Path:
-    if site_output_dir is None:
-        return output_repo_dir / DEFAULT_SITE_OUTPUT_DIR
-    candidate = Path(site_output_dir)
-    return candidate if candidate.is_absolute() else output_repo_dir / candidate
 
 
 def _make_subroute_entries(
@@ -2580,8 +2599,8 @@ def _build_history_detail_payload(
 SNAPSHOTS_DIR_NAME = "snapshots"
 
 
-def _inventory_path(site_output: Path, snapshot_id: str) -> Path:
-    return site_output / "site" / SNAPSHOTS_DIR_NAME / f"{snapshot_id}.inventory.json"
+def _inventory_path(state_dir: Path, snapshot_id: str) -> Path:
+    return state_dir / SNAPSHOTS_DIR_NAME / f"{snapshot_id}.inventory.json"
 
 
 def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
@@ -2614,19 +2633,19 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
     return {"instances": instances}
 
 
-def _save_inventory(site_output: Path, snapshot_id: str, generated_at: str, inventory: dict) -> Path:
+def _save_inventory(state_dir: Path, snapshot_id: str, generated_at: str, inventory: dict) -> Path:
     payload = {
         "snapshot_id": snapshot_id,
         "generated_at": generated_at,
         "instances": inventory["instances"],
     }
-    path = _inventory_path(site_output, snapshot_id)
+    path = _inventory_path(state_dir, snapshot_id)
     save_json_to_file(payload, path)
     return path
 
 
 def _load_previous_inventory(
-    site_output: Path,
+    state_dir: Path,
     existing_ledger: SiteHistoryLedger | None,
     current_snapshot_id: str,
 ) -> dict | None:
@@ -2640,7 +2659,7 @@ def _load_previous_inventory(
         prior_id = entry.snapshot.snapshot_id
         if prior_id == current_snapshot_id:
             continue
-        path = _inventory_path(site_output, prior_id)
+        path = _inventory_path(state_dir, prior_id)
         if path.exists():
             payload = load_json_from_file(path)
             return {"instances": payload.get("instances", {})}
@@ -2923,6 +2942,7 @@ def _affected_scope_from_change_log(
 
 def _refresh_history_entry_scopes(
     entries: list[SiteHistoryEntry],
+    state_dir: Path,
     site_output: Path,
     payload_root_dir: str | Path,
 ) -> None:
@@ -2933,13 +2953,13 @@ def _refresh_history_entry_scopes(
     build, for entries whose snapshot inventories are still on disk.
     """
     for index, entry in enumerate(entries):
-        inventory_file = _inventory_path(site_output, entry.snapshot.snapshot_id)
+        inventory_file = _inventory_path(state_dir, entry.snapshot.snapshot_id)
         if not inventory_file.exists():
             continue
         inventory = {"instances": load_json_from_file(inventory_file).get("instances", {})}
         prev_inventory: dict | None = None
         for older in entries[index + 1 :]:
-            older_file = _inventory_path(site_output, older.snapshot.snapshot_id)
+            older_file = _inventory_path(state_dir, older.snapshot.snapshot_id)
             if older_file.exists():
                 prev_inventory = {"instances": load_json_from_file(older_file).get("instances", {})}
                 break
@@ -3125,6 +3145,7 @@ def _resolve_instances(
     *,
     jobs: str | int,
     reporter: ProgressReporter | None = None,
+    atf_cache_dir: Path | None = None,
 ) -> list[_ResolvedSiteInstance]:
     resolved_jobs = resolve_site_build_jobs(jobs, len(discovered_instances))
     if reporter is not None:
@@ -3147,14 +3168,14 @@ def _resolve_instances(
         if resolved_jobs == 1:
             for index, item in enumerate(discovered_instances):
                 try:
-                    resolved_items[index] = _resolve_instance(output_repo, item)
+                    resolved_items[index] = _resolve_instance(output_repo, item, atf_cache_dir)
                 except Exception as exc:
                     record_failure(item, exc)
                 task.update(detail=getattr(item, "instance_name", None))
         else:
             with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
                 futures = {
-                    executor.submit(_resolve_instance, output_repo, item): (index, item)
+                    executor.submit(_resolve_instance, output_repo, item, atf_cache_dir): (index, item)
                     for index, item in enumerate(discovered_instances)
                 }
                 for future in as_completed(futures):
@@ -3197,14 +3218,15 @@ def generate_site_payloads(
     schema_version: str = SITE_PAYLOAD_SCHEMA_VERSION,
     payload_root_dir: str | Path = DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     site_output_dir: str | Path | None = None,
-    enforce_road_cache: bool = True,
+    state_dir: str | Path | None = None,
     reporter: ProgressReporter | None = None,
     jobs: str | int = 1,
     list_files: bool = False,
     family_context_report_path: str | Path | None = None,
 ) -> SitePayloadGenerationSummary:
     output_repo = Path(output_repo_dir)
-    site_output = _resolve_site_output_dir(output_repo, site_output_dir)
+    roots = PublishRoots.resolve(output_repo, site_output_dir, state_dir)
+    site_output = roots.site_output
     payload_root = Path(payload_root_dir)
     if payload_root.is_absolute():
         raise ValueError(f"Site payload root must be repository-relative, got: {payload_root}")
@@ -3212,8 +3234,13 @@ def generate_site_payloads(
     if not benchmarks_root.exists():
         raise FileNotFoundError(f"Benchmark root does not exist: {benchmarks_root}")
 
-    if enforce_road_cache:
-        enforce_full_road_cache(output_repo, reporter=reporter)
+    migrate_legacy_state(roots)
+    if not roots.in_place:
+        # Staging outputs must ship the caches their payloads reference.
+        # Seed them read-only from the active published tree; the live dist
+        # is never written during a staging build.
+        for cache_name in ("atf-cache", "route-geometry-cache"):
+            hardlink_tree(roots.active_dist / cache_name, site_output / cache_name)
 
     if reporter is not None:
         reporter.phase("discovering benchmark instances", root=benchmarks_root)
@@ -3230,7 +3257,13 @@ def generate_site_payloads(
     discovered_instances = discover_benchmark_instances(benchmarks_root=benchmarks_root)
     if reporter is not None:
         reporter.phase("discovered benchmark instances", instances=len(discovered_instances))
-    resolved_items = _resolve_instances(output_repo, discovered_instances, jobs=jobs, reporter=reporter)
+    resolved_items = _resolve_instances(
+        output_repo,
+        discovered_instances,
+        jobs=jobs,
+        reporter=reporter,
+        atf_cache_dir=roots.atf_cache_dir,
+    )
     family_context_sections = _load_family_context_sections(output_repo, family_context_report_path)
 
     site_counts = SiteCounts(
@@ -3248,14 +3281,14 @@ def generate_site_payloads(
     if reporter is not None:
         reporter.phase("building snapshot history")
     current_inventory = _build_inventory(resolved_items)
-    history_path = site_output / "site" / "history.json"
-    if history_path.exists():
-        existing_ledger: SiteHistoryLedger | None = SiteHistoryLedger(**load_json_from_file(history_path))
+    ledger_state_path = roots.history_path
+    if ledger_state_path.exists():
+        existing_ledger: SiteHistoryLedger | None = SiteHistoryLedger(**load_json_from_file(ledger_state_path))
     else:
         existing_ledger = None
-    prev_inventory = _load_previous_inventory(site_output, existing_ledger, snapshot.snapshot_id)
+    prev_inventory = _load_previous_inventory(roots.state_dir, existing_ledger, snapshot.snapshot_id)
     change_log = _compute_change_log(prev_inventory, current_inventory)
-    inventory_path = _save_inventory(site_output, snapshot.snapshot_id, generated_at, current_inventory)
+    inventory_path = _save_inventory(roots.state_dir, snapshot.snapshot_id, generated_at, current_inventory)
     written_paths.append(inventory_path)
 
     snapshot_manifest = SiteSnapshotManifest(
@@ -3287,7 +3320,7 @@ def generate_site_payloads(
     else:
         entries = []
     entries.insert(0, history_entry)
-    _refresh_history_entry_scopes(entries[1:], site_output, payload_root)
+    _refresh_history_entry_scopes(entries[1:], roots.state_dir, site_output, payload_root)
     history_ledger = SiteHistoryLedger(
         generated_at=generated_at,
         snapshot=snapshot,
@@ -3295,10 +3328,15 @@ def generate_site_payloads(
         current_snapshot_id=snapshot.snapshot_id,
         entries=entries,
     )
-    save_json_to_file(history_ledger.model_dump(mode="json"), history_path)
+    ledger_payload = history_ledger.model_dump(mode="json")
+    # Authoritative copy in the persistent state dir; the site output gets a
+    # served projection so fresh release directories keep the full ledger.
+    save_json_to_file(ledger_payload, ledger_state_path)
+    history_path = site_output / "site" / "history.json"
+    save_json_to_file(ledger_payload, history_path)
     written_paths.append(history_path)
     history_payload_path = site_output / payload_root / "history" / "index.json"
-    save_json_to_file(history_ledger.model_dump(mode="json"), history_payload_path)
+    save_json_to_file(ledger_payload, history_payload_path)
     written_paths.append(history_payload_path)
 
     history_detail_path = _history_detail_payload_path(site_output, snapshot.snapshot_id, payload_root)

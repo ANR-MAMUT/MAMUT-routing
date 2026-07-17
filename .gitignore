@@ -13,3 +13,6 @@ build/
 /dist-release/
 /site-payloads/
 instances_v2/
+
+# Persistent publication state (history ledger + snapshot inventories)
+/publish-state/
