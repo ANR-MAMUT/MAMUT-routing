@@ -39,8 +39,12 @@ DEFAULT_MAX_CUSTOMERS = 400
 MATERIALIZED_TD_MODELS = frozenset({TD_IGP_MODEL, TD_ROAD_MODEL})
 
 
+def atf_cache_file(cache_dir: Path, benchmark_name: str, instance_name: str) -> Path:
+    return cache_dir / benchmark_name / f"{instance_name}.atf.json.gz"
+
+
 def atf_cache_path(output_repo_dir: Path, benchmark_name: str, instance_name: str) -> Path:
-    return output_repo_dir / ATF_CACHE_RELATIVE / benchmark_name / f"{instance_name}.atf.json.gz"
+    return atf_cache_file(output_repo_dir / ATF_CACHE_RELATIVE, benchmark_name, instance_name)
 
 
 def _is_materialized_instance_payload(td_block) -> bool:
@@ -74,15 +78,28 @@ def materialize_atf_cache(
     *,
     max_customers: int = DEFAULT_MAX_CUSTOMERS,
     jobs: int | None = None,
+    cache_dir: Path | None = None,
+    seed_from: Path | None = None,
 ) -> ATFCacheSummary:
     """Materialize sidecars for every materialized-model instance with n <= max_customers.
 
     Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
     one cache entry. Existing cache files are reused (deterministic content).
+
+    ``cache_dir`` overrides the default ``<repo>/dist/atf-cache`` target for
+    staging builds. ``seed_from`` hardlinks an existing cache tree into the
+    target first, so a fresh staging dir reuses prior materializations
+    instead of regenerating them.
     """
     import json
 
     from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
+
+    resolved_cache_dir = cache_dir if cache_dir is not None else output_repo_dir / ATF_CACHE_RELATIVE
+    if seed_from is not None and seed_from.resolve() != resolved_cache_dir.resolve():
+        from mamut_routing_publish.publish_roots import hardlink_tree
+
+        hardlink_tree(seed_from, resolved_cache_dir)
 
     summary = ATFCacheSummary()
     tasks: dict[str, str] = {}  # cache path -> instance path (first variant found)
@@ -110,8 +127,8 @@ def materialize_atf_cache(
                 over_cap.add(str(payload["instance_name"]))
                 summary.skipped_over_cap = len(over_cap)
                 continue
-            cache_path = atf_cache_path(
-                output_repo_dir, str(payload["benchmark_name"]), str(payload["instance_name"])
+            cache_path = atf_cache_file(
+                resolved_cache_dir, str(payload["benchmark_name"]), str(payload["instance_name"])
             )
             key = str(cache_path)
             if key in tasks or key in summary.reused:

@@ -310,6 +310,13 @@ def site_payloads_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    state_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--state-dir",
+            help="Persistent publication state dir (history ledger, snapshot inventories). Defaults to <repo>/publish-state. Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = None,
 ) -> None:
     """Generate site payload JSON files only."""
     repo_dir = _resolve_repo_dir(output_repo_dir)
@@ -329,6 +336,7 @@ def site_payloads_cmd(
         schema_version=schema_version,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        state_dir=state_dir,
     )
     _emit_summary(summary)
 
@@ -453,6 +461,13 @@ def site_build_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    state_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--state-dir",
+            help="Persistent publication state dir (history ledger, snapshot inventories). Defaults to <repo>/publish-state. Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = None,
     progress_format: Annotated[
         str,
         typer.Option(
@@ -497,9 +512,16 @@ def site_build_cmd(
         # checkout silently builds their instance pages without schedule tables
         # or the arc-click viewer. Incremental: existing cache files are reused.
         from mamut_routing_publish.atf_cache import materialize_atf_cache
+        from mamut_routing_publish.publish_roots import PublishRoots
 
-        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n)
-        atf_summary = materialize_atf_cache(repo_dir, max_customers=atf_max_n)
+        roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
+        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n, cache_dir=roots.atf_cache_dir)
+        atf_summary = materialize_atf_cache(
+            repo_dir,
+            max_customers=atf_max_n,
+            cache_dir=roots.atf_cache_dir,
+            seed_from=(roots.active_dist / "atf-cache") if not roots.in_place else None,
+        )
         reporter.phase("materialized ATF sidecar cache", **atf_summary.as_dict())
 
     payload_summary = generate_site_payloads(
@@ -512,6 +534,7 @@ def site_build_cmd(
         schema_version=schema_version,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        state_dir=state_dir,
         reporter=reporter,
         jobs=jobs,
         list_files=list_files,

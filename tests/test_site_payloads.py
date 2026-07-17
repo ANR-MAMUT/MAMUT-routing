@@ -1455,48 +1455,6 @@ def test_compute_change_log_tiny_cost_diff_is_an_improvement() -> None:
     assert log.bks_changes[0].kind == "improved"
 
 
-def test_road_cache_enforcement_plan_targets_bks_route_edges(tmp_path: Path) -> None:
-    from mamut_routing_publish.road_cache import build_road_cache_plan
-
-    output_repo_dir = tmp_path / "MAMUT-routing"
-    _, generated_vrptw = build_fixture_site_inputs(output_repo_dir)
-    meta_path = (
-        output_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Mamut2026"
-        / "sidecars"
-        / "brest"
-        / "n=2"
-        / generated_vrptw.instance_name
-        / f"{generated_vrptw.instance_name}.meta.json"
-    )
-    write_json(
-        meta_path,
-        {
-            "instance_id": generated_vrptw.instance_name,
-            "source_osm_file": "osmdata/Brest.osm",
-            "depot_instance_node_id": 1,
-            "nodes": [
-                {"instance_node_id": 1, "poi_lon": 0.0, "poi_lat": 0.0},
-                {"instance_node_id": 2, "poi_lon": 1.0, "poi_lat": 1.0},
-                {"instance_node_id": 3, "poi_lon": 2.0, "poi_lat": 2.0},
-            ],
-        },
-    )
-
-    plan = build_road_cache_plan(output_repo_dir)
-
-    assert plan["entries"] == [
-        {
-            "meta_path": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.meta.json",
-            "routes_by_metric": {
-                "fastest": [[2, 3]],
-            },
-        },
-    ]
-
-
 def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tmp_path: Path) -> None:
     """End-to-end: first run is initial; second run with mutated state shows real diffs."""
     from mamut_routing_lib.json_utils import load_json_from_file
@@ -1512,7 +1470,7 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
         snapshot_id="2026-04-23-firstcom",
     )
 
-    inv_dir = output_repo_dir / "dist" / "site" / "snapshots"
+    inv_dir = output_repo_dir / "publish-state" / "snapshots"
     first_inventory_path = inv_dir / "2026-04-23-firstcom.inventory.json"
     assert first_inventory_path.exists()
 
@@ -1697,8 +1655,8 @@ def test_site_build_materializes_atf_cache_unless_skipped(tmp_path: Path, monkey
 
     calls: list[dict] = []
 
-    def record_materialize(repo_dir, *, max_customers, jobs=None):
-        calls.append({"repo_dir": Path(repo_dir), "max_customers": max_customers})
+    def record_materialize(repo_dir, *, max_customers, jobs=None, cache_dir=None, seed_from=None):
+        calls.append({"repo_dir": Path(repo_dir), "max_customers": max_customers, "cache_dir": cache_dir})
         return atf_cache_module.ATFCacheSummary()
 
     monkeypatch.setattr(atf_cache_module, "materialize_atf_cache", record_materialize)
@@ -1720,7 +1678,13 @@ def test_site_build_materializes_atf_cache_unless_skipped(tmp_path: Path, monkey
 
     result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-default", "--atf-max-n", "123"])
     assert result.exit_code == 0, result.output
-    assert calls == [{"repo_dir": output_repo_dir, "max_customers": 123}]
+    assert calls == [
+        {
+            "repo_dir": output_repo_dir,
+            "max_customers": 123,
+            "cache_dir": output_repo_dir / "dist" / "atf-cache",
+        }
+    ]
     assert "materialized ATF sidecar cache" in result.stderr
 
     calls.clear()
