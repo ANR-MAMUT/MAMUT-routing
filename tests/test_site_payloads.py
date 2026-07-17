@@ -1692,6 +1692,44 @@ def test_site_build_json_progress_and_file_listing(tmp_path: Path) -> None:
     assert "webapp/site.css" in payload["webapp_summary"]["asset_paths"]
 
 
+def test_site_build_materializes_atf_cache_unless_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mamut_routing_publish.atf_cache as atf_cache_module
+
+    calls: list[dict] = []
+
+    def record_materialize(repo_dir, *, max_customers, jobs=None):
+        calls.append({"repo_dir": Path(repo_dir), "max_customers": max_customers})
+        return atf_cache_module.ATFCacheSummary()
+
+    monkeypatch.setattr(atf_cache_module, "materialize_atf_cache", record_materialize)
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+    common_args = [
+        "site",
+        "build",
+        "--output-repo-dir",
+        str(output_repo_dir),
+        "--source-commit",
+        "abcdef123456",
+        "--published-at",
+        "2026-04-23T12:00:00",
+        "--jobs",
+        "1",
+    ]
+
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-default", "--atf-max-n", "123"])
+    assert result.exit_code == 0, result.output
+    assert calls == [{"repo_dir": output_repo_dir, "max_customers": 123}]
+    assert "materialized ATF sidecar cache" in result.stderr
+
+    calls.clear()
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-skip", "--skip-atf-cache"])
+    assert result.exit_code == 0, result.output
+    assert calls == []
+    assert "ATF sidecar cache" not in result.stderr
+
+
 def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path) -> None:
     serial_repo_dir = tmp_path / "serial" / "MAMUT-routing"
     parallel_repo_dir = tmp_path / "parallel" / "MAMUT-routing"

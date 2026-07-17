@@ -87,16 +87,17 @@ This installs and precompiles the Julia dependencies declared in `webapp/Project
 
 ### Publishing the site (build order)
 
-The whole publish is four chained steps: fetch the data, install, materialize the build-time ATF cache (TD schedule tables and arc-click sidecars for the materialized-model families), build, then serve:
+The whole publish is four chained steps: fetch the data, install, materialize the route-geometry sidecars, build, then serve:
 
 ```bash
 git submodule update --init MAMUT-routing-lib benchmarks/Mamut2026 \
   && uv sync \
-  && uv run mamut-routing-publish site materialize-atf --max-n 400 \
   && uv run mamut-routing-publish site materialize-route-geometry \
   && uv run mamut-routing-publish site build \
   && julia -t auto --project=webapp webapp/run_site_api.jl --quiet --repo-root "$(pwd)"
 ```
+
+`site build` materializes the build-time ATF cache itself (TD schedule tables and arc-click sidecars for the materialized-model families, `dist/atf-cache/`, incremental). The standalone `site materialize-atf` command remains available to pre-warm that cache or change the size cap (`--atf-max-n` on build, default 400).
 
 The route-geometry materializer is incremental and keyed by the exact BKS SHA-256. Run it before every publication: unchanged BKS reuse their existing derived sidecar, while every new or modified BKS receives a new sidecar and payload reference.
 

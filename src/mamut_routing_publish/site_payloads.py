@@ -24,6 +24,7 @@ from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import find_collection_root
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
 
+from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
 from mamut_routing_publish.atf_cache import atf_cache_path
 from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
@@ -1039,6 +1040,24 @@ def _artifact_path_to_route_path(output_repo_dir: Path, artifact_path_str: str) 
     raise ValueError(f"Unsupported artifact path for route derivation: {artifact_path_str}")
 
 
+def _resolve_atf_sidecar(output_repo_dir: Path, instance_path: Path, instance: AnyBenchmarkInstance) -> tuple[Path, bool] | None:
+    """Candidate ATF sidecar path of a TD instance, or None for non-TD instances.
+
+    Returns ``(path, is_committed)``. Committed-sidecar families (atf-ndcpwlf)
+    resolve through the td block's ``atf_path``, relative to the instance file;
+    materialized-model families (igp-profile, road-graph) resolve into the
+    build-time ``dist/atf-cache``. The path is not checked for existence:
+    each caller applies its own missing-file policy.
+    """
+    td_block = getattr(instance, "td", None)
+    if td_block is None:
+        return None
+    atf_name = td_block.get("atf_path") if isinstance(td_block, dict) else getattr(td_block, "atf_path", None)
+    if atf_name:
+        return get_atf_path_for_instance(instance_path, str(atf_name)), True
+    return atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name), False
+
+
 def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: AnyBenchmarkInstance) -> SiteArtifactLinks:
     if has_structured_metadata(instance):
         artifact_paths = instance.metadata.artifact_paths
@@ -1054,20 +1073,13 @@ def _build_artifact_links(output_repo_dir: Path, instance_path: Path, instance: 
         raw_vrp_path.relative_to(output_repo_dir).as_posix() if raw_vrp_path.exists() else None
     )
     # TD instances reference their canonical ATF sidecar through the ``td`` block
-    # (``atf_path`` is relative to the instance file; storage may be gzipped).
-    # igp-profile instances have no committed sidecar: the link points at the
-    # build-time materialization under dist/atf-cache when one exists.
+    # (committed next to the instance file, or under the build-time
+    # dist/atf-cache for materialized-model families); the link only exists
+    # when the file does.
     atf_json_path: str | None = None
-    td_block = getattr(instance, "td", None)
-    atf_name = td_block.get("atf_path") if isinstance(td_block, dict) else getattr(td_block, "atf_path", None)
-    if atf_name:
-        candidate = instance_path.parent / atf_name
-        if candidate.is_file():
-            atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
-    elif td_block is not None:
-        candidate = atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name)
-        if candidate.is_file():
-            atf_json_path = candidate.relative_to(output_repo_dir).as_posix()
+    atf_sidecar = _resolve_atf_sidecar(output_repo_dir, instance_path, instance)
+    if atf_sidecar is not None and atf_sidecar[0].is_file():
+        atf_json_path = atf_sidecar[0].relative_to(output_repo_dir).as_posix()
     # Collection instances (Mamut2026 v2) reference their shared geo sidecar
     # through metadata.sidecars; the link is repo-relative like every other.
     geo_json_path: str | None = None
@@ -1519,19 +1531,25 @@ def _resolve_instance(output_repo_dir: Path, discovered_item) -> _ResolvedSiteIn
         meta_payload_override=geo_meta_view,
     )
     td_atfs = None
-    td_block = getattr(instance, "td", None)
-    if td_block is not None and bks_paths:
+    atf_sidecar = _resolve_atf_sidecar(output_repo_dir, discovered_item.instance_path, instance) if bks_paths else None
+    if atf_sidecar is not None:
         # The sha256 gate lives in the population/verification tooling; payload
         # generation only needs the functions themselves.
-        atf_name = getattr(td_block, "atf_path", None)
-        if atf_name is not None:
-            td_atfs = load_instance_atfs(get_atf_path_for_instance(discovered_item.instance_path, atf_name))
-        else:
-            # igp-profile: use the build-time cache when materialized (above the
-            # size cap the page renders without schedule tables).
-            cache_sidecar = atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name)
-            if cache_sidecar.is_file():
-                td_atfs = load_instance_atfs(cache_sidecar)
+        sidecar_path, is_committed = atf_sidecar
+        if is_committed:
+            td_atfs = load_instance_atfs(sidecar_path)
+        elif sidecar_path.is_file():
+            # Materialized td models (igp-profile, road-graph): use the
+            # build-time cache when materialized (above the size cap the page
+            # renders without schedule tables).
+            td_atfs = load_instance_atfs(sidecar_path)
+        elif int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
+            warnings.warn(
+                f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
+                "its page will lack the BKS schedule table and the arc-click viewer. "
+                "Run `mamut-routing-publish site materialize-atf`, or `site build` without --skip-atf-cache.",
+                stacklevel=2,
+            )
     bks_entries, td_route_functions = _build_bks_entries(
         output_repo_dir,
         discovered_item.instance_path,
