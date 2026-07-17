@@ -2190,6 +2190,10 @@ def _build_home_preview_bundle(
         "TDVRP": "Duration",
         "TDVRPTW": "Duration",
     }
+    # Each problem type prefers a city no earlier preview used, so the four
+    # Mamut2026 cards show four different urban layouts instead of four views
+    # of the alphabetically-first city.
+    used_places: set[str] = set()
     for problem in ("CVRP", "VRPTW", "TDVRP", "TDVRPTW"):
         objective = objective_by_problem[problem]
         candidates = [
@@ -2211,7 +2215,12 @@ def _build_home_preview_bundle(
             )
         )
         if candidates:
-            selected_matches.append(candidates[0])
+            chosen = next(
+                (pair for pair in candidates if (pair[0].locator.place_slug or "") not in used_places),
+                candidates[0],
+            )
+            used_places.add(chosen[0].locator.place_slug or "")
+            selected_matches.append(chosen)
     if has_mamut_preview_sizes and len(selected_matches) < 4:
         available = sorted({pair[0].locator.problem_type.value for pair in selected_matches})
         raise ValueError(
