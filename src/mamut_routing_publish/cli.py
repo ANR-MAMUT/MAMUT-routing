@@ -220,11 +220,14 @@ def site_materialize_atf_cmd(
         typer.Option("--jobs", help="Parallel materialization workers (default: cores - 2)."),
     ] = None,
 ) -> None:
-    """Materialize igp-profile ATF sidecars into dist/atf-cache (git-ignored).
+    """Materialize ATF sidecars into dist/atf-cache (git-ignored).
 
-    Run before `site build` so the arc-click viewer and BKS schedule tables
-    have sidecars for igp-profile families (Lera2026). Incremental: existing
-    cache files are reused; TDVRPTW/TDVRP twins share one file.
+    Covers materialized-td-model families with no committed sidecar (Lera2026
+    igp-profile, Mamut2026 TD road-graph) so the arc-click viewer and BKS
+    schedule tables work. `site build` runs this phase automatically; this
+    standalone command exists to pre-warm the cache or use a custom cap.
+    Incremental: existing cache files are reused; TDVRPTW/TDVRP twins share
+    one file.
     """
     from mamut_routing_publish.atf_cache import materialize_atf_cache
 
@@ -407,6 +410,20 @@ def site_build_cmd(
         str,
         typer.Option("--history-summary", help="Human-readable summary recorded in the history ledger."),
     ] = "Built static site snapshot.",
+    atf_max_n: Annotated[
+        int,
+        typer.Option(
+            "--atf-max-n",
+            help="Materialize ATF sidecars for materialized-td-model instances with at most this many customers before generating payloads (see `site materialize-atf`).",
+        ),
+    ] = 400,
+    skip_atf_cache: Annotated[
+        bool,
+        typer.Option(
+            "--skip-atf-cache",
+            help="Skip the ATF sidecar cache materialization phase. Instance pages of materialized-td-model families (Lera2026, Mamut2026 TD) then lose their schedule tables and arc-click viewer unless dist/atf-cache is already populated.",
+        ),
+    ] = False,
     schema_version: Annotated[
         str,
         typer.Option("--schema-version", help="Schema version string for the generated site payloads."),
@@ -473,6 +490,17 @@ def site_build_cmd(
         raise typer.Exit(code=1)
     resolved_branch = source_branch or _resolve_git_value(repo_dir, "rev-parse", "--abbrev-ref", "HEAD")
     reporter.phase("resolved source snapshot", commit=resolved_commit, branch=resolved_branch)
+
+    if not skip_atf_cache:
+        # Materialized-td-model families (Lera2026 igp-profile, Mamut2026 TD
+        # road-graph) ship no committed ATF sidecar; without this phase a fresh
+        # checkout silently builds their instance pages without schedule tables
+        # or the arc-click viewer. Incremental: existing cache files are reused.
+        from mamut_routing_publish.atf_cache import materialize_atf_cache
+
+        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n)
+        atf_summary = materialize_atf_cache(repo_dir, max_customers=atf_max_n)
+        reporter.phase("materialized ATF sidecar cache", **atf_summary.as_dict())
 
     payload_summary = generate_site_payloads(
         output_repo_dir=repo_dir,
