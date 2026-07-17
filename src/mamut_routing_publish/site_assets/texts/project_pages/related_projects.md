@@ -26,7 +26,7 @@ MAMUT-routing is, first and foremost, a curated benchmark vendor: a benchmark is
 
 ### CVRPLib
 
-[CVRPLib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) is the reference infrastructure for CVRP benchmarks and BKS. It is important for MAMUT-routing in two ways. First, it shows how useful a centralized curated benchmark library can be when it is widely trusted. Second, its newer VRPTW material overlaps with the classical Solomon and Homberger universe, so objective and cost conventions must be stated carefully whenever CVRPLib-derived VRPTW files are compared with `Sintef2008` or `Dimacs2021`.
+[CVRPLib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) is the reference infrastructure for CVRP benchmarks and BKS. It is important for MAMUT-routing in two ways. First, it shows how useful a centralized curated benchmark library can be when it is widely trusted. Second, its newer VRPTW material overlaps with the classical Solomon and Homberger universe and follows the DIMACS convention (mono-cost minimization over scaled, integerized arc costs), so CVRPLib-derived VRPTW BKS align with `Dimacs2021` rather than `Sintef2008`, and the remaining conventions must still be checked before any comparison.
 
 ### VRP-REP
 

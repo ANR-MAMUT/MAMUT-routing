@@ -33,7 +33,7 @@ Short, effective definitions for the acronyms and technical terms used across th
 
 ## Benchmarks, sources, and infrastructure
 
-- **MAMUT** — *Machine learning et matheuristiques pour le transport urbain*. The [ANR research project](https://anr.fr/Projet-ANR-22-CE22-0016) (grant ANR-22-CE22-0016) that frames this benchmark and instance-generation work.
+- **MAMUT** — *Machine learning And Matheuristics algorithms for Urban Transportation*. The [ANR research project](https://anr.fr/Projet-ANR-22-CE22-0016) (grant ANR-22-CE22-0016) that frames this benchmark and instance-generation work.
 - **ANR** — [*Agence Nationale de la Recherche*](https://anr.fr/), the French National Research Agency funding the MAMUT project.
 - **OSM** — [*OpenStreetMap*](https://www.openstreetmap.org/). The open geographic data source used to generate realistic road-network-backed instances and route geometries.
 - **SINTEF** — *Stiftelsen for industriell og teknisk forskning* (Foundation for Industrial and Technical Research), the [Norwegian research organization](https://www.sintef.no/en/) whose classic [VRPTW benchmark conventions](https://www.sintef.no/projectweb/top/vrptw/) back the `Sintef2008` family.
