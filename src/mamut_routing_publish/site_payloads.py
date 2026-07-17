@@ -2048,26 +2048,37 @@ def _build_instance_page_payload(
     )
 
 
+_PROBLEM_TYPE_ORDER = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1, ProblemType.TDVRPTW: 2, ProblemType.TDVRP: 3}
+
+# Historical/curated families first, workbench-generated families last
+# (Mamut2026 after Lera2026: newest and least established closes the list).
+_BENCHMARK_NAME_ORDER = {
+    BenchmarkName.SINTEF_2008: 0,
+    BenchmarkName.DIMACS_2021: 1,
+    BenchmarkName.ORTEC_2022: 2,
+    BenchmarkName.DABIA_2013: 3,
+    BenchmarkName.ARI_2018: 4,
+    BenchmarkName.VU_2020: 5,
+    BenchmarkName.RIFKI_2020: 6,
+    BenchmarkName.LERA_2026: 7,
+    BenchmarkName.MAMUT_2026: 8,
+}
+
+
+def _problem_type_sort_key(value: ProblemType) -> tuple[int, str]:
+    return (_PROBLEM_TYPE_ORDER.get(value, 99), value.value)
+
+
+def _benchmark_name_sort_key(value: BenchmarkName) -> tuple[int, str]:
+    return (_BENCHMARK_NAME_ORDER.get(value, 99), value.value)
+
+
 def _sorted_problem_types(items: list[_ResolvedSiteInstance]) -> list[ProblemType]:
-    order = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1, ProblemType.TDVRPTW: 2, ProblemType.TDVRP: 3}
-    return sorted({item.locator.problem_type for item in items}, key=lambda value: (order.get(value, 99), value.value))
+    return sorted({item.locator.problem_type for item in items}, key=_problem_type_sort_key)
 
 
 def _sorted_benchmark_names(items: list[_ResolvedSiteInstance]) -> list[BenchmarkName]:
-    # Historical/curated families first, workbench-generated families last
-    # (Mamut2026 after Lera2026: newest and least established closes the list).
-    order = {
-        BenchmarkName.SINTEF_2008: 0,
-        BenchmarkName.DIMACS_2021: 1,
-        BenchmarkName.ORTEC_2022: 2,
-        BenchmarkName.DABIA_2013: 3,
-        BenchmarkName.ARI_2018: 4,
-        BenchmarkName.VU_2020: 5,
-        BenchmarkName.RIFKI_2020: 6,
-        BenchmarkName.LERA_2026: 7,
-        BenchmarkName.MAMUT_2026: 8,
-    }
-    return sorted({item.locator.benchmark_name for item in items}, key=lambda value: (order.get(value, 99), value.value))
+    return sorted({item.locator.benchmark_name for item in items}, key=_benchmark_name_sort_key)
 
 
 def _build_root_benchmarks_index(
@@ -2128,7 +2139,7 @@ def _build_home_page_payload(
         title="MAMUT-routing",
         subtitle="Benchmark distribution, provenance, and routing workbench.",
         hero_summary=(
-            "Explore curated CVRP, VRPTW, and time-dependent TDVRPTW/TDVRP benchmark families, inspect instance artifacts (including canonical arrival-time functions), and open the same instances in the shared workbench shell."
+            "An open, curated collection of vehicle-routing benchmarks: classical CVRP and VRPTW families alongside new time-dependent ones, with validated best-known solutions, explicit objective contracts, and interactive instance visualization."
         ),
         latest_publication_summary=history_summary,
         counts=site_counts,
@@ -2260,7 +2271,7 @@ def _build_project_page_payload(
         breadcrumbs=[],
         anr_project_code="ANR-22-CE22-0016",
         anr_project_url="https://anr.fr/Projet-ANR-22-CE22-0016",
-        anr_project_title="Machine learning et matheuristiques pour le transport urbain - MAMUT",
+        anr_project_title="Machine learning And Matheuristics algorithms for Urban Transportation - MAMUT",
         anr_context=(
             "MAMUT is ANR-funded research project regrouping several French public laboratories and teams alongside private entities on the study of vehicle-routing problems in urban logistics. "
             "The project frames routing as a meeting point between Operation Research, Data Science, Applied Algorithmics and Artificial Intelligence "
@@ -2325,6 +2336,8 @@ def _markdown_inline_plain_text(value: str) -> str:
     value = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", value)
     value = re.sub(r"`([^`]+)`", r"\1", value)
     value = re.sub(r"\*\*([^*]+)\*\*", r"\1", value)
+    value = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", value)
+    value = re.sub(r"(?<!_)_([^_]+)_(?!_)", r"\1", value)
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -2863,6 +2876,62 @@ def _compute_change_log(
     )
 
 
+def _affected_scope_from_change_log(
+    change_log: SnapshotChangeLog,
+) -> tuple[list[ProblemType], list[BenchmarkName], list[ObjectiveFunction]]:
+    """Derive the affected problem-type/family/objective tags from actual changes only.
+
+    A snapshot that changed nothing gets empty tag lists, so history cards no
+    longer advertise the full catalog scope on no-op republications.
+    """
+    changes = [*change_log.family_changes, *change_log.instance_changes, *change_log.bks_changes]
+    problem_types = sorted({change.problem_type for change in changes}, key=_problem_type_sort_key)
+    benchmark_names = sorted({change.benchmark_name for change in changes}, key=_benchmark_name_sort_key)
+    objective_functions = sorted(
+        {change.objective_function for change in change_log.bks_changes},
+        key=_objective_sort_key,
+    )
+    return problem_types, benchmark_names, objective_functions
+
+
+def _refresh_history_entry_scopes(
+    entries: list[SiteHistoryEntry],
+    site_output: Path,
+    payload_root_dir: str | Path,
+) -> None:
+    """Recompute affected scopes for carried-forward ledger entries from stored inventories.
+
+    Older ledger entries were written with catalog-wide affected lists; this
+    self-heals them (and their persisted history-detail payloads) on every
+    build, for entries whose snapshot inventories are still on disk.
+    """
+    for index, entry in enumerate(entries):
+        inventory_file = _inventory_path(site_output, entry.snapshot.snapshot_id)
+        if not inventory_file.exists():
+            continue
+        inventory = {"instances": load_json_from_file(inventory_file).get("instances", {})}
+        prev_inventory: dict | None = None
+        for older in entries[index + 1 :]:
+            older_file = _inventory_path(site_output, older.snapshot.snapshot_id)
+            if older_file.exists():
+                prev_inventory = {"instances": load_json_from_file(older_file).get("instances", {})}
+                break
+        change_log = _compute_change_log(prev_inventory, inventory)
+        problem_types, benchmark_names, objective_functions = _affected_scope_from_change_log(change_log)
+        entry.affected_problem_types = problem_types
+        entry.affected_benchmark_names = benchmark_names
+        entry.affected_objective_functions = objective_functions
+        entry.change_counts = change_log.counts
+
+        detail_path = _history_detail_payload_path(site_output, entry.snapshot.snapshot_id, payload_root_dir)
+        if detail_path.exists():
+            detail_payload = load_json_from_file(detail_path)
+            detail_payload["affected_problem_types"] = [value.value for value in problem_types]
+            detail_payload["affected_benchmark_names"] = [value.value for value in benchmark_names]
+            detail_payload["affected_objective_functions"] = [value.value for value in objective_functions]
+            save_json_to_file(detail_payload, detail_path)
+
+
 def _build_problem_index(
     items: list[_ResolvedSiteInstance],
     problem_type: ProblemType,
@@ -3176,16 +3245,14 @@ def generate_site_payloads(
     save_json_to_file(snapshot_manifest.model_dump(mode="json"), snapshot_path)
     written_paths.append(snapshot_path)
 
+    affected_problem_types, affected_benchmark_names, affected_objective_functions = _affected_scope_from_change_log(change_log)
     history_entry = SiteHistoryEntry(
         snapshot=snapshot,
         summary=history_summary,
         detail_route_path=_history_detail_route_path(snapshot.snapshot_id),
-        affected_problem_types=_sorted_problem_types(resolved_items),
-        affected_benchmark_names=_sorted_benchmark_names(resolved_items),
-        affected_objective_functions=sorted(
-            {entry.objective_function for item in resolved_items for entry in item.bks_entries},
-            key=_objective_sort_key,
-        ),
+        affected_problem_types=affected_problem_types,
+        affected_benchmark_names=affected_benchmark_names,
+        affected_objective_functions=affected_objective_functions,
         change_counts=change_log.counts,
     )
     if existing_ledger is not None:
@@ -3193,6 +3260,7 @@ def generate_site_payloads(
     else:
         entries = []
     entries.insert(0, history_entry)
+    _refresh_history_entry_scopes(entries[1:], site_output, payload_root)
     history_ledger = SiteHistoryLedger(
         generated_at=generated_at,
         snapshot=snapshot,

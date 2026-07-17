@@ -14,7 +14,7 @@ Licensing note: MAMUT-routing-authored curation artifacts for this family are di
 
 The family currently contains the 468 classical VRPTW instances over 8 different instance sizes, each with a `HierarchicalVehicleCost` BKS.
 
-**May 2026 note.** The [CVRPlib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) now also exposes its own VRPTW benchmark (previously unavailable through their website) inspired by SINTEF, but with a different mono-cost objective. As such, their collection differs from our curated `Sintef2008` benchmark family since we respect the original hierarchical objective, whereas cost-only variants belong to a different benchmark contract.
+**May 2026 note.** The [CVRPlib](https://galgos.inf.puc-rio.br/cvrplib/index.php/en/instances) now also exposes its own VRPTW benchmark (previously unavailable through their website) built on the same Solomon and Gehring--Homberger instances, but under the DIMACS convention: a mono-cost objective over scaled, integerized arc costs (see `Dimacs2021` below). As such, their collection differs from our curated `Sintef2008` benchmark family since we respect the original hierarchical objective and floating-point costs, whereas cost-only integerized variants belong to a different benchmark contract.
 
 ### `Dimacs2021` (VRPTW)
 
@@ -32,7 +32,7 @@ Licensing note: MAMUT-routing-authored curation artifacts for this family are di
 
 The family currently mirrors the 468 classical instances over 8 different instance sizes, each with a `MonoCost` BKS.
 
-**May 2026 note.** CVRPLib's newer VRPTW material should be read carefully with respect to objective and cost-scaling conventions. Some BKS may overlap with `Dimacs2021` because both use cost-oriented evaluation on the classical instances, but a BKS is only comparable when the objective, cost scaling, rounding/truncation, and fleet-limit conventions match exactly, and CVRPLib's VRPTW instances use `float64` precision instead of scaled integers. 
+**July 2026 note.** CVRPLib's newer VRPTW instances and BKS follow the DIMACS convention (scaled, integerized arc costs with mono-cost minimization), as [clarified by Leon Lan](https://github.com/PyVRP/PyVRP/discussions/1109), one of the PyVRP maintainers. Their BKS are therefore directly comparable with `Dimacs2021` whenever the remaining conventions (rounding/truncation and fleet limits) also match. An earlier note here incorrectly stated that CVRPLib's VRPTW material used `float64` arc costs.
 
 ### `Ortec2022` (VRPTW)
 

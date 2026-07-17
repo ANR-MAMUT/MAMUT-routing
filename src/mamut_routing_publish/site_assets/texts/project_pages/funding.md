@@ -2,7 +2,7 @@
 
 MAMUT-routing is developed in the context of the ANR-MAMUT project, ANR-22-CE22-0016.
 
-The ANR-MAMUT project is titled "Machine learning et matheuristiques pour le transport urbain - MAMUT" and is funded under the CE22 call for transports, mobility, and construction in urban and peri-urban territories.
+The MAMUT acronym expands as *Machine learning And Matheuristics algorithms for Urban Transportation*. The official ANR record carries the French title "Machine learning et matheuristiques pour le transport urbain - MAMUT". The project is funded under the CE22 call for transports, mobility, and construction in urban and peri-urban territories.
 
 ## Project Record
 

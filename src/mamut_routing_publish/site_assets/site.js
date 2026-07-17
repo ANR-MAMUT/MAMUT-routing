@@ -2517,13 +2517,31 @@ function timelineCountsHeadline(counts, options = {}) {
   return parts.length ? parts.join(" · ") : "No instance- or BKS-level changes";
 }
 
+function renderAffectedBadgeRow(scope) {
+  const badges = [
+    ...(scope.affected_problem_types || []).map((value) => badge(value)),
+    ...(scope.affected_benchmark_names || []).map((value) => badge(value, true)),
+    ...(scope.affected_objective_functions || []).map((value) => badge(value)),
+  ];
+  return badges.length ? `<div class="badge-row">${badges.join("")}</div>` : "";
+}
+
 function renderHistoryLedger(payload) {
   setPage("History", "Every published website state is tied to an explicit repository snapshot.", [], "editorial");
   const currentEntry = payload.entries[0];
+  const repoCommitUrl = currentEntry
+    ? `https://github.com/ANR-MAMUT/MAMUT-routing/commit/${encodeURIComponent(currentEntry.snapshot.source_commit)}`
+    : "https://github.com/ANR-MAMUT/MAMUT-routing";
   state.aside.innerHTML = [
     renderCard(
-      "History Overview",
-      `<p>The public site is a static publication ledger, not a live reflection of repository HEAD.</p>${currentEntry ? renderStatGrid([["Current snapshot", payload.current_snapshot_id], ["Published", currentEntry.snapshot.published_at], ["Commit", currentEntry.snapshot.source_commit]]) : '<div class="empty-state">No history entries yet.</div>'}`,
+      "Current Publication",
+      currentEntry
+        ? `<p>${escapeHtml(currentEntry.summary)}</p>${renderStatGrid([["Snapshot", payload.current_snapshot_id], ["Published", currentEntry.snapshot.published_at], ["Commit", currentEntry.snapshot.source_commit]])}`
+        : '<div class="empty-state">No history entries yet.</div>',
+    ),
+    renderCard(
+      "Repository",
+      `<p>The public site is a static publication ledger, not a live reflection of repository HEAD. Compare the published commit with the repository to check whether this publication is up to date.</p><div class="inline-actions"><a class="button-link primary" href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">GitHub repository</a><a class="button-link" href="${repoCommitUrl}" target="_blank" rel="noopener">Published commit</a></div>`,
     ),
   ].join("");
   if (!currentEntry) {
@@ -2549,7 +2567,7 @@ function renderHistoryLedger(payload) {
         </header>
         <p class="timeline-summary">${escapeHtml(entry.summary)}</p>
         <p class="timeline-counts">${escapeHtml(headline)}</p>
-        <div class="badge-row">${(entry.affected_problem_types || []).map((value) => badge(value)).join("")}${(entry.affected_objective_functions || []).map((value) => badge(value, true)).join("")}</div>
+        ${renderAffectedBadgeRow(entry)}
         <div class="inline-actions" style="margin-top:0.8rem">
           <a class="button-link primary" href="${routeHref(entry.detail_route_path)}">Open snapshot</a>
           <a class="button-link" href="${routeHref('/benchmarks/')}">Browse benchmarks</a>
@@ -2713,7 +2731,7 @@ function renderHistoryDetail(payload) {
     ),
     renderCard(
       "Affected Scope",
-      `<div class="badge-row">${(payload.affected_problem_types || []).map((value) => badge(value)).join("")}${(payload.affected_benchmark_names || []).map((value) => badge(value, true)).join("")}${(payload.affected_objective_functions || []).map((value) => badge(value)).join("")}</div>`,
+      renderAffectedBadgeRow(payload) || '<p class="meta-line">No families or BKS were modified by this publication.</p>',
     ),
   ].join("");
   state.stage.innerHTML = [
