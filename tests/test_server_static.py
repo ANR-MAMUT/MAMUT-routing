@@ -171,6 +171,22 @@ def test_conditional_requests(client: TestClient) -> None:
     assert miss.status_code == 200
 
 
+def test_symlinked_dist_release_layout(site_repo: Path, tmp_path: Path) -> None:
+    """Deployments swap ``dist`` as a symlink to a release dir; the preview
+    layout for side-by-side comparison uses the same shape. Both must serve."""
+    release = tmp_path / "releases" / "dist-1"
+    release.parent.mkdir(parents=True)
+    (site_repo / "dist").rename(release)
+    (site_repo / "dist").symlink_to(release)
+
+    client = TestClient(create_app(site_repo))
+    assert client.get("/").text == "<html>home</html>"
+    assert client.get("/site-payloads/index.json").status_code == 200
+    assert client.get("/dist/atf-cache/Mamut2026/inst.atf.json.gz").status_code == 200
+    assert client.get("/LICENSE").status_code == 200
+    assert client.get("/secret.txt").status_code == 404
+
+
 def test_head_and_range(client: TestClient) -> None:
     head = client.head("/")
     assert head.status_code == 200
