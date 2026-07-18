@@ -19,6 +19,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mamut-routing-lib[pyvrp]",
+    "mamut-routing-tools",
     "pydantic>=2.0.0",
     "typer>=0.12",
     "tqdm>=4.66",
@@ -82,8 +83,15 @@ exclude = [
     "webapp",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests", "MAMUT-routing-lib/tests"]
+
+[tool.uv.workspace]
+members = ["MAMUT-routing-tools"]
+
 [tool.uv.sources]
 mamut-routing-lib = { path = "MAMUT-routing-lib", editable = true }
+mamut-routing-tools = { workspace = true }
 cffconvert = { git = "https://github.com/citation-file-format/cffconvert", rev = "b6045d78aac9e02b039703b030588d54d53262ac" }
 
 [dependency-groups]
