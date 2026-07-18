@@ -1812,8 +1812,10 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
 }
 
 function supportsWorkbenchInstance(value) {
-  const placeSlug = String(value?.place_slug || value?.summary?.place_slug || "").trim();
-  return placeSlug.length > 0;
+  // Historically gated on an OSM place slug; the workbench visualizes any
+  // published instance client-side (straight lines without road geometry),
+  // so every catalog row gets the action.
+  return Boolean(value?.route_path || value?.summary?.route_path);
 }
 
 function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
@@ -1882,6 +1884,39 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     <div class="viewer-frame">
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Routing preview">${routePaths}${nodes}${arcHitTargets}</svg>
     </div>`;
+}
+
+function renderBksSelector(entries, selectedIndex) {
+  if (!entries || entries.length === 0) {
+    return `<div class="empty-state">No best-known solution is currently attached to this instance.</div>`;
+  }
+  return `<div class="selector-row">${entries
+    .map(
+      (entry, index) =>
+        `<button type="button" class="bks-chip${index === selectedIndex ? ' active' : ''}" data-bks-index="${index}">${escapeHtml(entry.objective_function)}</button>`,
+    )
+    .join("")}</div>`;
+}
+
+function labelizeCapability(value) {
+  return String(value ?? "n/a").replaceAll("_", " ");
+}
+
+function renderGeometryCard(summary) {
+  const metrics = Array.isArray(summary.road_cache_metrics) && summary.road_cache_metrics.length > 0
+    ? summary.road_cache_metrics.join(", ")
+    : "none";
+  return renderCard(
+    "Geometry",
+    `${renderStatGrid([
+      ["Viewer mode", labelizeCapability(summary.viewer_render_mode)],
+      ["Road cache", labelizeCapability(summary.road_cache_status)],
+      ["Sidecar", summary.has_geometry_sidecar ? "yes" : "no"],
+      ["Cached paths", summary.road_cache_entry_count ?? 0],
+      ["BKS route edges", summary.road_cache_expected_entry_count ?? "n/a"],
+      ["Metrics", metrics],
+    ])}`,
+  );
 }
 
 function renderWorkbenchModeCard(instanceRoute) {
@@ -2224,7 +2259,7 @@ async function renderInstancePage(payload, options = {}) {
         "Actions",
         inWorkbench
           ? `<div class="inline-actions"><a class="button-link primary" href="${routeHref(payload.route_path)}">Open Public Page</a><a class="button-link" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div>`
-          : supportsWorkbenchInstance(payload.summary)
+          : supportsWorkbenchInstance(payload)
             ? `<div class="inline-actions"><a class="button-link primary" href="${routeHref(payload.workbench_route_path)}?instance=${encodeURIComponent(payload.route_path)}">Open In Workbench</a></div>`
             : `<div class="inline-actions"><a class="button-link primary" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div>`,
       ),
