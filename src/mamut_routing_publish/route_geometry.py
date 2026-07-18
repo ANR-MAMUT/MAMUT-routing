@@ -8,9 +8,6 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 from typing import Any
 
 
@@ -203,103 +200,6 @@ def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[dict
     return {"groups": groups}, pending_by_relpath
 
 
-def _run_julia_materializer(output_repo_dir: Path, plan: dict[str, Any], temp_dir: Path) -> int:
-    julia = shutil.which("julia")
-    if julia is None:
-        raise RuntimeError("Route-geometry materialization requires Julia on PATH")
-    plan_path = temp_dir / "plan.json"
-    plan_path.write_text(json.dumps(plan, separators=(",", ":")), encoding="utf-8")
-    site_api_path = output_repo_dir / "webapp" / "site_api.jl"
-    julia_code = f"""
-using JSON3
-include({json.dumps(str(site_api_path))})
-repo_root = {json.dumps(str(output_repo_dir))}
-result_root = {json.dumps(str(temp_dir))}
-plan = materialize_json(JSON3.read(read({json.dumps(str(plan_path))}, String)))
-groups = plan["groups"]
-for (group_index, group) in enumerate(groups)
-    meta = group["meta"]
-    metric = String(group["metric"])
-    geo_path = String(group["geo_path"])
-    node_coordinates = workbench_node_coordinates_map(meta)
-    map_options = site_api_payload_get(meta, "map_options", Dict{{String,Any}}())
-    only_intersections = Bool(site_api_payload_get(map_options, "only_intersections", true))
-    trim_to_connected_graph = Bool(site_api_payload_get(map_options, "trim_to_connected_graph", true))
-    map_candidates = workbench_route_map_candidates(
-        repo_root,
-        meta,
-        geo_path,
-        only_intersections,
-        trim_to_connected_graph,
-    )
-    isempty(map_candidates) && error("No usable OSM road graph was available for " * geo_path)
-    edge_cache = Dict{{String,Vector{{Vector{{Float64}}}}}}()
-    straight_fallback_edges = Set{{String}}()
-    entry_edges = Any[]
-    required_edges = Set{{Tuple{{Int,Int}}}}()
-    for entry in group["entries"]
-        required = Set{{String}}()
-        for raw_route in entry["routes"]
-            route = Int.(collect(raw_route))
-            full_route = [0; route; 0]
-            for index in 1:(length(full_route) - 1)
-                edge = (full_route[index], full_route[index + 1])
-                push!(required_edges, edge)
-                push!(required, workbench_node_edge_cache_key(edge...))
-            end
-        end
-        push!(entry_edges, Dict("bks_path" => String(entry["bks_path"]), "edge_keys" => sort!(collect(required))))
-    end
-    ordered_edges = sort!(collect(required_edges))
-    resolved_segments = Vector{{Any}}(undef, length(ordered_edges))
-    Threads.@threads for index in eachindex(ordered_edges)
-        from_node, to_node = ordered_edges[index]
-        resolved_segments[index] = workbench_candidate_route_segment(
-            map_candidates,
-            from_node,
-            to_node,
-            node_coordinates[from_node],
-            node_coordinates[to_node],
-            metric,
-        )
-        if resolved_segments[index] === nothing
-            reverse_segment = workbench_candidate_route_segment(
-                map_candidates,
-                to_node,
-                from_node,
-                node_coordinates[to_node],
-                node_coordinates[from_node],
-                metric,
-            )
-            resolved_segments[index] = reverse_segment === nothing ? nothing : reverse(reverse_segment)
-        end
-    end
-    for (index, edge) in enumerate(ordered_edges)
-        segment = resolved_segments[index]
-        if segment === nothing
-            from_node, to_node = edge
-            segment = [node_coordinates[from_node], node_coordinates[to_node]]
-            push!(straight_fallback_edges, workbench_node_edge_cache_key(edge...))
-        end
-        edge_cache[workbench_node_edge_cache_key(edge...)] = segment
-    end
-    output = Dict("edge_cache" => edge_cache, "entries" => entry_edges, "straight_fallback_edges" => sort!(collect(straight_fallback_edges)))
-    save_json_to_file(output, joinpath(result_root, String(group["result_file"])); indent=0, sort_keys=true)
-    if group_index == length(groups) || String(groups[group_index + 1]["geo_path"]) != geo_path
-        empty!(WORKBENCH_MAP_CACHE)
-        GC.gc()
-    end
-end
-"""
-    completed = subprocess.run(
-        [julia, f"--project={output_repo_dir / 'webapp'}", "--startup-file=no", "--quiet", "-e", julia_code],
-        cwd=output_repo_dir,
-        check=False,
-        text=True,
-    )
-    return completed.returncode
-
-
 def _indexed_paths(edge_cache: dict[str, list[list[float]]], edge_keys: list[str]) -> tuple[list[list[float]], dict[str, list[int]]]:
     selected = {key: edge_cache[key] for key in edge_keys}
     vertices = sorted({(float(point[0]), float(point[1])) for path in selected.values() for point in path})
@@ -362,33 +262,47 @@ def materialize_route_geometry(output_repo_dir: str | Path, *, min_customers: in
     plan, pending_by_relpath = _group_plan(output_repo, pending)
     written: list[str] = []
     changed_during_run = 0
-    with tempfile.TemporaryDirectory(prefix="mamut-route-geometry-") as temp_value:
-        temp_dir = Path(temp_value)
-        returncode = _run_julia_materializer(output_repo, plan, temp_dir)
-        for group in plan["groups"]:
-            result_path = temp_dir / group["result_file"]
-            if not result_path.is_file():
-                continue
-            result = json.loads(result_path.read_text(encoding="utf-8"))
-            edge_cache = result["edge_cache"]
-            straight_fallback_edges = result.get("straight_fallback_edges", [])
-            for result_entry in result["entries"]:
-                entry = pending_by_relpath[result_entry["bks_path"]]
-                target = _save_artifact(
-                    output_repo,
-                    entry,
-                    edge_cache,
-                    result_entry["edge_keys"],
-                    straight_fallback_edges,
-                )
-                if target is None:
-                    changed_during_run += 1
-                    continue
-                written.append(target.relative_to(output_repo).as_posix())
-        if returncode != 0:
-            raise RuntimeError(
-                f"Julia route-geometry materialization failed after publishing {len(written)} completed BKS artifacts"
+    failures: list[str] = []
+    # Group-by-group so completed groups still publish when a later one
+    # fails; groups are sorted by geo sidecar, so per-city graph caches can
+    # be dropped once the city is done (large cities cost gigabytes).
+    from mamut_routing_tools.geometry.materialize import materialize_group
+    from mamut_routing_tools.roadgraph import build as roadgraph_build
+
+    groups = plan["groups"]
+    for group_index, group in enumerate(groups):
+        try:
+            result = materialize_group(output_repo, group)
+        except Exception as error:  # noqa: BLE001 - collected and re-raised below
+            failures.append(f"{group['geo_path']} [{group['metric']}]: {error}")
+            continue
+        finally:
+            last_of_city = (
+                group_index == len(groups) - 1
+                or groups[group_index + 1]["geo_path"] != group["geo_path"]
             )
+            if last_of_city:
+                roadgraph_build.clear_caches()
+        edge_cache = result["edge_cache"]
+        straight_fallback_edges = result.get("straight_fallback_edges", [])
+        for result_entry in result["entries"]:
+            entry = pending_by_relpath[result_entry["bks_path"]]
+            target = _save_artifact(
+                output_repo,
+                entry,
+                edge_cache,
+                result_entry["edge_keys"],
+                straight_fallback_edges,
+            )
+            if target is None:
+                changed_during_run += 1
+                continue
+            written.append(target.relative_to(output_repo).as_posix())
+    if failures:
+        details = "; ".join(failures)
+        raise RuntimeError(
+            f"Route-geometry materialization failed for {len(failures)} group(s) after publishing {len(written)} completed BKS artifacts: {details}"
+        )
     return {
         "generated": len(written),
         "reused": reused,

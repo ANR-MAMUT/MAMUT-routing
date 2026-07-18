@@ -491,6 +491,13 @@ def site_build_cmd(
             help="Skip the ATF sidecar cache materialization phase. Instance pages of materialized-td-model families (Lera2026, Mamut2026 TD) then lose their schedule tables and arc-click viewer unless dist/atf-cache is already populated.",
         ),
     ] = False,
+    skip_route_geometry: Annotated[
+        bool,
+        typer.Option(
+            "--skip-route-geometry",
+            help="Skip BKS route-geometry materialization (dist/route-geometry-cache). Pages of large instances whose geometry is not already cached then fall back to straight lines. Runs only for in-place builds; staging builds reuse the seeded cache.",
+        ),
+    ] = False,
     schema_version: Annotated[
         str,
         typer.Option("--schema-version", help="Schema version string for the generated site payloads."),
@@ -589,6 +596,25 @@ def site_build_cmd(
             seed_from=(roots.active_dist / "atf-cache") if not roots.in_place else None,
         )
         reporter.phase("materialized ATF sidecar cache", **atf_summary.as_dict())
+
+    if not skip_route_geometry:
+        from mamut_routing_publish.publish_roots import PublishRoots
+        from mamut_routing_publish.route_geometry import materialize_route_geometry
+
+        geometry_roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
+        if geometry_roots.in_place:
+            reporter.phase("materializing BKS route geometry")
+            geometry_summary = materialize_route_geometry(repo_dir)
+            reporter.phase(
+                "materialized BKS route geometry",
+                generated=geometry_summary["generated"],
+                reused=geometry_summary["reused"],
+            )
+        else:
+            # Staging outputs consume the seeded cache from the active dist;
+            # new-BKS geometry is materialized by in-place builds or the
+            # standalone site materialize-route-geometry command.
+            reporter.phase("skipping route-geometry materialization (staging build)")
 
     payload_summary = generate_site_payloads(
         output_repo_dir=repo_dir,
