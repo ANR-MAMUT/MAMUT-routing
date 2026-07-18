@@ -1562,6 +1562,43 @@ th {
   height: 12px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.route-toggle-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.route-toggle-toolbar .bks-chip {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.route-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin-top: 0.6rem;
+  padding-right: 0.25rem;
+}
+
+.route-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.route-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .empty-state {
