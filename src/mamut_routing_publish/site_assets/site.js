@@ -295,6 +295,32 @@ function fetchRouteGeometryMetaMemo(bksEntry) {
   return promise;
 }
 
+async function routeGeometryMetaForEntry(bksEntry) {
+  if (!bksEntry?.route_geometry_path) {
+    return null;
+  }
+  try {
+    return await fetchRouteGeometryMetaMemo(bksEntry);
+  } catch (error) {
+    console.warn("Unable to load the BKS route-geometry artifact", error);
+    return null;
+  }
+}
+
+function mergeGeometryMeta(geometryMeta, routeGeometryMeta) {
+  if (!routeGeometryMeta) {
+    return geometryMeta;
+  }
+  return {
+    ...(geometryMeta || {}),
+    ...routeGeometryMeta,
+    road_cache: {
+      ...(geometryMeta?.road_cache || {}),
+      ...(routeGeometryMeta.road_cache || {}),
+    },
+  };
+}
+
 async function fetchWorkbenchPayloadForRoute(routePath) {
   const sourcePath = payloadUrlForRoute(routePath);
   const cacheKey = `${state.payloadMode}:${sourcePath}`;
@@ -1192,9 +1218,12 @@ function loadHomePreviewSampleGeometry(sample, onLoaded) {
   if (sample.preview.geometryMeta) {
     return;
   }
-  fetchGeometryMetaMemo(artifactLinks)
-    .then((data) => {
-      sample.preview.geometryMeta = data;
+  Promise.all([
+    fetchGeometryMetaMemo(artifactLinks),
+    routeGeometryMetaForEntry(sample.preview.selectedEntry),
+  ])
+    .then(([data, routeGeometryMeta]) => {
+      sample.preview.geometryMeta = mergeGeometryMeta(data, routeGeometryMeta);
       onLoaded?.(sample);
     })
     .catch((error) => console.warn("Unable to load homepage geometry sidecar", error));
@@ -2253,7 +2282,10 @@ async function renderInstancePage(payload, options = {}) {
     await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path)),
   );
   let geometryMeta = null;
-  if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && geometryMetaSourcePath(payload.artifact_links)) {
+  const hasRouteGeometryEntries = (payload.bks_entries || []).some((entry) => entry?.route_geometry_path);
+  const wantsSidecarGeometry =
+    (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete") || hasRouteGeometryEntries;
+  if (wantsSidecarGeometry && geometryMetaSourcePath(payload.artifact_links)) {
     try {
       geometryMeta = await fetchGeometryMetaMemo(payload.artifact_links);
     } catch (error) {
@@ -2263,6 +2295,7 @@ async function renderInstancePage(payload, options = {}) {
   let selectedIndex = 0;
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+  let selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
   let selectedScheduleRoute = 0;
   let arcState = null;
   let routeFunctionsData = null;
@@ -2343,10 +2376,10 @@ async function renderInstancePage(payload, options = {}) {
     state.stage.innerHTML = `
       <div class="viewer-stage">
         ${renderPreviewSvg(instanceData, selectedBksData, selectedEntry, {
-          geometryMeta,
+          geometryMeta: mergeGeometryMeta(geometryMeta, selectedRouteGeometryMeta),
           metricVariant: payload.summary.metric_variant,
-          viewerRenderMode: payload.summary.viewer_render_mode,
-          roadCacheStatus: payload.summary.road_cache_status,
+          viewerRenderMode: selectedRouteGeometryMeta ? "cached_road" : payload.summary.viewer_render_mode,
+          roadCacheStatus: selectedRouteGeometryMeta ? "complete" : payload.summary.road_cache_status,
           interactiveArcs: supportsArcFunctions,
           displayOptions,
         })}
@@ -2378,6 +2411,7 @@ async function renderInstancePage(payload, options = {}) {
         selectedIndex = Number(button.dataset.bksIndex);
         selectedEntry = payload.bks_entries[selectedIndex] || null;
         selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+        selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
         selectedScheduleRoute = 0;
         routeFunctionsData = null;
         routeFunctionsStatus = "idle";

@@ -31,7 +31,7 @@ from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
-from .route_geometry import route_geometry_for_bks
+from .route_geometry import ROUTE_GEOMETRY_CACHE_DIR, route_geometry_for_bks
 
 
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
@@ -1376,6 +1376,7 @@ def _build_bks_entries(
     td_instance=None,
     td_atfs=None,
     route_path: str | None = None,
+    route_geometry_cache_dir: Path | None = None,
 ) -> tuple[list[BKSPageEntry], list[TDRouteFunctionsPayload]]:
     entries: list[BKSPageEntry] = []
     function_payloads: list[TDRouteFunctionsPayload] = []
@@ -1390,10 +1391,12 @@ def _build_bks_entries(
         route_geometry_sha256 = None
         route_geometry_bks_sha256 = None
         route_geometry_metric = None
-        route_geometry = route_geometry_for_bks(output_repo_dir, bks_path)
+        route_geometry = route_geometry_for_bks(output_repo_dir, bks_path, cache_dir=route_geometry_cache_dir)
         if route_geometry is not None:
             geometry_path, geometry_payload = route_geometry
-            route_geometry_path = geometry_path.relative_to(output_repo_dir).as_posix()
+            # The served link is always the canonical dist/route-geometry-cache
+            # path, even when the existence check ran against a staging cache.
+            route_geometry_path = (ROUTE_GEOMETRY_CACHE_DIR / geometry_path.parent.name / geometry_path.name).as_posix()
             route_geometry_sha256 = hashlib.sha256(geometry_path.read_bytes()).hexdigest()
             route_geometry_bks_sha256 = str(geometry_payload["bks_sha256"])
             route_geometry_metric = str(geometry_payload["metric"])
@@ -1435,7 +1438,12 @@ def _build_bks_entries(
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
 
 
-def _resolve_instance(output_repo_dir: Path, discovered_item, atf_cache_dir: Path | None = None) -> _ResolvedSiteInstance:
+def _resolve_instance(
+    output_repo_dir: Path,
+    discovered_item,
+    atf_cache_dir: Path | None = None,
+    route_geometry_cache_dir: Path | None = None,
+) -> _ResolvedSiteInstance:
     instance = discovered_item.load()
     problem_type = discovered_item.problem_type
     benchmark_name = _normalize_benchmark_name(discovered_item.benchmark_name)
@@ -1583,6 +1591,7 @@ def _resolve_instance(output_repo_dir: Path, discovered_item, atf_cache_dir: Pat
         td_instance=instance if td_atfs is not None else None,
         td_atfs=td_atfs,
         route_path=route_path,
+        route_geometry_cache_dir=route_geometry_cache_dir,
     )
     route_geometry_entries = [entry for entry in bks_entries if entry.route_geometry_path is not None]
     if route_geometry_entries:
@@ -3146,6 +3155,7 @@ def _resolve_instances(
     jobs: str | int,
     reporter: ProgressReporter | None = None,
     atf_cache_dir: Path | None = None,
+    route_geometry_cache_dir: Path | None = None,
 ) -> list[_ResolvedSiteInstance]:
     resolved_jobs = resolve_site_build_jobs(jobs, len(discovered_instances))
     if reporter is not None:
@@ -3168,14 +3178,14 @@ def _resolve_instances(
         if resolved_jobs == 1:
             for index, item in enumerate(discovered_instances):
                 try:
-                    resolved_items[index] = _resolve_instance(output_repo, item, atf_cache_dir)
+                    resolved_items[index] = _resolve_instance(output_repo, item, atf_cache_dir, route_geometry_cache_dir)
                 except Exception as exc:
                     record_failure(item, exc)
                 task.update(detail=getattr(item, "instance_name", None))
         else:
             with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
                 futures = {
-                    executor.submit(_resolve_instance, output_repo, item, atf_cache_dir): (index, item)
+                    executor.submit(_resolve_instance, output_repo, item, atf_cache_dir, route_geometry_cache_dir): (index, item)
                     for index, item in enumerate(discovered_instances)
                 }
                 for future in as_completed(futures):
@@ -3263,6 +3273,7 @@ def generate_site_payloads(
         jobs=jobs,
         reporter=reporter,
         atf_cache_dir=roots.atf_cache_dir,
+        route_geometry_cache_dir=roots.route_geometry_publish_dir,
     )
     family_context_sections = _load_family_context_sections(output_repo, family_context_report_path)
 

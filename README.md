@@ -96,7 +96,7 @@ git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Mam
   && uv run mamut-routing-publish serve
 ```
 
-`site build` materializes everything it needs itself, incrementally: the build-time ATF cache (`dist/atf-cache/`, TD schedule tables and arc-click sidecars for the materialized-model families; `--atf-max-n`, default 400) and the BKS route-geometry cache (`dist/route-geometry-cache/`, sha-pinned per BKS, produced by the MAMUT-routing-tools road engine; `--skip-route-geometry` to opt out). The standalone `site materialize-atf` and `site materialize-route-geometry` commands remain available for pre-warming.
+`site build` materializes everything it needs itself, incrementally: the build-time ATF cache (`dist/atf-cache/`, TD schedule tables and arc-click sidecars for the materialized-model families; `--atf-max-n`, default 400) and the BKS route-geometry cache (`dist/route-geometry-cache/`, sha-pinned per BKS at every instance size, produced by the MAMUT-routing-tools road engine in parallel per city; `--route-geometry-jobs`, `--skip-route-geometry` to opt out). Staging builds seed the cache from the active `dist` and materialize the remainder into the staging output. The standalone `site materialize-atf` and `site materialize-route-geometry` commands remain available for pre-warming.
 
 `serve` binds `127.0.0.1:8082` by default (pass `--host`/`--port` for deployments) and serves `dist/` plus the repo artifact roots with real cache headers, ETags, Range, and precompressed `.gz`/`.br` negotiation (build with `--precompress` to generate the sidecars). Persistent history state lives in `publish-state/`; release-style staging builds (`--site-output-dir`) never write the active `dist`.
 
