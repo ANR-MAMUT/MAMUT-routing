@@ -993,11 +993,11 @@ def workbench_fetch_city_cmd(
     source_repo_dir: Annotated[Optional[Path], typer.Option(help="MAMUT-routing repo root.")] = None,
 ) -> None:
     """Download a city OSM extract into osmdata/ via Overpass."""
-    from mamut_routing_publish.td_generation import julia_driver
+    from mamut_routing_tools.osm.fetch import fetch_and_store_city_osm
 
     repo_dir = _resolve_repo_dir(source_repo_dir)
-    result = julia_driver.fetch_city(
-        repo_dir, city=city, country=country, max_radius_km=max_radius_km, padding_km=padding_km
+    result = fetch_and_store_city_osm(
+        city, country=country, osm_dir=repo_dir / "osmdata", max_radius_km=max_radius_km, padding_km=padding_km
     )
     typer.echo(json.dumps(result, indent=2))
 
@@ -1191,8 +1191,10 @@ def workbench_build_family_cmd(
     repo_dir = _resolve_repo_dir(source_repo_dir)
     osm_file = repo_dir / "osmdata" / f"{city}.osm"
     if not osm_file.exists():
+        from mamut_routing_tools.osm.fetch import fetch_and_store_city_osm
+
         typer.echo(f"fetching {city} OSM extract...")
-        julia_driver.fetch_city(repo_dir, city=city, max_radius_km=max_radius_km)
+        fetch_and_store_city_osm(city, osm_dir=repo_dir / "osmdata", max_radius_km=max_radius_km)
     ctx_args = dict(n=n, method=method, out_root=out_root, source_repo_dir=source_repo_dir)
     workbench_generate_base_cmd(city, generated_at=generated_at, force=force, force_stage1=False, osm_path=None, **ctx_args)
     workbench_derive_vrptw_cmd(city, generated_at=generated_at, force=force, **ctx_args)

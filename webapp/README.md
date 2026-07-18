@@ -1,38 +1,26 @@
-# MAMUT-routing Julia Webapp Environment
+# Campaign-only Julia environment (official TD generation)
 
-This folder contains the Julia-side contract loader, the site payload API surface, and the static file server needed to browse the generated Paper7 site from Julia alone.
+This folder holds the Julia code that generates the official Mamut2026 time-dependent data: `osm_generation.jl` (OSM road-graph import and CVRP base generation) and `td_traffic.jl` (BPR/wave time-dependent traffic bridge), plus their pinned `Project.toml`/`Manifest.toml`.
+
+It is not a web application anymore. The former Julia server (`site_api.jl`, `io-json-vrp.jl`, `run_site_api.jl`) was retired in the 2026-07 clean-up split: the website is fully static, built and served by the Python publisher (see the repository README, `mamut-routing-publish site build` and `serve`), and interactive generation lives in the local [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) suite.
+
+## Who calls this code
+
+`src/mamut_routing_publish/td_generation/julia_driver.py` includes exactly `osm_generation.jl` and `td_traffic.jl` to run the official campaign pipeline behind the publisher CLI:
+
+```bash
+uv run mamut-routing-publish workbench build-family <City>   # fetch (Python), generate-base, derive-vrptw, traffic-sim, build-td
+uv run mamut-routing-publish workbench traffic-sim <City>
+```
+
+City OSM acquisition is Python-side (`mamut-routing-publish workbench fetch-city`, backed by mamut-routing-tools); Julia starts from the stored `osmdata/<City>.osm`.
 
 ## One-time setup
 
-From `papers/paper7/MAMUT-routing`:
+From the repository root:
 
 ```bash
 julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 ```
 
-## Start the payload API
-
-From `papers/paper7/MAMUT-routing`:
-
-```bash
-julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
-```
-
-The default API prefix is `/api/site-payload` and the default bind address is `127.0.0.1:8081`.
-Use `-t auto` (or set `JULIA_NUM_THREADS`) so missing road geometry segments can be rendered in parallel.
-
-The same server now serves:
-
-- payload JSON under `/api/site-payload`
-- generated static site files from `dist/`, including `/`, `/benchmarks/vrptw/`, `/history/.../`, `/site-payloads/`, and `/webapp/`
-- benchmark artifacts such as `.vrp.json`, `.vrp`, `.meta.json`, and `.manifest.json`
-
-## Generate shells for API hydration mode
-
-From `papers/paper7`:
-
-```bash
-PYTHONPATH=src /home/apichon/code/code/VRPTW-benchmarks/.venv/bin/python -m src.scripts.build_site_snapshot --output-repo-dir MAMUT-routing --payload-mode api
-```
-
-That keeps the same generated HTML routes, but the frontend hydrator will fetch route payloads from the Julia API instead of local `index.json` files.
+Julia is required only for this campaign pipeline. Building and serving the website needs no Julia at all.

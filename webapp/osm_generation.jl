@@ -1,5 +1,6 @@
-# OSM data import and CVRP instance generation helpers for the MAMUT workbench.
-# Kept local so site_api.jl does not depend on another checkout at runtime.
+# OSM data import and CVRP instance generation helpers for the official
+# Mamut2026 TD campaign pipeline (driven by td_generation/julia_driver.py).
+# Kept local so the pipeline does not depend on another checkout at runtime.
 const MAMUT_OSM_GENERATION_HELPERS_LOADED = true
 
 using HTTP
