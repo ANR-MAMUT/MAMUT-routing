@@ -145,6 +145,21 @@ def _validate_jobs(jobs: str) -> None:
         raise typer.Exit(code=1) from exc
 
 
+def _parse_worker_jobs(jobs: str) -> int | str:
+    """Parse an 'auto'-or-integer worker option into materialize workers."""
+    value = jobs.strip().lower()
+    if value == "auto":
+        return "auto"
+    try:
+        parsed = int(value)
+        if parsed < 1:
+            raise ValueError
+    except ValueError:
+        typer.echo(f"jobs must be 'auto' or an integer >= 1, got: {jobs!r}", err=True)
+        raise typer.Exit(code=1) from None
+    return parsed
+
+
 def _ru_maxrss_to_gib(ru_maxrss: int) -> float:
     # Linux reports KiB; macOS reports bytes.
     bytes_value = ru_maxrss if sys.platform == "darwin" else ru_maxrss * 1024
@@ -305,9 +320,13 @@ def site_materialize_route_geometry_cmd(
         int,
         typer.Option(
             "--min-n",
-            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers.",
+            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers (default: all sizes).",
         ),
-    ] = 101,
+    ] = 1,
+    jobs: Annotated[
+        str,
+        typer.Option("--jobs", help="Parallel per-city materialization workers: 'auto' or an integer >= 1."),
+    ] = "auto",
 ) -> None:
     """Materialize hash-addressed BKS road geometry into dist/.
 
@@ -318,7 +337,7 @@ def site_materialize_route_geometry_cmd(
     from mamut_routing_publish.route_geometry import materialize_route_geometry
 
     repo_dir = _resolve_repo_dir(output_repo_dir)
-    summary = materialize_route_geometry(repo_dir, min_customers=min_n)
+    summary = materialize_route_geometry(repo_dir, min_customers=min_n, workers=_parse_worker_jobs(jobs))
     typer.echo(json.dumps(summary, indent=1))
 
 
@@ -495,9 +514,16 @@ def site_build_cmd(
         bool,
         typer.Option(
             "--skip-route-geometry",
-            help="Skip BKS route-geometry materialization (dist/route-geometry-cache). Pages of large instances whose geometry is not already cached then fall back to straight lines. Runs only for in-place builds; staging builds reuse the seeded cache.",
+            help="Skip BKS route-geometry materialization (route-geometry-cache). Pages whose BKS geometry is not already cached then fall back to straight lines. Staging builds materialize into the staging cache after seeding it from the active dist.",
         ),
     ] = False,
+    route_geometry_jobs: Annotated[
+        str,
+        typer.Option(
+            "--route-geometry-jobs",
+            help="Parallel per-city route-geometry workers: 'auto' or an integer >= 1. Each worker holds one city road graph at a time.",
+        ),
+    ] = "auto",
     schema_version: Annotated[
         str,
         typer.Option("--schema-version", help="Schema version string for the generated site payloads."),
@@ -598,23 +624,27 @@ def site_build_cmd(
         reporter.phase("materialized ATF sidecar cache", **atf_summary.as_dict())
 
     if not skip_route_geometry:
-        from mamut_routing_publish.publish_roots import PublishRoots
+        from mamut_routing_publish.publish_roots import PublishRoots, hardlink_tree
         from mamut_routing_publish.route_geometry import materialize_route_geometry
 
         geometry_roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
-        if geometry_roots.in_place:
-            reporter.phase("materializing BKS route geometry")
-            geometry_summary = materialize_route_geometry(repo_dir)
-            reporter.phase(
-                "materialized BKS route geometry",
-                generated=geometry_summary["generated"],
-                reused=geometry_summary["reused"],
-            )
-        else:
-            # Staging outputs consume the seeded cache from the active dist;
-            # new-BKS geometry is materialized by in-place builds or the
-            # standalone site materialize-route-geometry command.
-            reporter.phase("skipping route-geometry materialization (staging build)")
+        if not geometry_roots.in_place:
+            # Seed the staging cache before the reuse check so unchanged BKS
+            # artifacts are found instead of regenerated; payload generation
+            # repeats this seeding, which is idempotent.
+            hardlink_tree(geometry_roots.active_dist / "route-geometry-cache", geometry_roots.route_geometry_publish_dir)
+        reporter.phase("materializing BKS route geometry", cache_dir=geometry_roots.route_geometry_publish_dir)
+        geometry_summary = materialize_route_geometry(
+            repo_dir,
+            cache_dir=geometry_roots.route_geometry_publish_dir,
+            workers=_parse_worker_jobs(route_geometry_jobs),
+        )
+        reporter.phase(
+            "materialized BKS route geometry",
+            generated=geometry_summary["generated"],
+            reused=geometry_summary["reused"],
+            workers=geometry_summary["workers"],
+        )
 
     payload_summary = generate_site_payloads(
         output_repo_dir=repo_dir,
