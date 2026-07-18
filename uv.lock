@@ -567,7 +567,7 @@ wheels = [
 
 [[package]]
 name = "mamut-routing-lib"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "MAMUT-routing-lib" }
 dependencies = [
     { name = "pydantic" },
@@ -583,7 +583,7 @@ pyvrp = [
 requires-dist = [
     { name = "numpy", marker = "extra == 'pyvrp'", specifier = ">=2.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pyvrp", marker = "extra == 'pyvrp'", specifier = ">=0.12.2,<0.13" },
+    { name = "pyvrp", marker = "extra == 'pyvrp'", specifier = ">=0.13.4,<0.14" },
     { name = "tqdm", marker = "extra == 'cli'", specifier = ">=4.66" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
 ]
@@ -593,7 +593,7 @@ provides-extras = ["cli", "pyvrp"]
 dev = [
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "pytest", specifier = ">=9.0.0" },
-    { name = "pyvrp", specifier = ">=0.12.2,<0.13" },
+    { name = "pyvrp", specifier = ">=0.13.4,<0.14" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "typer", specifier = ">=0.12" },
 ]
@@ -1121,7 +1121,7 @@ wheels = [
 
 [[package]]
 name = "pyvrp"
-version = "0.12.2"
+version = "0.13.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -1129,24 +1129,32 @@ dependencies = [
     { name = "tqdm" },
     { name = "vrplib" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/7a/ee0d78c39ca0383d576d338c1c920eae5be2382b9eed040428d9316d85e2/pyvrp-0.12.2.tar.gz", hash = "sha256:919a10b357f9477ce5f38ea9426ab890b95dae7716a034de2093f08810de456a", size = 621753, upload-time = "2025-11-25T11:23:05.245Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/4b/e1080217100f7d84a661c65f74eb4f964725b1e6e638d692a012505806b2/pyvrp-0.13.4.tar.gz", hash = "sha256:162dc5534114b63e86de0e8c3d83328d6ba3ee799ba94e490e69d97ae38d7296", size = 550470, upload-time = "2026-05-20T11:58:54.629Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/f0/2c66fee2e5867b91fbd0525168e9ddf45c484ad91b7c469a804ecfb0acac/pyvrp-0.12.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:e1df20391d7b1a578f9f89c39c37ebff5e1baa1a34c2d5c7554c11747ad82ee6", size = 965271, upload-time = "2025-11-25T11:22:41.473Z" },
-    { url = "https://files.pythonhosted.org/packages/d3/d8/0b8d96d90dfdc6d89bafbdff8b2516970aa3b344a14c6ef06a7c268e36f0/pyvrp-0.12.2-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a380ebb4d23a9d95e19a5f26bc50767049ed0797fd85f0900623c991ac53efd2", size = 1192477, upload-time = "2025-11-25T11:22:43.52Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/d7/ef7a081750cdefe904848457229bf86b1e0fd27efea8aeecac11045f4dea/pyvrp-0.12.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:e7a9de68af3fe5e7c4b94354f7d700adcc344cff0ebee090c537babaa419a0b2", size = 2181428, upload-time = "2025-11-25T11:22:45.076Z" },
-    { url = "https://files.pythonhosted.org/packages/28/3d/1761ef44a139d48e01be162c08e8da786f27c0c776a44408737b742af977/pyvrp-0.12.2-cp311-cp311-win_amd64.whl", hash = "sha256:b3cabfdb6837a33a3ef360029dbc39040042b825c64f49b3914eb084e9dcde6b", size = 2637907, upload-time = "2025-11-25T11:22:46.409Z" },
-    { url = "https://files.pythonhosted.org/packages/22/54/bd852616d6305f93926a7d5185996ce73f9f4cec602f6f1a3499023e7dbd/pyvrp-0.12.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:96b8c349e5366dbbc0f37897c939682105494ec5dad108492390034923a0852a", size = 972204, upload-time = "2025-11-25T11:22:48.179Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/55/7a58f0794d4a4c25fe2d3fce1d5ef16479f90602540b5e0d88aa929ba6ea/pyvrp-0.12.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:16428f56b90aba86dc5759673596b1a9aafe54250208bcf5f63edd852ee2c6f5", size = 1200319, upload-time = "2025-11-25T11:22:49.779Z" },
-    { url = "https://files.pythonhosted.org/packages/53/64/8a7d08d5d8cac0ab9e2df51f14ee1c6a85550a4e81ccb0c4c967ed6f2765/pyvrp-0.12.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:5b28646e87fa16d754950869ad4e2614384664ff9791c8a2e0eea0caf1c544e5", size = 2189408, upload-time = "2025-11-25T11:22:51.302Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/54/f76380fc42de61546c81237ea57219700409dcee6688d745e7ba8eb72ab4/pyvrp-0.12.2-cp312-cp312-win_amd64.whl", hash = "sha256:f15c87e244040cc37d887e54868a1b7807f0b48cf8b5f2bdb9a4d0c674eb052a", size = 2636951, upload-time = "2025-11-25T11:22:52.54Z" },
-    { url = "https://files.pythonhosted.org/packages/84/4f/010b761fbc8856bd606ee4d2f5b85377c9dbe110f11a1bfab8a0fd1bfe04/pyvrp-0.12.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:3725680fcb75dc4a424160460e5ba7e3a4ea9694ed4b3b196049047922d8f226", size = 972434, upload-time = "2025-11-25T11:22:54.056Z" },
-    { url = "https://files.pythonhosted.org/packages/16/ad/c9c5202f3b70c0bb44d1d778fa7fa1c9dc80da8fb625b7d37fe96268a94e/pyvrp-0.12.2-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4ada4ff266ca17d84595a52c33d093afd6ac654148f4f926cf4e0158c80a8e2c", size = 1201217, upload-time = "2025-11-25T11:22:56.488Z" },
-    { url = "https://files.pythonhosted.org/packages/af/27/d8534f30b8189628d67731a5f6846a237a46441d4459fd70af60c7e7388d/pyvrp-0.12.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:4148920616ce5789b372ff8bd08279348a19a43ab5399a7f761a1ee1b2d4f1d2", size = 2189542, upload-time = "2025-11-25T11:22:57.74Z" },
-    { url = "https://files.pythonhosted.org/packages/97/5a/d943f4ce195684d81156717c54a4914c9c9b07365dda8bc89c943432b80c/pyvrp-0.12.2-cp313-cp313-win_amd64.whl", hash = "sha256:ee309e6d65e7192e9c6351c7d80d545621540a9d65e1e513f0c7c780842f1ce0", size = 2635419, upload-time = "2025-11-25T11:22:59.023Z" },
-    { url = "https://files.pythonhosted.org/packages/4b/9f/05e0df5caa9eb5aa45a7b5cfc4e84e2abce0b96812edd8e92b1c0f700cba/pyvrp-0.12.2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:f8ff8b6d6e9e1d45b687bdb62d3317eceb02652a8bd4bb9d1acc4ac6ea450421", size = 973459, upload-time = "2025-11-25T11:23:00.223Z" },
-    { url = "https://files.pythonhosted.org/packages/af/84/cb20b409df5ad140be706be91c78ac6f9585c219c0b8b351751b76e69897/pyvrp-0.12.2-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1d12d3f03b4b6622d6c13f664e3802678ecd79a8d467232ca05dba1dbc0419f9", size = 1201992, upload-time = "2025-11-25T11:23:01.369Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/d4/db439f3961b57ae7d3694af21fc47b7515730d28876e3989a3e89c362b1c/pyvrp-0.12.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:06160b6a09c464e0114f4903c3a0ee29298d7e47a16fd9291a6776fcfbb5b6ea", size = 2190627, upload-time = "2025-11-25T11:23:02.536Z" },
-    { url = "https://files.pythonhosted.org/packages/08/0d/c7ab5c0cf086f0ef51443ec23d907babad83b6d0c6c69ddb1f4f87c57d86/pyvrp-0.12.2-cp314-cp314-win_amd64.whl", hash = "sha256:2bb25e35a4fcba263fbb4e659be9c63a3a596d4c0396996a74338cb3ccef2019", size = 2727777, upload-time = "2025-11-25T11:23:03.85Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/45/1ba63f3e9ce52102711f7d11175a79d65bd6c3354f2aa275c57604375a90/pyvrp-0.13.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:dcc75d5c06db3c07777697abc3fdaed86590f479fa76bc9cbfaf114f3ac87c92", size = 633667, upload-time = "2026-05-20T11:58:19.099Z" },
+    { url = "https://files.pythonhosted.org/packages/46/36/618c45efb3e2981212548bf1a3fd6875159bf2ca795ee797eee4f44329c2/pyvrp-0.13.4-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:870c211fae7c4779b25c4508ea85cf17fae97ea4d64b2657ba15711c04bf9d9f", size = 698199, upload-time = "2026-05-20T11:58:20.693Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/e3/c192ad699e61a314324b6ad61d6e63e1729e5358f092560efea9e7a4ce4f/pyvrp-0.13.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1d3d217c9b5eb0d465d6db0b8d5d3037913cbaec1f5a8cd0e89827134c990888", size = 758498, upload-time = "2026-05-20T11:58:22.283Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/e1/30a47f4dfb3c7cf75b45c19c6e962373d8d293aab03c4fcdae1c661322f9/pyvrp-0.13.4-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:6034ad430d3cd56e52aafd3d50427f218b5ba8b00197833730bfab5b713c3285", size = 1679070, upload-time = "2026-05-20T11:58:23.593Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/16/373fa38b047e027c156ede141705c76343134b237ff1b10026c62aa7e43e/pyvrp-0.13.4-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:ee7eba2b044f0f1b82b5f5b86b424318fb8c1a7d7375244969744fbe6dc62b35", size = 1781832, upload-time = "2026-05-20T11:58:25.015Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/ec/9dd791a86e895f314a973323a9b524361babbd1ef6e2785c6fa4f80065cc/pyvrp-0.13.4-cp311-cp311-win_amd64.whl", hash = "sha256:cdefa85430849b008d757ad0c2c9a4cc48e97dcb281b899ff8d75e1da0d94271", size = 1557479, upload-time = "2026-05-20T11:58:26.722Z" },
+    { url = "https://files.pythonhosted.org/packages/15/8a/939a1727ccdf0dfece75ade76bb9457a02f882c3a8961a27b6ce93a5c292/pyvrp-0.13.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:f5b0110b8b54f6deff5d685f1e135993bd7ca4f05f23e77ab9658467103bc981", size = 638943, upload-time = "2026-05-20T11:58:28.395Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/1f/44b97e7a69468068ab9617af53db8566ab045163b9b700863e46836c6163/pyvrp-0.13.4-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4079c9207d748ce16f1274faa6eb61c269117049d159a1191fde94995964a646", size = 698357, upload-time = "2026-05-20T11:58:30.022Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/e0/af5511ac63019333a2e26fb5f33303871087617fc710de527c4ee028c42d/pyvrp-0.13.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8a90e47bd1a446c0c0249ed0298871e98c4160104ce1c1031baf3566c3f0d5cd", size = 763181, upload-time = "2026-05-20T11:58:31.234Z" },
+    { url = "https://files.pythonhosted.org/packages/85/40/fc98546cff585d99ecd0d1a98448a38df8aa260280aec7048c544d807e62/pyvrp-0.13.4-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:5c9c38d9c59e57f92bde40df8d9ab571efb10c40a271eef60816d6e0afff3b48", size = 1678931, upload-time = "2026-05-20T11:58:32.974Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/9e/46a1703d5d8e256e11aca84af9415e01e2f4aa2b33c65be866065867afc8/pyvrp-0.13.4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:9504dd069f5ec3460b8378f23411b0ea827024e1a9deb6278e661a605e4955f1", size = 1788664, upload-time = "2026-05-20T11:58:35.178Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/8c/80a8175255a278e9d629a9852efdb17bc3cde197400385c9a3799a9df7fc/pyvrp-0.13.4-cp312-cp312-win_amd64.whl", hash = "sha256:15616e71199f11f625cb25828a1b3308209247c7121f0f2e6feb5aca2fe30da5", size = 1561786, upload-time = "2026-05-20T11:58:36.921Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/47/89e71b6dc00445cc7000df36100f87a7b444cf0cf2bae4f02299cf671b3c/pyvrp-0.13.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:49b84319fcfcd2206c05f55e970d090ab054d577a1d82cbac276d376fe89970c", size = 639019, upload-time = "2026-05-20T11:58:38.068Z" },
+    { url = "https://files.pythonhosted.org/packages/61/5f/2389047c1c0ee395f0807bad41db5fd6be43f1cac31a9ca9d9120ec256b6/pyvrp-0.13.4-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:bc728c51f199be97ab56daab86d0667a7b76e40da60332ba73b8420c193bfc80", size = 698459, upload-time = "2026-05-20T11:58:39.501Z" },
+    { url = "https://files.pythonhosted.org/packages/48/79/cb9cd77fa308247386afe8fc555c2d6446167026c868e620ca6c64e2995a/pyvrp-0.13.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:165e0fda27149f6e48f970c1d5b54544c9d3a0cd75f9ec4967613886d53b66c7", size = 762787, upload-time = "2026-05-20T11:58:40.804Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/fd/8c319efb938d62bc558f14ffa554d79f77bc38bceff9ab02f9652d0e5b93/pyvrp-0.13.4-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:fee5b85c1e36135a9fac36c03df2c2d92ea0dd1d01965ae3529d71197ba074a4", size = 1678943, upload-time = "2026-05-20T11:58:42.28Z" },
+    { url = "https://files.pythonhosted.org/packages/42/20/c7cbe286ce0339c53014d85e44b22bca75bb06e33c1568d113fa18e1ab0e/pyvrp-0.13.4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:84c3aea6e2bd644c91cb3e51e642654aa03146667fcd7b9fb5284e2d8f137172", size = 1788401, upload-time = "2026-05-20T11:58:43.576Z" },
+    { url = "https://files.pythonhosted.org/packages/92/e4/1f6c8f5025be25d594ba16182c1ffd37b80759161ac3935605a5a7c18ad2/pyvrp-0.13.4-cp313-cp313-win_amd64.whl", hash = "sha256:63eb30e846bf028b858ef720f1b9cba2ac78619654cbba785937be214d4d7000", size = 1562077, upload-time = "2026-05-20T11:58:45.362Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/a8/418b1a459e843521d2f3ce86b193d4c60bad4a4868c204db580c550ef28f/pyvrp-0.13.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:5bf7ab4e4266ed92cf447d436dd8d3aced854d97b67c92aaee05f2110b6ea85d", size = 639843, upload-time = "2026-05-20T11:58:46.819Z" },
+    { url = "https://files.pythonhosted.org/packages/35/04/c2fb703b47f2f744d4e3fa000ad7f0f672ce876bad9aed3456c6793c409b/pyvrp-0.13.4-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ca56e03f25db042a0b6c77940e79759bfb3373cee7e078c6fbc5cb98e30ca435", size = 700153, upload-time = "2026-05-20T11:58:48.112Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/cd/248e7719e6e2b46cd668da8b7bda766c7cdc696c547195c321c7d06dd073/pyvrp-0.13.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3127804d22e6e09d80b7b6590feab8a1f1adab29bc141c221c87bb068798242c", size = 763546, upload-time = "2026-05-20T11:58:49.352Z" },
+    { url = "https://files.pythonhosted.org/packages/64/19/7e267e43d4e4892a1a19594f0f3745c8db8c116cd72713acd909d24cbb94/pyvrp-0.13.4-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:ebb7af8213e11e6977af55e5d3a1bba4c054f2afa38d1a8c43edaff7967e44a6", size = 1680896, upload-time = "2026-05-20T11:58:50.639Z" },
+    { url = "https://files.pythonhosted.org/packages/75/41/577a5152b002b3d0fc9f59449a2065ccef2a0045de9f3b45c9b51a64611f/pyvrp-0.13.4-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:fb911785d16bca9c62279e6e96f54804ca98901ed8572265a84e809507f2c8da", size = 1788737, upload-time = "2026-05-20T11:58:52.112Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/d8/dc0d3363bdb11f2291f4bc8ff63bcc133a8805e233ae43f4b63e981b5139/pyvrp-0.13.4-cp314-cp314-win_amd64.whl", hash = "sha256:ebb0f685bce8cbc3a174b25fccf9aada8a2400606fd71327522ce06c49134a1f", size = 1615806, upload-time = "2026-05-20T11:58:53.397Z" },
 ]
 
 [[package]]
