@@ -1074,11 +1074,13 @@ function renderFamilyCards(families) {
     .join("")}</div>`;
 }
 
-function renderInstanceRows(items) {
+function renderInstanceRows(items, options = {}) {
   if (!items || items.length === 0) {
     return `<div class="empty-state">No instances are present in this slice.</div>`;
   }
-  return `<div class="table-wrap"><table><thead><tr><th>Instance</th><th>Size</th><th>Context</th><th>Objectives</th><th>Actions</th></tr></thead><tbody>${items
+  const inspector = options.inspector === true;
+  const actionsHeader = inspector ? "" : "<th>Actions</th>";
+  return `<div class="table-wrap"><table><thead><tr><th>Instance</th><th>Size</th><th>Context</th><th>Objectives</th>${actionsHeader}</tr></thead><tbody>${items
     .map((item) => {
       const contextParts = [item.place_slug, item.historical_topology_type, item.historical_tw_type && `TW${item.historical_tw_type}`].filter(Boolean);
       const objectiveBadges = item.objective_availability
@@ -1090,13 +1092,17 @@ function renderInstanceRows(items) {
       const objectiveCell = objectiveBadges
         ? `<div class="bks-link-chip-row">${objectiveBadges}</div>`
         : '<span class="meta-line">No BKS</span>';
-      const workbenchLink = supportsWorkbenchInstance(item)
-        ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
-        : "";
       const rowTitle = `${item.instance_id}\n${item.artifact_vrp_json_path}`;
       const vrpHref = artifactHref(item.artifact_vrp_json_path);
       const nameCell = `<a class="vrp-link" href="${vrpHref}" target="_blank" rel="noopener" title="Open ${escapeHtml(item.display_name)}.vrp.json">${escapeHtml(item.display_name)}</a>`;
-      return `<tr title="${escapeHtml(rowTitle)}"><td class="table-cell-mono">${nameCell}</td><td class="table-cell-num">${escapeHtml(item.num_customers)}</td><td>${escapeHtml(contextParts.join(" · ")) || '<span class="meta-line">—</span>'}</td><td>${objectiveCell}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
+      const baseCells = `<td class="table-cell-mono">${nameCell}</td><td class="table-cell-num">${escapeHtml(item.num_customers)}</td><td>${escapeHtml(contextParts.join(" · ")) || '<span class="meta-line">—</span>'}</td><td>${objectiveCell}</td>`;
+      if (inspector) {
+        return `<tr class="inspector-row" tabindex="0" data-inspect-route="${escapeHtml(item.route_path)}" title="${escapeHtml(rowTitle)}">${baseCells}</tr>`;
+      }
+      const workbenchLink = supportsWorkbenchInstance(item)
+        ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
+        : "";
+      return `<tr title="${escapeHtml(rowTitle)}">${baseCells}<td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
@@ -1108,7 +1114,8 @@ function variantSortKey(variant) {
   return idx === -1 ? VARIANT_SORT_ORDER.length : idx;
 }
 
-function renderInstanceGroups(items, preserveOrder = false) {
+function renderInstanceGroups(items, preserveOrder = false, options = {}) {
+  const inspector = options.inspector === true;
   if (!items || items.length === 0) {
     return `<div class="empty-state">No instances are present in this slice.</div>`;
   }
@@ -1144,20 +1151,25 @@ function renderInstanceGroups(items, preserveOrder = false) {
       const objectiveCell = objectiveBadges
         ? `<div class="bks-link-chip-row">${objectiveBadges}</div>`
         : '<span class="meta-line">No BKS</span>';
-      const workbenchLink = supportsWorkbenchInstance(item)
-        ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
-        : "";
       const rowTitle = `${item.instance_id}\n${item.artifact_vrp_json_path}`;
       const variantLabel = item.locator.metric_variant ?? "";
       const vrpHref = artifactHref(item.artifact_vrp_json_path);
       const variantCell = variantLabel
         ? `<a class="vrp-link" href="${vrpHref}" target="_blank" rel="noopener" title="Open ${escapeHtml(item.display_name)} (${escapeHtml(variantLabel)}) .vrp.json">${escapeHtml(variantLabel)}</a>`
         : "";
-      return `<tr class="group-sub" title="${escapeHtml(rowTitle)}"><td class="indent" aria-hidden="true">↳</td><td class="table-cell-mono">${variantCell}</td><td>${objectiveCell}</td><td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
+      const baseCells = `<td class="indent" aria-hidden="true">↳</td><td class="table-cell-mono">${variantCell}</td><td>${objectiveCell}</td>`;
+      if (inspector) {
+        return `<tr class="group-sub inspector-row" tabindex="0" data-inspect-route="${escapeHtml(item.route_path)}" title="${escapeHtml(rowTitle)}">${baseCells}</tr>`;
+      }
+      const workbenchLink = supportsWorkbenchInstance(item)
+        ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Workbench</a>`
+        : "";
+      return `<tr class="group-sub" title="${escapeHtml(rowTitle)}">${baseCells}<td><div class="inline-actions"><a class="mini-link" href="${routeHref(item.route_path)}">Open</a>${workbenchLink}</div></td></tr>`;
     }).join("");
     return `<tbody class="group"><tr class="group-header">${headerCell}</tr>${subRows}</tbody>`;
   });
-  return `<div class="table-wrap"><table class="grouped-instance-table"><thead><tr><th></th><th>Variant</th><th>Objectives</th><th>Actions</th></tr></thead>${tbodies.join("")}</table></div>`;
+  const actionsHeader = inspector ? "" : "<th>Actions</th>";
+  return `<div class="table-wrap"><table class="grouped-instance-table"><thead><tr><th></th><th>Variant</th><th>Objectives</th>${actionsHeader}</tr></thead>${tbodies.join("")}</table></div>`;
 }
 
 function renderHome(payload) {
@@ -1435,6 +1447,176 @@ function renderProblemIndex(payload) {
   setStatus(`Loaded ${payload.families.length} families`);
 }
 
+// ── A7 step 2: inspector pane on instance-list pages ──────────────────────
+// Selecting a row fills the right-side pane (mini route preview, key facts,
+// BKS/provenance, actions); Enter or a direct link still opens the record.
+// The pane exists only on catalog index pages whose rows are instances;
+// higher catalog levels and every route/URL stay untouched.
+
+let inspectorRoute = null;
+let inspectorLoadToken = 0;
+
+function inspectorStatusChip(item) {
+  const availability = item.objective_availability || [];
+  if (availability.some((entry) => entry.optimality_proven)) {
+    return '<span class="badge tag-gr">proven optimal</span>';
+  }
+  return availability.length ? '<span class="badge tag-am">heuristic</span>' : "";
+}
+
+function renderInspectorPaneShell(item) {
+  if (!item) {
+    return `<div class="inspector-kicker">Inspector</div><div class="empty-state">Select an instance row to inspect it.</div>`;
+  }
+  const problemType = item.locator?.problem_type || "";
+  const problemChip = problemType ? `<span class="badge">${escapeHtml(problemType)}</span>` : "";
+  const workbenchAction = supportsWorkbenchInstance(item)
+    ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Open in workbench →</a>`
+    : "";
+  return `
+    <div class="inspector-kicker">Inspector</div>
+    <div class="inspector-title-row"><span class="inspector-name">${escapeHtml(item.display_name)}</span>${problemChip}${inspectorStatusChip(item)}</div>
+    <div class="inspector-preview" data-inspector-preview><div class="inspector-preview-skeleton" aria-hidden="true"></div></div>
+    <div data-inspector-details><div class="meta-line">Loading instance details…</div></div>
+    <div class="inspector-actions">
+      <a class="mini-link" href="${routeHref(item.route_path)}">Open full record →</a>
+      ${workbenchAction}
+    </div>`;
+}
+
+function renderInspectorDetails(item, payload, preview) {
+  const summary = payload.summary || {};
+  const entries = payload.bks_entries || [];
+  const entry = preview?.selectedEntry || null;
+  const objectiveChips = entries.length > 1
+    ? `<div class="selector-row">${entries
+        .map((candidate) => `<button type="button" class="bks-chip${entry && candidate.objective_function === entry.objective_function ? " active" : ""}" data-inspector-objective="${escapeHtml(candidate.objective_function)}">${escapeHtml(candidate.objective_function)}</button>`)
+        .join("")}</div>`
+    : "";
+  const stats = [
+    [entry ? `BKS · ${entry.objective_function}` : "BKS", entry ? { html: `<strong class="inspector-cost">${escapeHtml(formatCost(entry.cost))}</strong>` } : "none"],
+    ["Routes", entry?.num_routes ?? "n/a"],
+    ["Customers", summary.num_customers ?? item.num_customers],
+    ["Capacity", summary.vehicle_capacity ?? "n/a"],
+  ];
+  const statCells = stats
+    .map(([label, value]) => `<div><span>${escapeHtml(label)}</span>${typeof value === "object" && value?.html ? value.html : `<strong>${escapeHtml(value)}</strong>`}</div>`)
+    .join("");
+  const provenance = [];
+  if (entry?.optimality?.proven) {
+    const proof = entry.optimality;
+    if (proof.certificate) provenance.push(["Certificate", proof.certificate]);
+    if (proof.prover) provenance.push(["Prover", proof.prover]);
+    if (proof.campaign) provenance.push(["Campaign", proof.campaign]);
+    if (proof.date) provenance.push(["Proven", proof.date]);
+  }
+  if (entry?.method) provenance.push(["Method", entry.method]);
+  if (entry?.authors) provenance.push(["Authors", entry.authors]);
+  const provenanceGrid = provenance.length
+    ? `<div class="inspector-prov">${provenance.map(([key, value]) => `<span>${escapeHtml(key)}</span><span>${escapeHtml(value)}</span>`).join("")}</div>`
+    : "";
+  const downloads = [
+    `<a class="download-chip" href="${artifactHref(item.artifact_vrp_json_path)}" target="_blank" rel="noopener">.vrp.json ↓</a>`,
+    entry?.artifact_path ? `<a class="download-chip" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener">.bks.${escapeHtml(entry.objective_function)}.json ↓</a>` : "",
+  ].join("");
+  return `${objectiveChips}<div class="inspector-stats">${statCells}</div>${provenanceGrid}<div class="inline-actions">${downloads}</div>`;
+}
+
+async function hydrateInspectorPane(item, preferredObjective = null) {
+  const token = ++inspectorLoadToken;
+  const pane = state.stage.querySelector("[data-inspector-pane]");
+  if (!pane || !item) {
+    return;
+  }
+  try {
+    const payload = await fetchWorkbenchPayloadForRoute(item.route_path);
+    const preview = await loadWorkbenchInstancePreview(payload, preferredObjective);
+    if (token !== inspectorLoadToken || inspectorRoute !== item.route_path) {
+      return;
+    }
+    const routeGeometryMeta = await routeGeometryMetaForEntry(preview?.selectedEntry);
+    if (token !== inspectorLoadToken || inspectorRoute !== item.route_path) {
+      return;
+    }
+    const previewBox = pane.querySelector("[data-inspector-preview]");
+    if (previewBox && preview?.instanceData) {
+      previewBox.innerHTML = renderPreviewSvg(preview.instanceData, preview.selectedBksData, preview.selectedEntry, {
+        geometryMeta: mergeGeometryMeta(preview.geometryMeta, routeGeometryMeta),
+        metricVariant: payload.summary?.metric_variant,
+        viewerRenderMode: routeGeometryMeta ? "cached_road" : payload.summary?.viewer_render_mode,
+        roadCacheStatus: routeGeometryMeta ? "complete" : payload.summary?.road_cache_status,
+      });
+    }
+    const details = pane.querySelector("[data-inspector-details]");
+    if (details) {
+      details.innerHTML = renderInspectorDetails(item, payload, preview);
+      details.querySelectorAll("[data-inspector-objective]").forEach((button) => {
+        button.addEventListener("click", () => hydrateInspectorPane(item, button.dataset.inspectorObjective));
+      });
+    }
+  } catch (error) {
+    console.warn("Unable to hydrate the inspector pane", error);
+    if (token === inspectorLoadToken) {
+      const details = pane.querySelector("[data-inspector-details]");
+      if (details) {
+        details.innerHTML = `<div class="empty-state">Unable to load this instance's details.</div>`;
+      }
+    }
+  }
+}
+
+function selectInspectorRow(route, itemsByRoute) {
+  inspectorRoute = route;
+  state.stage.querySelectorAll("[data-inspect-route]").forEach((row) => {
+    row.classList.toggle("inspector-selected", row.dataset.inspectRoute === route);
+  });
+  const pane = state.stage.querySelector("[data-inspector-pane]");
+  const item = itemsByRoute.get(route);
+  if (!pane) {
+    return;
+  }
+  pane.innerHTML = renderInspectorPaneShell(item);
+  if (item) {
+    hydrateInspectorPane(item);
+  }
+}
+
+function inspectorPaneVisible() {
+  const pane = state.stage.querySelector("[data-inspector-pane]");
+  return Boolean(pane && pane.offsetParent !== null);
+}
+
+function attachInspectorRows(itemsByRoute) {
+  state.stage.querySelectorAll("[data-inspect-route]").forEach((row) => {
+    const route = row.dataset.inspectRoute;
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("a")) {
+        return;
+      }
+      if (!inspectorPaneVisible()) {
+        window.location.href = routeHref(route);
+        return;
+      }
+      selectInspectorRow(route, itemsByRoute);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        window.location.href = routeHref(route);
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const rows = Array.from(state.stage.querySelectorAll("[data-inspect-route]"));
+        const nextRow = rows[rows.indexOf(row) + (event.key === "ArrowDown" ? 1 : -1)];
+        if (nextRow) {
+          nextRow.focus();
+          selectInspectorRow(nextRow.dataset.inspectRoute, itemsByRoute);
+        }
+      }
+    });
+  });
+}
+
 function renderCatalogIndex(payload) {
   setPage(payload.title, payload.description || `Static listing for ${payload.benchmark_name}.`, payload.breadcrumbs, "catalog");
   const filteredItems = filteredCollectionItems(payload);
@@ -1463,9 +1645,17 @@ function renderCatalogIndex(payload) {
   ].join("");
   const isMamut2026FamilyPage =
     payload.payload_kind === "family_index" && payload.benchmark_name === "Mamut2026";
-  state.stage.innerHTML = isMamut2026FamilyPage
-    ? renderInstanceGroups(filteredItems, true)
-    : renderInstanceRows(filteredItems);
+  const tableHtml = isMamut2026FamilyPage
+    ? renderInstanceGroups(filteredItems, true, { inspector: true })
+    : renderInstanceRows(filteredItems, { inspector: true });
+  const tableHint = filteredItems.length
+    ? `<div class="meta-line inspector-hint">Click a row to inspect · ⏎ opens the full record</div>`
+    : "";
+  state.stage.innerHTML = `<div class="catalog-with-inspector"><div class="catalog-table-col">${tableHtml}${tableHint}</div><aside class="inspector-pane" data-inspector-pane></aside></div>`;
+  const itemsByRoute = new Map(filteredItems.map((item) => [item.route_path, item]));
+  attachInspectorRows(itemsByRoute);
+  const initialRoute = itemsByRoute.has(inspectorRoute) ? inspectorRoute : (filteredItems[0]?.route_path ?? null);
+  selectInspectorRow(initialRoute, itemsByRoute);
   const sortSelect = state.aside.querySelector("[data-collection-sort]");
   if (sortSelect) sortSelect.value = state.collectionFilters.sort;
   state.aside.querySelectorAll("[data-collection-filter]").forEach((select) => select.addEventListener("change", () => {
