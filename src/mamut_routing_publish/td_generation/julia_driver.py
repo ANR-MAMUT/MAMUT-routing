@@ -62,17 +62,6 @@ println({json.dumps(_RESULT_MARKER)}, JSON3.write(result))
     raise RuntimeError(f"Julia call produced no result marker:\n{completed.stdout[-2000:]}")
 
 
-def fetch_city(repo_root: Path, *, city: str, country: str = "", max_radius_km: float = 0.0,
-               padding_km: float = 0.0) -> dict:
-    payload = {
-        "city": city,
-        "country": country,
-        "maxRadiusKm": max_radius_km,
-        "paddingKm": padding_km,
-    }
-    return _run_julia_call(repo_root, "fetch_and_store_city_osm(payload)", payload)
-
-
 def avg_route_size_for_n(n_customers: int) -> int:
     """Mamut2026 size-aware route-size category."""
     if n_customers <= 10:
