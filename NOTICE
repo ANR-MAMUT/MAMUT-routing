@@ -19,7 +19,30 @@ Component licensing
 - benchmarks/VRPTW/Ortec2022: ORTEC instances and related redistributed BKS
   files are provided under Creative Commons Attribution-NonCommercial 4.0
   International (CC BY-NC 4.0).
-- benchmarks/CVRP/Mamut2026 and benchmarks/VRPTW/Mamut2026: OSM-derived
+- benchmarks/TDVRPTW/Dabia2013 and benchmarks/TDVRP/Dabia2013: MAMUT-routing
+  curation artifacts are provided under MIT where MAMUT-routing holds the
+  relevant rights. The underlying Solomon-derived IGP instances are those
+  distributed with the MIT-licensed open-source solver of Lera-Romero,
+  Miranda Bront and Soulignac (2020).
+- benchmarks/TDVRPTW/Ari2018 and benchmarks/TDVRP/Ari2018: MAMUT-routing
+  curation artifacts are provided under MIT where MAMUT-routing holds the
+  relevant rights. The underlying benchmark definitions originate from the
+  time-dependent TSPTW generator of the Arigliano et al. lineage.
+- benchmarks/TDVRPTW/Vu2020 and benchmarks/TDVRP/Vu2020: MAMUT-routing
+  curation artifacts are provided under MIT where MAMUT-routing holds the
+  relevant rights. The underlying raw files originate from the Vu et al.
+  (2020) time-dependent TSPTW benchmark material.
+- benchmarks/TDVRPTW/Rifki2020 and benchmarks/TDVRP/Rifki2020: MAMUT-routing
+  curation artifacts are provided under MIT where MAMUT-routing holds the
+  relevant rights. The underlying stepwise travel-time construction follows
+  Rifki et al. (2020); coordinates are a deterministic MAMUT-routing
+  embedding.
+- benchmarks/TDVRPTW/Lera2026 and benchmarks/TDVRP/Lera2026: MAMUT-routing
+  generation and curation artifacts are provided under MIT where
+  MAMUT-routing holds the relevant rights. The base data are the Gehring and
+  Homberger (1999) instances as curated in benchmarks/VRPTW/Sintef2008, with
+  IGP (Ichoua-Gendreau-Potvin 2003) travel speeds.
+- benchmarks/Mamut2026 (CVRP, VRPTW, TDVRP and TDVRPTW layers): OSM-derived
   benchmark instances, sidecars, generated route artifacts, and related
   benchmark data are distributed under ODbL 1.0 where they derive from
   OpenStreetMap data.
