@@ -361,8 +361,10 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "CC BY-NC 4.0" in legal_payload["markdown"]
     assert "ODbL" in legal_payload["markdown"]
     assert "does not require cookies" in legal_payload["markdown"]
-    assert "Google Fonts" in legal_payload["markdown"]
-    assert "unpkg.com" in legal_payload["markdown"]
+    assert "self-hosted" in legal_payload["markdown"]
+    assert "tile.openstreetmap.org" in legal_payload["markdown"]
+    assert "Google Fonts" not in legal_payload["markdown"]
+    assert "unpkg.com" not in legal_payload["markdown"]
 
     historical_instance_page = json.loads(
         (payload_root / "benchmarks" / "vrptw" / "sintef2008" / "n=2" / "C101" / "index.json").read_text(encoding="utf-8")
@@ -403,7 +405,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    assert webapp_summary.asset_files_written == 16
+    # 4 css/js bundles + 4 icons + 8 logos + 1 font + 9 vendored Leaflet files.
+    assert webapp_summary.asset_files_written == 25
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -430,6 +433,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "site.js").exists()
     assert (site_output / "webapp" / "workbench.css").exists()
     assert (site_output / "webapp" / "workbench.js").exists()
+    assert (site_output / "webapp" / "fonts" / "InterVariable.woff2").exists()
+    assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.js").exists()
+    assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.css").exists()
 
     root_html = (site_output / "index.html").read_text(encoding="utf-8")
     assert 'data-payload-mode="static"' in root_html
@@ -441,6 +447,10 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "Project" in root_html
     assert 'id="pageTitle"' not in root_html
     assert 'id="pageIntro"' not in root_html
+    # Nocturne reskin: fonts are self-hosted, no third-party asset hosts.
+    assert "webapp/fonts/InterVariable.woff2" in root_html
+    assert "fonts.googleapis.com" not in root_html
+    assert "unpkg.com" not in root_html
 
     workbench_html = (site_output / "workbench" / "index.html").read_text(encoding="utf-8")
     assert 'data-page-kind="workbench-app"' in workbench_html
@@ -453,6 +463,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert 'id="tabGenerate"' in workbench_html
     assert 'id="benchmarkCatalogSelect"' in workbench_html
     assert 'id="map"' in workbench_html
+    # Nocturne reskin: Leaflet and fonts are self-hosted.
+    assert "vendor/leaflet/leaflet.js" in workbench_html
+    assert "vendor/leaflet/leaflet.css" in workbench_html
+    assert "unpkg.com" not in workbench_html
+    assert "fonts.googleapis.com" not in workbench_html
     assert 'id="benchmarkInstanceSelect"' in workbench_html
     assert 'id="benchmarkObjectiveSelect"' in workbench_html
     assert 'id="pageTitle"' not in workbench_html

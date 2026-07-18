@@ -8,7 +8,7 @@ This page summarizes privacy, third-party asset requests, licensing, and contrib
 
 The static MAMUT-routing website has no account system, stores no user information, and does not require cookies for its own operation.
 
-The current static shell loads Google Fonts, and the workbench shell loads Leaflet assets from `unpkg.com`. These third-party asset requests are made by the browser when the corresponding pages are opened. MAMUT-routing itself does not use these requests to identify users or store visitor data.
+All fonts (Inter) and JavaScript libraries (Leaflet) are self-hosted with the website: opening a page triggers no third-party asset request. The one exception is the workbench map, whose background tiles are fetched by the browser from OpenStreetMap (`tile.openstreetmap.org`) and Carto (`basemaps.cartocdn.com`) tile servers when the map is displayed. MAMUT-routing itself does not use these requests to identify users or store visitor data.
 
 ## Licenses
 
