@@ -78,6 +78,17 @@ def normalize_request_path(raw_path: str) -> str | None:
     return "/" + "/".join(segments) + ("/" if keep_trailing_slash else "")
 
 
+def _contained(candidate: Path, root: Path) -> bool:
+    """Containment against the RESOLVED root: ``dist`` is a symlink to the
+    active release on deployments (atomic-swap layout), so candidates resolve
+    outside the repo tree legitimately. Traversal segments are already
+    rejected at normalization; this guards symlink escapes past the root."""
+    try:
+        return candidate.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
 def resolve_public_file(repo_root: Path, request_path: str) -> Path | None:
     """Port of the Julia server's dual-root resolution.
 
@@ -96,17 +107,16 @@ def resolve_public_file(repo_root: Path, request_path: str) -> Path | None:
         if "." not in relative.rsplit("/", 1)[-1]:
             relative_candidates.append(f"{relative}/index.html")
 
-    repo_root = repo_root.resolve()
     site_root = repo_root / "dist"
     for relative_candidate in relative_candidates:
         site_candidate = site_root / relative_candidate
-        if site_candidate.is_file() and site_candidate.resolve().is_relative_to(repo_root):
+        if site_candidate.is_file() and _contained(site_candidate, site_root):
             return site_candidate
         first_segment = relative_candidate.split("/", 1)[0]
         if first_segment not in REPO_ARTIFACT_ROOT_ENTRIES:
             continue
         repo_candidate = repo_root / relative_candidate
-        if repo_candidate.is_file() and repo_candidate.resolve().is_relative_to(repo_root):
+        if repo_candidate.is_file() and _contained(repo_candidate, repo_root / first_segment):
             return repo_candidate
     return None
 

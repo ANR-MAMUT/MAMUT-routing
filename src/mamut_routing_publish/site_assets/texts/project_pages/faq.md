@@ -2,6 +2,14 @@
 
 This page collects short answers to common questions about contributing benchmark material and comparing MAMUT-routing conventions with other VRPTW sources.
 
+## Why did instance generation and solving move out of the website?
+
+The workbench used to run OSM city fetches, CVRP/VRPTW instance generation, and heuristic solving on the public server. These are compute-heavy, long-running jobs; hosting them publicly meant rate limits, timeouts, queueing, and abuse handling that made both the website and the tools worse. Since the project is in an active beta phase, we decoupled the two concerns: the website is now fully static and only visualizes the published benchmark data, while all generation and solving runs on your own machine with the [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) suite.
+
+Local runs are faster (your CPU, no shared limits), work offline once a city extract is cached, support much larger instances than the public endpoints ever allowed, and write the generated files directly to your disk. The tools ship a command-line interface plus a local workbench GUI with the same generation flows the website tab used to host.
+
+Quick start: clone the [repository](https://github.com/ANR-MAMUT/MAMUT-routing-tools), install [uv](https://github.com/astral-sh/uv), and run `uv run mamut-tools --help` from the checkout. The uploaded-file visualizer in the public workbench still works; it draws straight-line routes, and road-following rendering for your own data is part of the local tools.
+
 ## How to download and manipulate instances and BKS
 
 The benchmark instances and their best-known solutions (BKS) can be retrieved in two complementary ways. Pick whichever fits your workflow best.

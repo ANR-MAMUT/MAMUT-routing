@@ -211,6 +211,7 @@ def _render_workbench_shell_html(
         ]
     )
     benchmarks_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/benchmarks/"))
+    faq_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/project/faq/"))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -233,7 +234,7 @@ def _render_workbench_shell_html(
         <div class="header-row">
             <div>
                 <a class="brand-link brand-link-with-logo" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, '/'))}"><img class="brand-logo" src="{logo_href}" alt="MAMUT project logo" /><span>MAMUT-routing</span></a>
-                <p class="brand-tagline">Original-style workbench for benchmark preload, upload visualization, single and batch instance generation, and OSM-backed preview flows.</p>
+                <p class="brand-tagline">Workbench for visualizing published benchmarks and local uploads. Instance generation and solving run locally with MAMUT-routing-tools.</p>
             </div>
             <label class="theme-toggle" title="Toggle dark mode">
                 <input id="themeSwitch" type="checkbox" />
@@ -319,27 +320,7 @@ def _render_workbench_shell_html(
                         <span>Metadata sidecar (.json)</span>
                         <input id="metaInput" type="file" accept=".json" />
                     </label>
-                    <label class="field">
-                        <span>Route API endpoint</span>
-                        <input id="apiUrlInput" type="text" value="/api/workbench/render-routes" />
-                    </label>
-                    <label class="field">
-                        <span>Route metric</span>
-                        <select id="metricSelect">
-                            <option value="shortest">Shortest</option>
-                            <option value="fastest">Fastest</option>
-                            <option value="euclidean">Euclidean</option>
-                        </select>
-                    </label>
-                    <label class="field">
-                        <span>HGS time limit (seconds)</span>
-                        <input id="solveTimeLimitInput" type="number" min="1" value="30" />
-                    </label>
-                    <div class="btn-row">
-                        <button id="roadBtn" type="button">Render Road Geometry</button>
-                        <button id="solveBtn" type="button">Solve with HGS</button>
-                        <button id="saveHgsBtn" type="button" hidden>Save HGS Solution</button>
-                    </div>
+                    <p class="meta-line">Uploaded routes draw as straight lines. Road-following rendering and solving run locally with MAMUT-routing-tools (see the Generate tab).</p>
                 </section>
 
                 <section class="card" id="routeSelectorCard" style="display:none;">
@@ -362,169 +343,17 @@ def _render_workbench_shell_html(
 
             <section id="generationPanel" class="tab-panel">
                 <section class="card">
-                    <h2>Fetch OSM Data</h2>
-                    <p class="workbench-card-intro">Download an OSM extract by city/locality name into <code>MAMUT-routing/osmdata/</code>. The new city becomes available for instance generation immediately.</p>
-                    <label class="field">
-                        <span>City to fetch</span>
-                        <input id="genFetchCityInput" type="text" placeholder="e.g. Berlin" />
-                    </label>
-                    <label class="field">
-                        <span>Country (optional)</span>
-                        <input id="genFetchCountryInput" type="text" placeholder="e.g. Germany" />
-                    </label>
-                    <label class="field">
-                        <span>Padding (km)</span>
-                        <input id="genFetchPaddingInput" type="number" min="0" step="0.5" value="0" />
-                    </label>
-                    <button id="genFetchBtn" type="button">Fetch OSM And Add City</button>
-                </section>
-
-                <section class="card">
-                    <h2>Generation Setup</h2>
-                    <label class="field">
-                        <span>Problem type</span>
-                        <select id="genProblemTypeSelect">
-                            <option value="CVRP" selected>CVRP — capacity only</option>
-                            <option value="VRPTW">VRPTW — capacity + time windows</option>
-                        </select>
-                    </label>
-                    <label class="field">
-                        <span>City</span>
-                        <select id="genCitySelect"></select>
-                    </label>
-                    <label class="field">
-                        <span>Method</span>
-                        <select id="genMethodSelect">
-                            <option value="poi_categories">POI Categories</option>
-                            <option value="parametric_attach">Parametric Attach</option>
-                            <option value="hybrid">Hybrid</option>
-                        </select>
-                    </label>
-                    <label class="field gen-field-common">
-                        <span>Customers</span>
-                        <input id="genCustomersInput" type="number" min="2" value="50" />
-                    </label>
-                    <label class="field gen-field-common">
-                        <span>Demand distribution</span>
-                        <select id="genDemandTypeSelect">
-                            <option value="1">1 — Unitary</option>
-                            <option value="2">2 — Small, large var</option>
-                            <option value="3">3 — Small, small var</option>
-                            <option value="4">4 — Large, large var</option>
-                            <option value="5">5 — Large, small var</option>
-                            <option value="6">6 — Large, depending on quadrant</option>
-                            <option value="7" selected>7 — Few large, many small</option>
-                        </select>
-                    </label>
-                    <label class="field gen-field-common">
-                        <span>Average route size</span>
-                        <select id="genAvgRouteSizeSelect">
-                            <option value="1">1 — Ultra short</option>
-                            <option value="2">2 — Very short</option>
-                            <option value="3">3 — Short</option>
-                            <option value="4" selected>4 — Medium</option>
-                            <option value="5">5 — Long</option>
-                            <option value="6">6 — Very long</option>
-                            <option value="7">7 — Ultra long</option>
-                        </select>
-                    </label>
-                    <label class="field gen-field-common">
-                        <span>Seed</span>
-                        <input id="genSeedInput" type="number" min="0" value="0" />
-                    </label>
-                    <label class="field checkbox-field gen-field-common">
-                        <span>Only intersections</span>
-                        <input id="genOnlyIntersectionsInput" type="checkbox" checked />
-                    </label>
-                    <label class="field gen-field-poi gen-field-parametric gen-field-hybrid">
-                        <span>Depot mode</span>
-                        <select id="genDepotModeSelect">
-                            <option value="center">Center</option>
-                            <option value="random">Random</option>
-                            <option value="corner">Corner</option>
-                        </select>
-                    </label>
-                    <label class="field gen-field-parametric gen-field-hybrid">
-                        <span>Customer mode</span>
-                        <select id="genCustomerModeSelect">
-                            <option value="random_clustered">Random-clustered</option>
-                            <option value="clustered">Clustered</option>
-                            <option value="random">Random</option>
-                        </select>
-                    </label>
-                    <label class="field gen-field-cluster gen-field-parametric gen-field-hybrid">
-                        <span>Cluster seeds</span>
-                        <input id="genClusterSeedsInput" type="number" min="1" value="4" />
-                    </label>
-                    <label class="field gen-field-cluster gen-field-parametric gen-field-hybrid">
-                        <span>Cluster decay (meters)</span>
-                        <input id="genClusterDecayInput" type="number" min="50" value="800" />
-                    </label>
-                    <div class="field gen-field-poi gen-field-hybrid">
-                        <span>POI categories</span>
-                        <div class="poi-toolbar">
-                            <button id="genPoiSelectAllBtn" type="button" class="mini-btn">Select all</button>
-                            <button id="genPoiClearBtn" type="button" class="mini-btn">Clear</button>
-                            <span id="genPoiCount" class="poi-count">0 selected</span>
-                        </div>
-                        <details id="genPoiMenu" class="poi-menu" open>
-                            <summary>Choose POI types</summary>
-                            <div id="genPoiList" class="poi-list"></div>
-                        </details>
+                    <h2>Generate Or Solve Locally</h2>
+                    <p class="workbench-card-intro">Instance generation (OSM city fetch, CVRP/VRPTW sampling, TD families) and solving now run locally with the <strong>MAMUT-routing-tools</strong> suite instead of on this website. Local runs are faster, are not limited by a shared public server, and write instances straight to your machine.</p>
+                    <div class="inline-actions">
+                        <a class="button-link primary" href="https://github.com/ANR-MAMUT/MAMUT-routing-tools" rel="noopener">Get MAMUT-routing-tools</a>
+                        <a class="mini-link" href="{faq_href}">Why local? See the FAQ</a>
                     </div>
-                    <label class="field gen-field-hybrid">
-                        <span>Hybrid POI share: <output id="genHybridShareValue">0.50</output></span>
-                        <input id="genHybridShareInput" type="range" min="0" max="1" step="0.05" value="0.5" />
-                    </label>
-                    <fieldset class="field gen-field-vrptw" id="genVrptwFieldset">
-                        <legend>Time-window generation</legend>
-                        <label class="field">
-                            <span>TW method</span>
-                            <select id="genTwMethodSelect">
-                                <option value="route_centered" selected>Route-centered (Solomon C-class)</option>
-                                <option value="reachable_interval">Reachable-interval (Solomon R/RC)</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>Horizon start (s)</span>
-                            <input id="genTwHorizonStartInput" type="number" min="0" value="0" />
-                        </label>
-                        <label class="field">
-                            <span>Horizon end (s)</span>
-                            <input id="genTwHorizonEndInput" type="number" min="60" value="86400" />
-                        </label>
-                        <p class="meta-line">Service times and arrival-time targets are sampled per the chosen TW method, then each window is repaired so depot→customer→depot is feasible.</p>
-                    </fieldset>
-                    <div class="btn-row">
-                        <button id="genGenerateBtn" type="button">Generate Data</button>
-                        <button id="genDisplayBtn" type="button">Display on Map</button>
-                        <button id="genFilesBtn" type="button">Download Files</button>
-                    </div>
+                    <p class="meta-line">Quick start: clone the repository, install <a href="https://github.com/astral-sh/uv" rel="noopener">uv</a>, then run <code>uv run mamut-tools --help</code>. The local workbench GUI offers the same generation flows this tab used to host, plus everything that was too heavy for the public site.</p>
                 </section>
-
-                <section class="card">
-                    <h2>Bulk Generation</h2>
-                    <button id="openBulkModalBtn" type="button">Open Bulk Configuration</button>
-                    <span id="bulkCountBadge" class="poi-count" style="margin-left:0.5rem">0 instances</span>
-                </section>
-
-                <section class="card" id="tdGenerationCard">
-                    <h2>Time-Dependent Generation</h2>
-                    <p class="meta-line">Runs the published Mamut2026 v2 pipeline on the selected city: CVRP base (3 metrics), VRPTW time-window sets, 6 traffic overlays and the 12 TDVRP/TDVRPTW subinstances, with shared road/geo/distances sidecars. Uses the city, customer count and sampling method selected above (n &le; 100); expect a few minutes per city. Generated data is workbench-scoped, not part of the published collection.</p>
-                    <div class="btn-row">
-                        <button id="tdGenerateBtn" type="button">Generate TD Family</button>
-                    </div>
-                    <pre id="tdGenResult" class="mono-block">No TD generation call yet.</pre>
-                </section>
-
-                <section class="card">
-                    <h2>Generation Output</h2>
-                    <pre id="genResult" class="mono-block">No generation call yet.</pre>
-                </section>
-
                 <section class="card note-card">
                     <h2>Notes</h2>
-                    <p id="generationNote">Display on Map uses the Paper7 workbench preview endpoint. File generation and HGS solving will be bridged in a later backend slice.</p>
+                    <p class="meta-line">Published benchmark instances and their BKS stay fully browsable in the Visualize tab and the public catalog. Generated data is workbench-scoped and never part of the published collection.</p>
                 </section>
             </section>
         </aside>
@@ -535,116 +364,6 @@ def _render_workbench_shell_html(
             <div id="toast" class="toast"></div>
         </section>
     </main>
-
-    <div id="bulkModal" class="bulk-modal-overlay" hidden>
-        <div class="bulk-modal">
-            <div class="bulk-modal-header">
-                <h2>Bulk Generation</h2>
-                <button id="closeBulkModalBtn" type="button" class="bulk-modal-close">&times;</button>
-            </div>
-            <div class="bulk-modal-body">
-                <div class="bulk-modal-columns">
-                    <div class="bulk-modal-left">
-                        <h3>Combination Builder</h3>
-                        <div class="field">
-                            <span>Cities</span>
-                            <div class="bulk-city-toolbar">
-                                <button id="bulkCitySelectAllBtn" type="button" class="mini-btn">All</button>
-                                <button id="bulkCityClearBtn" type="button" class="mini-btn">None</button>
-                                <span id="bulkCityCount" class="poi-count">0 selected</span>
-                            </div>
-                            <div id="genBulkCitiesSelect" class="bulk-city-list"></div>
-                        </div>
-                        <label class="field">
-                            <span>Customer sizes (comma-separated)</span>
-                            <input id="genBulkCustomersInput" type="text" value="20,50,100" />
-                        </label>
-                        <div class="field">
-                            <span>Demand distributions</span>
-                            <div class="bulk-checkbox-row" id="bulkDemandChecks">
-                                <label><input type="checkbox" value="1" /> 1 — Unitary</label>
-                                <label><input type="checkbox" value="2" /> 2 — Small, large var</label>
-                                <label><input type="checkbox" value="3" /> 3 — Small, small var</label>
-                                <label><input type="checkbox" value="4" checked /> 4 — Large, large var</label>
-                                <label><input type="checkbox" value="5" /> 5 — Large, small var</label>
-                                <label><input type="checkbox" value="6" /> 6 — Quadrant-dep.</label>
-                                <label><input type="checkbox" value="7" checked /> 7 — Few large, many small</label>
-                            </div>
-                        </div>
-                        <div class="field">
-                            <span>Average route sizes</span>
-                            <div class="bulk-checkbox-row" id="bulkRouteSizeChecks">
-                                <label><input type="checkbox" value="1" /> 1 — Ultra short</label>
-                                <label><input type="checkbox" value="2" /> 2 — Very short</label>
-                                <label><input type="checkbox" value="3" checked /> 3 — Short</label>
-                                <label><input type="checkbox" value="4" checked /> 4 — Medium</label>
-                                <label><input type="checkbox" value="5" checked /> 5 — Long</label>
-                                <label><input type="checkbox" value="6" /> 6 — Very long</label>
-                                <label><input type="checkbox" value="7" /> 7 — Ultra long</label>
-                            </div>
-                        </div>
-                        <label class="field">
-                            <span>Problem type for new rows</span>
-                            <select id="bulkProblemTypeSelect">
-                                <option value="CVRP" selected>CVRP</option>
-                                <option value="VRPTW">VRPTW</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>TW method for new VRPTW rows</span>
-                            <select id="bulkTwMethodSelect">
-                                <option value="route_centered" selected>Route-centered</option>
-                                <option value="reachable_interval">Reachable-interval</option>
-                            </select>
-                        </label>
-                        <button id="bulkExpandBtn" type="button">Expand to Table</button>
-                    </div>
-
-                    <div class="bulk-modal-right">
-                        <div class="bulk-toolbar">
-                            <button id="bulkAddRowBtn" type="button" class="mini-btn">Add Row</button>
-                            <button id="bulkDeleteSelBtn" type="button" class="mini-btn">Delete Selected</button>
-                            <button id="bulkClearBtn" type="button" class="mini-btn">Clear All</button>
-                            <button id="bulkImportCsvBtn" type="button" class="mini-btn">Import CSV</button>
-                            <button id="bulkExportCsvBtn" type="button" class="mini-btn">Export CSV</button>
-                            <input id="bulkCsvFileInput" type="file" accept=".csv,.txt" style="display:none" />
-                            <span id="bulkModalCount" class="poi-count">0 instances</span>
-                        </div>
-                        <div class="bulk-table-wrap">
-                            <table class="bulk-table" id="bulkTable">
-                                <thead>
-                                    <tr>
-                                        <th><input type="checkbox" id="bulkSelectAll" /></th>
-                                        <th>Type</th>
-                                        <th>City</th>
-                                        <th>n</th>
-                                        <th>Demand</th>
-                                        <th>Route Size</th>
-                                        <th>Method</th>
-                                        <th>Seed</th>
-                                        <th>Depot</th>
-                                        <th>Customer</th>
-                                        <th>TW Method</th>
-                                        <th>Intersections</th>
-                                        <th>Clusters</th>
-                                        <th>Decay</th>
-                                        <th>Hybrid</th>
-                                        <th>Categories</th>
-                                        <th></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="bulkTableBody"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="bulk-modal-footer">
-                <button id="genBulkBtn" type="button">Generate &amp; Download All</button>
-                <button id="closeBulkModalBtn2" type="button" class="bulk-modal-cancel-btn">Close</button>
-            </div>
-        </div>
-    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script type="module" src="{js_href}"></script>
