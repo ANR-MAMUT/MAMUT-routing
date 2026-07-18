@@ -490,16 +490,19 @@ function routesStatValue(entry) {
 
 // Extra stat-grid rows for a BKS entry carrying a structured optimality proof
 // (entry.optimality mirrors the mamut-routing-lib OptimalityMetadata object).
-// The badge tooltip carries the certificate wording — the honest statement of
-// what the proof does and does not cover.
+// The full proof detail (certificate wording, prover, campaign) belongs to the
+// instance page's BKS card; the compact contexts (inspector pane, lists) only
+// show the proven-optimal badge.
 function optimalityStatRows(entry) {
   const proof = entry?.optimality;
   if (!proof?.proven) return [];
-  const title = [proof.certificate, proof.campaign].filter(Boolean).join(" — ");
-  const detail = [proof.prover, proof.date].filter(Boolean).join(", ");
-  const badge = `<span class="badge optimal" title="${escapeHtml(title)}">${optimalBadgeIconHtml()}proven optimal</span>`;
-  const meta = detail ? ` <span class="meta-line">${escapeHtml(detail)}</span>` : "";
-  return [["Optimality", { html: `${badge}${meta}` }]];
+  const badge = `<span class="badge optimal">${optimalBadgeIconHtml()}proven optimal</span>`;
+  const meta = proof.date ? ` <span class="meta-line">${escapeHtml(proof.date)}</span>` : "";
+  const rows = [["Optimality", { html: `${badge}${meta}` }]];
+  if (proof.certificate) rows.push(["Certificate", proof.certificate]);
+  if (proof.prover) rows.push(["Prover", proof.prover]);
+  if (proof.campaign) rows.push(["Campaign", proof.campaign]);
+  return rows;
 }
 
 // Check-badge icon marking a BKS that carries a structured optimality proof.
@@ -1502,16 +1505,13 @@ function renderInspectorDetails(item, payload, preview) {
   const statCells = stats
     .map(([label, value]) => `<div><span>${escapeHtml(label)}</span>${typeof value === "object" && value?.html ? value.html : `<strong>${escapeHtml(value)}</strong>`}</div>`)
     .join("");
+  // Compact by design: the proven-optimal chip in the title row is enough
+  // here; the full proof detail (certificate, prover, campaign) lives on the
+  // record page's BKS card. Only the short attribution rows stay.
   const provenance = [];
-  if (entry?.optimality?.proven) {
-    const proof = entry.optimality;
-    if (proof.certificate) provenance.push(["Certificate", proof.certificate]);
-    if (proof.prover) provenance.push(["Prover", proof.prover]);
-    if (proof.campaign) provenance.push(["Campaign", proof.campaign]);
-    if (proof.date) provenance.push(["Proven", proof.date]);
-  }
   if (entry?.method) provenance.push(["Method", entry.method]);
   if (entry?.authors) provenance.push(["Authors", entry.authors]);
+  if (entry?.optimality?.proven && entry.optimality.date) provenance.push(["Proven", entry.optimality.date]);
   const provenanceGrid = provenance.length
     ? `<div class="inspector-prov">${provenance.map(([key, value]) => `<span>${escapeHtml(key)}</span><span>${escapeHtml(value)}</span>`).join("")}</div>`
     : "";
