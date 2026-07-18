@@ -1825,16 +1825,46 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     ...previewGeometry.routeLines.flatMap((routeLine) => routeLine.coordinates || []),
   ]);
   const projectedNodes = projectCoordinates(previewGeometry.nodeCoordinates || [], width, height, projectionBounds);
+  const display = {
+    hiddenRoutes: options.displayOptions?.hiddenRoutes || new Set(),
+    depotLegMode: options.displayOptions?.depotLegMode || "full",
+    fadedOpacity: options.displayOptions?.fadedOpacity ?? 0.6,
+    routeOpacity: options.displayOptions?.routeOpacity ?? 1,
+  };
+  const polylineFor = (points, color, opacity) => {
+    const projected = projectCoordinates(points || [], width, height, projectionBounds).filter(Boolean);
+    if (projected.length < 2) {
+      return "";
+    }
+    const opacityAttr = opacity < 1 ? ` stroke-opacity="${opacity.toFixed(3)}"` : "";
+    return `<polyline fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${projected
+      .map((point) => `${point.x},${point.y}`)
+      .join(" ")}" />`;
+  };
   const routePaths = previewGeometry.routeLines
     .map((routeLine) => {
-      const projectedRoute = projectCoordinates(routeLine.coordinates, width, height, projectionBounds).filter(Boolean);
-      if (projectedRoute.length < 2) {
+      if (display.hiddenRoutes.has(routeLine.routeIndex)) {
+        return "";
+      }
+      const color = PALETTE[routeLine.routeIndex % PALETTE.length];
+      let body;
+      if (display.depotLegMode === "full" || !Array.isArray(routeLine.segments) || routeLine.segments.length < 2) {
+        body = polylineFor(routeLine.coordinates, color, display.routeOpacity);
+      } else {
+        // Depot legs (first and last segments) drawn separately so they can
+        // fade or hide; the route body keeps full presence.
+        body = polylineFor(mergeGeometrySegments(routeLine.segments.slice(1, -1)), color, display.routeOpacity);
+        if (display.depotLegMode === "faded") {
+          const legOpacity = Math.max(0, Math.min(1, display.fadedOpacity * display.routeOpacity));
+          body += polylineFor(routeLine.segments[0], color, legOpacity);
+          body += polylineFor(routeLine.segments[routeLine.segments.length - 1], color, legOpacity);
+        }
+      }
+      if (!body) {
         return "";
       }
       const routeTitle = `Route ID ${routeLine.routeIndex + 1} · ${routeLine.stopCount} customer${routeLine.stopCount === 1 ? "" : "s"} · ${String(routeLine.source).replaceAll("_", " ")}`;
-      return `<g class="route-line"><title>${escapeHtml(routeTitle)}</title><polyline fill="none" stroke="${PALETTE[routeLine.routeIndex % PALETTE.length]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${projectedRoute
-        .map((point) => `${point.x},${point.y}`)
-        .join(" ")}" /></g>`;
+      return `<g class="route-line"><title>${escapeHtml(routeTitle)}</title>${body}</g>`;
     })
     .join("");
   const nodes = projectedNodes
@@ -1855,7 +1885,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
   let arcHitTargets = "";
   if (options.interactiveArcs) {
     arcHitTargets = previewGeometry.routeLines
-      .filter((routeLine) => routeLine.source === "straight_line")
+      .filter((routeLine) => routeLine.source === "straight_line" && !display.hiddenRoutes.has(routeLine.routeIndex))
       .map((routeLine) => {
         const projectedRoute = projectCoordinates(routeLine.coordinates, width, height, projectionBounds);
         const segments = [];
@@ -1882,6 +1912,36 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     <div class="viewer-frame">
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Routing preview">${routePaths}${nodes}${arcHitTargets}</svg>
     </div>`;
+}
+
+function renderDisplayOptionsCard(bksData, displayOptions) {
+  const routes = Array.isArray(bksData?.routes) ? bksData.routes : [];
+  if (routes.length === 0) {
+    return "";
+  }
+  const hiddenCount = routes.reduce((count, _, index) => count + (displayOptions.hiddenRoutes.has(index) ? 1 : 0), 0);
+  const routeToggles = routes
+    .map(
+      (route, index) =>
+        `<label class="route-toggle"><input type="checkbox" data-route-toggle="${index}"${displayOptions.hiddenRoutes.has(index) ? "" : " checked"} /><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span>Route ${index + 1} · ${route.length} stop${route.length === 1 ? "" : "s"}</span></label>`,
+    )
+    .join("");
+  return renderCard(
+    "Display Options",
+    `<label class="field"><span>Depot legs</span><select data-display-depot-legs>
+        <option value="full"${displayOptions.depotLegMode === "full" ? " selected" : ""}>Full</option>
+        <option value="faded"${displayOptions.depotLegMode === "faded" ? " selected" : ""}>Faded</option>
+        <option value="hidden"${displayOptions.depotLegMode === "hidden" ? " selected" : ""}>Hidden</option>
+      </select></label>
+      <label class="field"><span>Legs opacity: <output data-legs-opacity-value>${Math.round(displayOptions.fadedOpacity * 100)}%</output></span><input type="range" min="0" max="1" step="0.05" value="${displayOptions.fadedOpacity}" data-display-legs-opacity${displayOptions.depotLegMode === "faded" ? "" : " disabled"} /></label>
+      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>
+      <div class="route-toggle-toolbar">
+        <button type="button" class="bks-chip" data-routes-all>All</button>
+        <button type="button" class="bks-chip" data-routes-none>None</button>
+        <span class="meta-line">${routes.length - hiddenCount}/${routes.length} visible</span>
+      </div>
+      <div class="route-toggle-list">${routeToggles}</div>`,
+  );
 }
 
 function renderBksSelector(entries, selectedIndex) {
@@ -2208,6 +2268,12 @@ async function renderInstancePage(payload, options = {}) {
   let routeFunctionsData = null;
   let routeFunctionsStatus = "idle";
   const supportsArcFunctions = Boolean(payload.artifact_links.atf_json_path);
+  const displayOptions = {
+    hiddenRoutes: new Set(),
+    depotLegMode: "faded",
+    fadedOpacity: 0.6,
+    routeOpacity: 1,
+  };
 
   const renderSelectedState = () => {
     const asideCards = [
@@ -2245,6 +2311,7 @@ async function renderInstancePage(payload, options = {}) {
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
       renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderDisplayOptionsCard(selectedBksData, displayOptions),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -2281,6 +2348,7 @@ async function renderInstancePage(payload, options = {}) {
           viewerRenderMode: payload.summary.viewer_render_mode,
           roadCacheStatus: payload.summary.road_cache_status,
           interactiveArcs: supportsArcFunctions,
+          displayOptions,
         })}
         <section class="mini-card">
           <h3>Route Legend</h3>
@@ -2313,8 +2381,52 @@ async function renderInstancePage(payload, options = {}) {
         selectedScheduleRoute = 0;
         routeFunctionsData = null;
         routeFunctionsStatus = "idle";
+        // Route indices are objective-specific; visibility resets, the
+        // rendering preferences carry over.
+        displayOptions.hiddenRoutes = new Set();
         renderSelectedState();
       });
+    });
+    state.aside.querySelectorAll("[data-route-toggle]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const routeIndex = Number(checkbox.dataset.routeToggle);
+        if (checkbox.checked) {
+          displayOptions.hiddenRoutes.delete(routeIndex);
+        } else {
+          displayOptions.hiddenRoutes.add(routeIndex);
+        }
+        renderSelectedState();
+      });
+    });
+    state.aside.querySelector("[data-routes-all]")?.addEventListener("click", () => {
+      displayOptions.hiddenRoutes = new Set();
+      renderSelectedState();
+    });
+    state.aside.querySelector("[data-routes-none]")?.addEventListener("click", () => {
+      displayOptions.hiddenRoutes = new Set((selectedBksData?.routes || []).map((_, index) => index));
+      renderSelectedState();
+    });
+    state.aside.querySelector("[data-display-depot-legs]")?.addEventListener("change", (event) => {
+      displayOptions.depotLegMode = event.target.value;
+      renderSelectedState();
+    });
+    const legsOpacitySlider = state.aside.querySelector("[data-display-legs-opacity]");
+    legsOpacitySlider?.addEventListener("input", (event) => {
+      const output = state.aside.querySelector("[data-legs-opacity-value]");
+      if (output) output.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+    });
+    legsOpacitySlider?.addEventListener("change", (event) => {
+      displayOptions.fadedOpacity = Number(event.target.value);
+      renderSelectedState();
+    });
+    const routeOpacitySlider = state.aside.querySelector("[data-display-route-opacity]");
+    routeOpacitySlider?.addEventListener("input", (event) => {
+      const output = state.aside.querySelector("[data-route-opacity-value]");
+      if (output) output.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+    });
+    routeOpacitySlider?.addEventListener("change", (event) => {
+      displayOptions.routeOpacity = Number(event.target.value);
+      renderSelectedState();
     });
     if (routeFunctionsStatus === "ready") {
       const entry = routeFunctionsData?.routes?.[Math.min(selectedScheduleRoute, (routeFunctionsData?.routes?.length || 1) - 1)];
