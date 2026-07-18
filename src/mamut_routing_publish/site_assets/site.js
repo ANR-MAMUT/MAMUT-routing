@@ -38,16 +38,10 @@ const state = {
   },
 };
 
-const PALETTE = [
-  "#4338ca",
-  "#b83a06",
-  "#1f77b4",
-  "#16a34a",
-  "#d97706",
-  "#dc2626",
-  "#0891b2",
-  "#8b5cf6",
-];
+// Nocturne per-theme 20-color route palette: the concrete values live in the
+// CSS custom properties --route-0..--route-19 (VIVID_D / VIVID_L from the
+// merged demo), so SVG previews and swatches recolor with the theme toggle.
+const PALETTE = Array.from({ length: 20 }, (_, index) => `var(--route-${index})`);
 const HOME_PREVIEW_ROTATION_MS = 5000;
 const ROAD_CACHE_ENDPOINT_TOLERANCE_METERS = 250;
 const WGS84_A = 6378137.0;
@@ -804,28 +798,50 @@ function renderProblemCards(problems) {
     .join("")}</div>`;
 }
 
-function renderHomeStatStrip(payload) {
+function renderHomeStats(payload) {
   const stats = [
-    ["Problems", payload.counts.problem_count],
-    ["Families", payload.counts.family_count],
+    ["Problem classes", payload.counts.problem_count],
+    ["Benchmark families", payload.counts.family_count],
     ["Instances", payload.counts.instance_count],
-    ["BKS", payload.counts.bks_count],
-    ["Snapshot", payload.snapshot.snapshot_id],
+    ["Validated BKS", payload.counts.bks_count],
   ];
-  return `<section class="home-stat-strip" aria-label="Snapshot overview">${stats
+  return `<div class="home-stats" aria-label="Catalog overview">${stats
     .map(
       ([label, value]) =>
-        `<div class="home-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
+        `<div class="home-stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`,
     )
-    .join("")}</section>`;
+    .join("")}</div>`;
 }
 
-function renderHomeLinkTile(title, description, routePath, actionLabel) {
-  return `<article class="home-link-card">
-    <h3>${escapeHtml(title)}</h3>
-    <p>${escapeHtml(description)}</p>
-    <a class="button-link primary" href="${routeHref(routePath)}">${escapeHtml(actionLabel)}</a>
-  </article>`;
+// Home catalog rows per the merged demo: one row per problem class with the
+// family tag chips, the objective column, and a fading rule between rows.
+const HOME_PROBLEM_DESCRIPTIONS = {
+  CVRP: "Capacitated routing on generated city road graphs",
+  VRPTW: "Capacity + time windows",
+  TDVRPTW: "Time-dependent travel times + windows, ATF sidecars",
+  TDVRP: "Time-dependent, no windows, unpruned search spaces",
+};
+
+const HOME_PROBLEM_TAG_TONES = {
+  CVRP: "tag-am",
+  VRPTW: "tag-cy",
+  TDVRPTW: "tag-acc",
+  TDVRP: "tag-cor",
+};
+
+function renderHomeCatalogRow(problem) {
+  const tone = HOME_PROBLEM_TAG_TONES[problem.problem_type] || "tag-acc";
+  const description = HOME_PROBLEM_DESCRIPTIONS[problem.problem_type] || `${problem.instance_count} instances`;
+  const familyChips = (problem.benchmark_names || [])
+    .map((name) => `<span class="badge ${tone}">${escapeHtml(name)}</span>`)
+    .join("");
+  const objectives = (problem.supported_objective_functions || []).join(" · ");
+  return `<a class="catalog-row" href="${routeHref(problem.route_path)}">
+    <div class="catalog-row-name">${escapeHtml(problem.problem_type)}</div>
+    <div class="catalog-row-desc">${escapeHtml(description)}<div class="catalog-row-tags">${familyChips}</div></div>
+    <div class="catalog-row-obj">${escapeHtml(objectives)}</div>
+    <div class="catalog-row-arrow" aria-hidden="true">→</div>
+  </a>`;
 }
 
 function renderHomePreviewFallback(payload) {
@@ -841,10 +857,26 @@ function renderHomePreviewFallback(payload) {
   </div>`;
 }
 
-function renderHomePreviewCard(previewMarkup) {
-  return `<article class="home-preview-card">
+function renderHomePreviewCard(sample, previewMarkup) {
+  const summary = sample?.instancePayload?.summary || {};
+  const entry = sample?.preview?.selectedEntry || null;
+  const routePath = sample?.instancePayload?.route_path || "";
+  const title = [sample?.instancePayload?.title, summary.benchmark_name].filter(Boolean).join(" · ");
+  const proven = Boolean(entry?.optimality?.proven);
+  const statusChip = entry
+    ? `<span class="badge ${proven ? "tag-gr" : "tag-am"}">${proven ? "proven optimal" : escapeHtml(entry.method || "heuristic")}</span>`
+    : "";
+  const metaParts = [
+    summary.problem_type,
+    summary.num_customers != null ? `n=${summary.num_customers}` : "",
+    entry ? `${entry.objective_function} ${formatCost(entry.cost)}` : "",
+  ].filter(Boolean);
+  return `<a class="home-preview-card" href="${routeHref(routePath)}">
+    <div class="home-preview-kicker">Featured instance</div>
     ${previewMarkup}
-  </article>`;
+    <div class="home-preview-title">${escapeHtml(title)}</div>
+    <div class="home-preview-meta">${escapeHtml(metaParts.join(" · "))} ${statusChip}</div>
+  </a>`;
 }
 
 function renderHomePreviewMarkup(sample) {
@@ -878,7 +910,7 @@ function renderHomePreviewDots(activeIndex, count) {
 }
 
 function renderHomePreviewFrame(sample, activeIndex, count) {
-  return `${renderHomePreviewCard(renderHomePreviewMarkup(sample))}${renderHomePreviewDots(activeIndex, count)}`;
+  return `${renderHomePreviewCard(sample, renderHomePreviewMarkup(sample))}${renderHomePreviewDots(activeIndex, count)}`;
 }
 
 function renderHomePreviewShowcase(payload, samples) {
@@ -1133,46 +1165,33 @@ function renderHome(payload) {
   if (state.aside) {
     state.aside.innerHTML = "";
   }
+  const catalogRows = payload.problems
+    .map((problem) => renderHomeCatalogRow(problem))
+    .join('<div class="fading-rule"></div>');
   state.stage.innerHTML = `
     <section class="home-page">
       <section class="home-hero">
         <div class="home-hero-copy">
-          <div class="home-title-row">
-            <img class="home-project-logo" src="${siteAssetHref(MAMUT_PROJECT_LOGO_PATH)}" alt="MAMUT project logo" />
-            <div class="home-title-copy">
-              <div class="badge-row home-kicker">${payload.problems.map((problem) => badge(problem.problem_type)).join("")}${badge(`snapshot ${payload.snapshot.snapshot_id}`, true)}</div>
-              <h1>${escapeHtml(payload.title)}</h1>
-            </div>
+          <div class="home-kicker">ANR MAMUT · open benchmark library</div>
+          <h1>Vehicle routing benchmarks, <span class="hero-grad">curated with provenance.</span></h1>
+          <p class="home-lede">${escapeHtml(payload.hero_summary)}</p>
+          <div class="home-cta-row">
+            <a class="button-link primary" href="${routeHref(payload.benchmarks_route_path)}">Browse the catalog</a>
+            <a class="button-link" href="${routeHref(payload.workbench_route_path)}">Open the workbench</a>
           </div>
-          <p>${escapeHtml(payload.hero_summary)}</p>
-          <div class="home-actions">
-            <a class="button-link" href="${routeHref(payload.benchmarks_route_path)}">Browse Benchmarks</a>
-            <a class="button-link" href="${routeHref(payload.workbench_route_path)}">Open Workbench</a>
-            <a class="button-link" href="${routeHref(payload.project_route_path)}">Project</a>
-            <a class="button-link" href="${routeHref(payload.objectives_route_path)}">Objectives</a>
-            <a class="button-link" href="${routeHref(payload.history_route_path)}">History</a>
-          </div>
-          ${renderHomeStatStrip(payload)}
+          ${renderHomeStats(payload)}
         </div>
         ${renderHomePreviewSkeleton()}
       </section>
-      <section class="home-section">
-        <div class="home-section-heading">
-          <h2>What Is Inside</h2>
-          <p>Direct paths to the public catalog, viewer, contract notes, and release provenance.</p>
+      <section class="home-catalog">
+        <h2 class="home-catalog-heading">The catalog</h2>
+        ${catalogRows}
+        <div class="home-foot">
+          <span>MAMUT project · ANR-22-CE22-0016</span>
+          <span>MIT + family-specific data licences</span>
+          <span>Snapshot ${escapeHtml(payload.snapshot.snapshot_id)} · published ${escapeHtml(payload.snapshot.published_at)}</span>
+          <span class="home-foot-right"><a href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">GitHub</a><a href="${routeHref(payload.history_route_path)}">History</a></span>
         </div>
-        <div class="home-link-grid">
-          ${renderHomeLinkTile("Benchmarks", "Browse curated CVRP, VRPTW, and time-dependent TDVRPTW/TDVRP families, variants, places, sizes, and instance artifacts.", payload.benchmarks_route_path, "Browse Benchmarks")}
-          ${renderHomeLinkTile("Workbench", "Visualize published instances, inspect uploaded files, and generate OSM-backed previews.", payload.workbench_route_path, "Open Workbench")}
-          ${renderHomeLinkTile("ANR Project", "Understand how this benchmark and generation work sits inside the MAMUT research project.", payload.project_route_path, "Open Project")}
-          ${renderHomeLinkTile("Objective Semantics", "Check how HierarchicalVehicleCost, MonoCost, and Duration should be interpreted before comparing results.", payload.objectives_route_path, "Read Objectives")}
-          ${renderHomeLinkTile("Publication History", "Track the repository snapshot, source commit, and release notes for this static publication.", payload.history_route_path, "Open History")}
-        </div>
-      </section>
-      <section class="home-publication-note">
-        <strong>Current publication</strong>
-        <span>${escapeHtml(payload.latest_publication_summary)}</span>
-        <span>Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</span>
       </section>
     </section>`;
   setStatus(`Loaded snapshot ${payload.snapshot.snapshot_id}`);
@@ -1866,7 +1885,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
       return "";
     }
     const opacityAttr = opacity < 1 ? ` stroke-opacity="${opacity.toFixed(3)}"` : "";
-    return `<polyline fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${projected
+    return `<polyline fill="none" style="stroke:${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${projected
       .map((point) => `${point.x},${point.y}`)
       .join(" ")}" />`;
   };
@@ -1908,7 +1927,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
         : routeIndex === undefined
           ? `Customer ID ${index} · no route`
           : `Customer ID ${index} · Route ID ${routeIndex + 1}`;
-      return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title><circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" fill="${isDepot ? '#b83a06' : '#111111'}" opacity="${isDepot ? 1 : 0.8}" /></g>`;
+      return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title><circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" style="fill:${isDepot ? 'var(--cor)' : 'var(--ptc)'}" opacity="${isDepot ? 1 : 0.8}" /></g>`;
     })
     .join("");
   let arcHitTargets = "";
@@ -1952,24 +1971,24 @@ function renderDisplayOptionsCard(bksData, displayOptions) {
   const routeToggles = routes
     .map(
       (route, index) =>
-        `<label class="route-toggle"><input type="checkbox" data-route-toggle="${index}"${displayOptions.hiddenRoutes.has(index) ? "" : " checked"} /><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span>Route ${index + 1} · ${route.length} stop${route.length === 1 ? "" : "s"}</span></label>`,
+        `<label class="route-toggle"><input type="checkbox" data-route-toggle="${index}"${displayOptions.hiddenRoutes.has(index) ? "" : " checked"} /><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span class="route-toggle-label">R${index + 1}</span><span class="route-toggle-meta">${route.length} stop${route.length === 1 ? "" : "s"}</span></label>`,
     )
     .join("");
   return renderCard(
-    "Display Options",
-    `<label class="field"><span>Depot legs</span><select data-display-depot-legs>
+    "Routes · click to toggle",
+    `<div class="route-toggle-toolbar">
+        <button type="button" class="bks-chip" data-routes-all>All</button>
+        <button type="button" class="bks-chip" data-routes-none>None</button>
+        <span class="meta-line">${routes.length - hiddenCount}/${routes.length} visible</span>
+      </div>
+      <div class="route-toggle-list">${routeToggles}</div>
+      <label class="field"><span>Depot legs</span><select data-display-depot-legs>
         <option value="full"${displayOptions.depotLegMode === "full" ? " selected" : ""}>Full</option>
         <option value="faded"${displayOptions.depotLegMode === "faded" ? " selected" : ""}>Faded</option>
         <option value="hidden"${displayOptions.depotLegMode === "hidden" ? " selected" : ""}>Hidden</option>
       </select></label>
       <label class="field"><span>Legs opacity: <output data-legs-opacity-value>${Math.round(displayOptions.fadedOpacity * 100)}%</output></span><input type="range" min="0" max="1" step="0.05" value="${displayOptions.fadedOpacity}" data-display-legs-opacity${displayOptions.depotLegMode === "faded" ? "" : " disabled"} /></label>
-      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>
-      <div class="route-toggle-toolbar">
-        <button type="button" class="bks-chip" data-routes-all>All</button>
-        <button type="button" class="bks-chip" data-routes-none>None</button>
-        <span class="meta-line">${routes.length - hiddenCount}/${routes.length} visible</span>
-      </div>
-      <div class="route-toggle-list">${routeToggles}</div>`,
+      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>`,
   );
 }
 
@@ -2083,23 +2102,23 @@ function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
     const mx = px(m.x);
     const my = py(m.y);
     markerSvg = `
-        <line x1="${pad.left}" y1="${my.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="${m.color}" stroke-width="1" stroke-dasharray="4 3" />
-        <line x1="${mx.toFixed(1)}" y1="${height - pad.bottom}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="${m.color}" stroke-width="1" stroke-dasharray="4 3" />
-        <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="4" fill="${m.color}" stroke="#ffffff" stroke-width="1.5"><title>${escapeHtml(m.label)}</title></circle>
-        <text x="${Math.min(mx + 7, width - pad.right - 4).toFixed(1)}" y="${Math.max(my - 7, pad.top + 10).toFixed(1)}" font-size="10.5" fill="${m.color}">${escapeHtml(m.label)}</text>`;
+        <line x1="${pad.left}" y1="${my.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" style="stroke:${m.color}" stroke-width="1" stroke-dasharray="4 3" />
+        <line x1="${mx.toFixed(1)}" y1="${height - pad.bottom}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" style="stroke:${m.color}" stroke-width="1" stroke-dasharray="4 3" />
+        <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="4" style="fill:${m.color};stroke:var(--s)" stroke-width="1.5"><title>${escapeHtml(m.label)}</title></circle>
+        <text x="${Math.min(mx + 7, width - pad.right - 4).toFixed(1)}" y="${Math.max(my - 7, pad.top + 10).toFixed(1)}" font-size="10.5" style="fill:${m.color}">${escapeHtml(m.label)}</text>`;
   }
   const yTicks = [yMin, (yMin + yMax) / 2, yMax];
   const xTicks = [xMin, (xMin + xMax) / 2, xMax];
   const grid = yTicks
-    .map((t) => `<line x1="${pad.left}" y1="${py(t).toFixed(1)}" x2="${width - pad.right}" y2="${py(t).toFixed(1)}" stroke="#00000018" stroke-width="1" />`)
+    .map((t) => `<line x1="${pad.left}" y1="${py(t).toFixed(1)}" x2="${width - pad.right}" y2="${py(t).toFixed(1)}" style="stroke:var(--div)" stroke-width="1" />`)
     .join("");
   const yLabels = yTicks
-    .map((t) => `<text x="${pad.left - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#6b7280">${formatScheduleTime(t)}</text>`)
+    .map((t) => `<text x="${pad.left - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5" style="fill:var(--mut)">${formatScheduleTime(t)}</text>`)
     .join("");
   const xLabels = xTicks
     .map((t, k) => {
       const anchor = k === 0 ? "start" : k === xTicks.length - 1 ? "end" : "middle";
-      return `<text x="${px(t).toFixed(1)}" y="${height - pad.bottom + 16}" text-anchor="${anchor}" font-size="10.5" fill="#6b7280">${formatScheduleTime(t)}</text>`;
+      return `<text x="${px(t).toFixed(1)}" y="${height - pad.bottom + 16}" text-anchor="${anchor}" font-size="10.5" style="fill:var(--mut)">${formatScheduleTime(t)}</text>`;
     })
     .join("");
   return `
@@ -2107,13 +2126,13 @@ function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
       <div class="meta-line" style="margin-bottom:0.2rem">${escapeHtml(title)}</div>
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}" style="width:100%;height:auto">
         ${grid}
-        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="#00000030" stroke-width="1" />
-        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" stroke="#00000030" stroke-width="1" />
+        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" style="stroke:var(--div)" stroke-width="1" />
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" style="stroke:var(--div)" stroke-width="1" />
         ${yLabels}${xLabels}
-        <text x="${(pad.left + width - pad.right) / 2}" y="${height - 4}" text-anchor="middle" font-size="10.5" fill="#6b7280">departure time t</text>
-        <polyline fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />${markerSvg}
-        <line class="arc-crosshair" x1="0" y1="${pad.top}" x2="0" y2="${height - pad.bottom}" stroke="#00000060" stroke-width="1" style="display:none" />
-        <circle class="arc-hover-dot" r="3.5" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="display:none" />
+        <text x="${(pad.left + width - pad.right) / 2}" y="${height - 4}" text-anchor="middle" font-size="10.5" style="fill:var(--mut)">departure time t</text>
+        <polyline fill="none" style="stroke:${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />${markerSvg}
+        <line class="arc-crosshair" x1="0" y1="${pad.top}" x2="0" y2="${height - pad.bottom}" style="display:none;stroke:var(--mut)" stroke-width="1" />
+        <circle class="arc-hover-dot" r="3.5" style="display:none;fill:${color};stroke:var(--s)" stroke-width="1.5" />
         <rect class="arc-hover-zone" x="${pad.left}" y="${pad.top}" width="${width - pad.left - pad.right}" height="${height - pad.top - pad.bottom}" fill="transparent" />
       </svg>
       <div class="meta-line arc-hover-readout" style="min-height:1.2em"></div>
@@ -2226,10 +2245,10 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
   return `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-top:0.8rem">
         ${renderArcFunctionChart("route-arr", "Arrival time at depot δ(t)", entry.xs, entry.ys, PALETTE[0], {
-          marker: { x: entry.xs[0], y: entry.ys[0], color: "#0891b2", label: `EAT ${formatScheduleTime(entry.ys[0])}` },
+          marker: { x: entry.xs[0], y: entry.ys[0], color: "var(--cy)", label: `EAT ${formatScheduleTime(entry.ys[0])}` },
         })}
         ${renderArcFunctionChart("route-dur", "Duration Δ(t) = δ(t) − t", entry.xs, durations, PALETTE[1], {
-          marker: { x: entry.departure_time, y: entry.duration, color: "#16a34a", label: `MDT (${formatScheduleTime(entry.departure_time)}, ${formatScheduleTime(entry.duration)})` },
+          marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", label: `MDT (${formatScheduleTime(entry.departure_time)}, ${formatScheduleTime(entry.duration)})` },
         })}
       </div>
       <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, checker fold). EAT = earliest arrival back at the depot; MDT = the checker's optimal dispatch (t* = ${formatScheduleTime(entry.departure_time)}, Δ* = ${formatScheduleTime(entry.duration)}).</div>`;
@@ -3298,22 +3317,23 @@ function renderUnknownPayload(payload) {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   const switchInput = document.getElementById("themeSwitch");
-  const themeIcon = document.getElementById("themeIcon");
-  switchInput.checked = theme === "dark";
-  themeIcon.innerHTML = theme === "dark" ? "&#9728;" : "&#9790;";
+  if (switchInput) {
+    switchInput.checked = theme === "dark";
+  }
   localStorage.setItem("mamut-routing-theme", theme);
 }
 
 function setupThemeToggle() {
   // The initial theme is applied by the inline bootstrap script in the HTML
   // <head> (see site_webapp.py:THEME_INIT_SCRIPT) so that the first paint is
-  // already correct. Here we only sync the toggle controls to the resolved
-  // value and wire the click handler.
+  // already correct. Here we only sync the sun/moon pill to the resolved value
+  // and wire the click handler; the active side is styled from html[data-theme].
   const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   const switchInput = document.getElementById("themeSwitch");
-  const themeIcon = document.getElementById("themeIcon");
+  if (!switchInput) {
+    return;
+  }
   switchInput.checked = currentTheme === "dark";
-  themeIcon.innerHTML = currentTheme === "dark" ? "&#9728;" : "&#9790;";
   switchInput.addEventListener("change", (event) => {
     applyTheme(event.target.checked ? "dark" : "light");
   });
