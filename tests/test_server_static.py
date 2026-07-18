@@ -11,7 +11,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from mamut_routing_publish.precompress import precompress_tree
-from mamut_routing_publish.server import create_app, normalize_request_path
+from mamut_routing_publish.server import content_type_for, create_app, normalize_request_path
 
 
 @pytest.fixture()
@@ -52,6 +52,11 @@ def test_normalize_request_path_rejects_traversal() -> None:
     assert normalize_request_path("a/../../b") is None
     assert normalize_request_path("a/./b/") == "/a/b/"
     assert normalize_request_path("") == "/"
+
+
+def test_content_type_for_self_hosted_font() -> None:
+    # The Nocturne reskin self-hosts Inter; woff2 must not fall back to octet-stream.
+    assert content_type_for("InterVariable.woff2") == "font/woff2"
 
 
 def test_root_and_directory_shells(client: TestClient) -> None:

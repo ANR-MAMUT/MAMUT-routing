@@ -85,6 +85,45 @@ def _active_nav(route_path: str) -> str:
     return ""
 
 
+def _nav_links_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> str:
+    nav_targets = {
+        "home": "/",
+        "benchmarks": "/benchmarks/",
+        "workbench": "/workbench/",
+        "project": "/project/",
+        "objectives": "/objectives/",
+        "history": "/history/",
+    }
+    return "\n".join(
+        f'<a class="nav-link{active_class}" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, target))}">{label}</a>'
+        for label, target, active_class in [
+            ("Home", nav_targets["home"], " active" if active_nav == "home" else ""),
+            ("Benchmarks", nav_targets["benchmarks"], " active" if active_nav == "benchmarks" else ""),
+            ("Workbench", nav_targets["workbench"], " active" if active_nav == "workbench" else ""),
+            ("Project", nav_targets["project"], " active" if active_nav == "project" else ""),
+            ("Objectives", nav_targets["objectives"], " active" if active_nav == "objectives" else ""),
+            ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
+        ]
+    )
+
+
+def _render_header_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> str:
+    home_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/"))
+    nav_links = _nav_links_html(output_repo_dir, route_dir, active_nav)
+    return f"""<header class="app-header">
+    <a class="brand-link" href="{home_href}"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">MAMUT-routing</span></a>
+    <nav class="primary-nav">{nav_links}</nav>
+    <div class="header-tools">
+      <label class="theme-toggle" title="Toggle color theme">
+        <input id="themeSwitch" type="checkbox" aria-label="Use the dark theme" />
+        <span class="theme-side theme-side-sun" aria-hidden="true">&#9728;</span>
+        <span class="theme-side theme-side-moon" aria-hidden="true">&#9790;</span>
+      </label>
+      <a class="header-github" href="https://github.com/ANR-MAMUT/MAMUT-routing" target="_blank" rel="noopener">GitHub &#8599;</a>
+    </div>
+  </header>"""
+
+
 def _render_shell_html(
     output_repo_dir: Path,
     route_path: str,
@@ -99,38 +138,10 @@ def _render_shell_html(
     route_dir = output_repo_dir if route_path == "/" else _route_directory(output_repo_dir, route_path)
     css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "site.css")
     js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "site.js")
-    logo_href = _relative_path(route_dir, output_repo_dir / "webapp" / "logos" / "logo_anr_mamut.png")
+    font_href = _relative_path(route_dir, output_repo_dir / "webapp" / "fonts" / "InterVariable.woff2")
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
     payload_source = _relative_path(route_dir, payload_source_path) if payload_source_path is not None else ""
-    nav_targets = {
-        "home": "/",
-        "benchmarks": "/benchmarks/",
-        "workbench": "/workbench/",
-        "project": "/project/",
-        "objectives": "/objectives/",
-        "history": "/history/",
-    }
     active_nav = _active_nav(route_path)
-    nav_links = "\n".join(
-        f'<a class="nav-link{active_class}" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, target))}">{label}</a>'
-        for label, target, active_class in [
-            ("Home", nav_targets["home"], " active" if active_nav == "home" else ""),
-            ("Benchmarks", nav_targets["benchmarks"], " active" if active_nav == "benchmarks" else ""),
-            ("Workbench", nav_targets["workbench"], " active" if active_nav == "workbench" else ""),
-            ("Project", nav_targets["project"], " active" if active_nav == "project" else ""),
-            ("Objectives", nav_targets["objectives"], " active" if active_nav == "objectives" else ""),
-            ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
-        ]
-    )
-    tagline_by_nav = {
-        "home": "Open benchmark catalog (CVRP, VRPTW, TDVRPTW, TDVRP), provenance, and routing workbench.",
-        "benchmarks": "Lists of problems and benchmark families with instance and BKS data.",
-        "project": "Research context for the MAMUT ANR project and its participants.",
-        "objectives": "Reference of objective functions used to compare routing solutions.",
-        "history": "Snapshot ledger tracking catalog updates and benchmark changes.",
-    }
-    tagline_text = tagline_by_nav.get(active_nav, "")
-    tagline_html = f'<p class="brand-tagline">{tagline_text}</p>' if tagline_text else ""
     workbench_attr = f' data-workbench-mode="{workbench_mode}"' if workbench_mode else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -140,33 +151,16 @@ def _render_shell_html(
   <title>MAMUT-routing</title>
   {THEME_INIT_SCRIPT}
   <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="{css_href}" />
 </head>
 <body data-route-path="{route_path}" data-page-kind="{page_kind}" data-payload-source="{payload_source}" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}"{workbench_attr}>
-  <div class="bg-shape bg-shape-a"></div>
-  <div class="bg-shape bg-shape-b"></div>
-  <header class="app-header">
-    <div class="header-row">
-      <div>
-        <a class="brand-link brand-link-with-logo" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, '/'))}"><img class="brand-logo" src="{logo_href}" alt="MAMUT project logo" /><span>MAMUT-routing</span></a>
-        {tagline_html}
-      </div>
-      <label class="theme-toggle" title="Toggle dark mode">
-        <input id="themeSwitch" type="checkbox" />
-        <span class="toggle-track"></span>
-        <span class="toggle-label-icon" id="themeIcon">&#9790;</span>
-      </label>
-    </div>
-    <nav class="primary-nav">{nav_links}</nav>
-    <div id="breadcrumbTrail" class="breadcrumbs"></div>
-  </header>
+  {_render_header_html(output_repo_dir, route_dir, active_nav)}
+  <div id="breadcrumbTrail" class="breadcrumbs"></div>
 
   <main class="layout" id="pageLayout" data-shell="catalog">
     <aside class="panel" id="pageAside"></aside>
-    <section class="stage card" id="pageStage"></section>
+    <section class="stage" id="pageStage"></section>
   </main>
 
   <div id="pageStatus" class="status-pill">Loading...</div>
@@ -188,28 +182,11 @@ def _render_workbench_shell_html(
     route_dir = output_repo_dir if route_path == "/" else _route_directory(output_repo_dir, route_path)
     css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "workbench.css")
     js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "workbench.js")
-    logo_href = _relative_path(route_dir, output_repo_dir / "webapp" / "logos" / "logo_anr_mamut.png")
+    font_href = _relative_path(route_dir, output_repo_dir / "webapp" / "fonts" / "InterVariable.woff2")
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
-    nav_targets = {
-        "home": "/",
-        "benchmarks": "/benchmarks/",
-        "workbench": "/workbench/",
-        "project": "/project/",
-        "objectives": "/objectives/",
-        "history": "/history/",
-    }
+    leaflet_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.css")
+    leaflet_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.js")
     active_nav = _active_nav(route_path)
-    nav_links = "\n".join(
-        f'<a class="nav-link{active_class}" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, target))}">{label}</a>'
-        for label, target, active_class in [
-            ("Home", nav_targets["home"], " active" if active_nav == "home" else ""),
-            ("Benchmarks", nav_targets["benchmarks"], " active" if active_nav == "benchmarks" else ""),
-            ("Workbench", nav_targets["workbench"], " active" if active_nav == "workbench" else ""),
-            ("Project", nav_targets["project"], " active" if active_nav == "project" else ""),
-            ("Objectives", nav_targets["objectives"], " active" if active_nav == "objectives" else ""),
-            ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
-        ]
-    )
     benchmarks_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/benchmarks/"))
     faq_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/project/faq/"))
     return f"""<!doctype html>
@@ -220,53 +197,30 @@ def _render_workbench_shell_html(
     <title>MAMUT-routing Workbench</title>
     {THEME_INIT_SCRIPT}
     <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="{leaflet_css_href}" />
     <link rel="stylesheet" href="{css_href}" />
 </head>
 <body data-route-path="{route_path}" data-page-kind="workbench-app" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}" data-workbench-mode="{workbench_mode}">
-    <div class="bg-shape bg-shape-a"></div>
-    <div class="bg-shape bg-shape-b"></div>
+    {_render_header_html(output_repo_dir, route_dir, active_nav)}
 
-    <header class="app-header">
-        <div class="header-row">
-            <div>
-                <a class="brand-link brand-link-with-logo" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, '/'))}"><img class="brand-logo" src="{logo_href}" alt="MAMUT project logo" /><span>MAMUT-routing</span></a>
-                <p class="brand-tagline">Workbench for visualizing published benchmarks and local uploads. Instance generation and solving run locally with MAMUT-routing-tools.</p>
+    <main class="wb-stage">
+        <div id="map"></div>
+
+        <aside class="wb-panel wb-panel-left">
+            <div class="tabs">
+                <button id="tabVisualize" class="tab-btn tab-active" type="button">Visualize</button>
+                <button id="tabGenerate" class="tab-btn" type="button">Generate</button>
             </div>
-            <label class="theme-toggle" title="Toggle dark mode">
-                <input id="themeSwitch" type="checkbox" />
-                <span class="toggle-track"></span>
-                <span class="toggle-label-icon" id="themeIcon">&#9790;</span>
-            </label>
-        </div>
-        <nav class="primary-nav">{nav_links}</nav>
-    </header>
-
-    <main class="layout workbench-layout">
-        <aside class="panel">
-            <section class="card tabs-card">
-                <div class="tabs">
-                    <button id="tabVisualize" class="tab-btn tab-active" type="button">Visualize</button>
-                    <button id="tabGenerate" class="tab-btn" type="button">Generate</button>
-                </div>
-            </section>
 
             <section id="visualPanel" class="tab-panel tab-panel-active">
-                <section class="card workbench-source-card">
-                    <h2>Visualize Source</h2>
-                    <div class="source-toggle source-toggle-wide">
-                        <button id="sourceBenchmarkBtn" class="selector-chip active" type="button">Benchmark</button>
-                        <button id="sourceUploadBtn" class="selector-chip" type="button">Upload</button>
-                    </div>
-                </section>
+                <div class="source-toggle">
+                    <button id="sourceBenchmarkBtn" class="selector-chip active" type="button">Benchmark</button>
+                    <button id="sourceUploadBtn" class="selector-chip" type="button">Upload</button>
+                </div>
 
-                <section id="benchmarkVisualPanel" class="card workbench-context-card">
-                    <div class="card-heading">
-                        <h2>Benchmark Instance</h2>
-                    </div>
+                <section id="benchmarkVisualPanel" class="wb-section">
+                    <div class="wb-kicker">Published instances</div>
                     <div class="benchmark-filter-grid">
                     <label class="field">
                         <span>Problem</span>
@@ -294,8 +248,7 @@ def _render_workbench_shell_html(
                             <option value="">Select a published family first...</option>
                         </select>
                     </label>
-                    <p id="benchmarkStatus" class="workbench-card-intro">Select a published variant here, grouped by base instance to match the public benchmark catalog.</p>
-                    <p id="benchmarkRenderStatus" class="meta-line">Road geometry will be rendered automatically when a benchmark sidecar is available.</p>
+                    <p id="benchmarkStatus" class="meta-line">Select a published variant here, grouped by base instance to match the public benchmark catalog.</p>
                     <label id="objectiveField" class="field" hidden>
                         <span>Objective overlay</span>
                         <select id="benchmarkObjectiveSelect"></select>
@@ -306,8 +259,8 @@ def _render_workbench_shell_html(
                     </div>
                 </section>
 
-                <section id="uploadVisualPanel" class="card" hidden>
-                    <h2>Files</h2>
+                <section id="uploadVisualPanel" class="wb-section" hidden>
+                    <div class="wb-kicker">Local files</div>
                     <label class="field">
                         <span>Instance file (.vrp or .json)</span>
                         <input id="vrpInput" type="file" accept=".vrp,.json,.txt" />
@@ -322,50 +275,48 @@ def _render_workbench_shell_html(
                     </label>
                     <p class="meta-line">Uploaded routes draw as straight lines. Road-following rendering and solving run locally with MAMUT-routing-tools (see the Generate tab).</p>
                 </section>
-
-                <section class="card" id="routeSelectorCard" style="display:none;">
-                    <details id="routeSelectorDetails" open>
-                        <summary><h2 style="display:inline;cursor:pointer;">Route Selection</h2></summary>
-                        <div id="routeSelectorContainer" class="route-selector"></div>
-                    </details>
-                </section>
-
-                <section class="card stats-card">
-                    <h2>Instance Summary</h2>
-                    <dl id="stats"></dl>
-                </section>
-
-                <section class="card legend-card">
-                    <h2>Legend</h2>
-                    <ul id="routeLegend" class="route-legend-list"></ul>
-                </section>
             </section>
 
             <section id="generationPanel" class="tab-panel">
-                <section class="card">
-                    <h2>Generate Or Solve Locally</h2>
-                    <p class="workbench-card-intro">Instance generation (OSM city fetch, CVRP/VRPTW sampling, TD families) and solving now run locally with the <strong>MAMUT-routing-tools</strong> suite instead of on this website. Local runs are faster, are not limited by a shared public server, and write instances straight to your machine.</p>
+                <section class="wb-section">
+                    <div class="wb-kicker">Generate or solve locally</div>
+                    <p class="wb-prose">Instance generation (OSM city fetch, CVRP/VRPTW sampling, TD families) and solving now run locally with the <strong>MAMUT-routing-tools</strong> suite instead of on this website. Local runs are faster, are not limited by a shared public server, and write instances straight to your machine.</p>
                     <div class="inline-actions">
                         <a class="button-link primary" href="https://github.com/ANR-MAMUT/MAMUT-routing-tools" rel="noopener">Get MAMUT-routing-tools</a>
                         <a class="mini-link" href="{faq_href}">Why local? See the FAQ</a>
                     </div>
                     <p class="meta-line">Quick start: install <a href="https://github.com/astral-sh/uv" rel="noopener">uv</a>, then run <code>uvx --from mamut-routing-tools mamut-tools --help</code> (published on <a href="https://pypi.org/project/mamut-routing-tools/" rel="noopener">PyPI</a>). The local workbench GUI offers the same generation flows this tab used to host, plus everything that was too heavy for the public site.</p>
                 </section>
-                <section class="card note-card">
-                    <h2>Notes</h2>
+                <section class="wb-section">
+                    <div class="wb-kicker">Notes</div>
                     <p class="meta-line">Published benchmark instances and their BKS stay fully browsable in the Visualize tab and the public catalog. Generated data is workbench-scoped and never part of the published collection.</p>
                 </section>
             </section>
         </aside>
 
-        <section class="map-wrap card">
-            <div id="map"></div>
-            <button id="clearBtn" type="button" class="map-clear-btn">Clear Map</button>
-            <div id="toast" class="toast"></div>
-        </section>
+        <aside class="wb-panel wb-panel-right">
+            <div class="wb-kicker wb-kicker-selected">Selected instance</div>
+            <dl id="stats" class="wb-stats"></dl>
+
+            <section class="wb-section" id="routeSelectorCard" style="display:none;">
+                <details id="routeSelectorDetails" open>
+                    <summary>Route display options</summary>
+                    <div id="routeSelectorContainer" class="route-selector"></div>
+                </details>
+            </section>
+
+            <section class="wb-section">
+                <div class="wb-kicker">Routes</div>
+                <ul id="routeLegend" class="route-legend-list"></ul>
+            </section>
+        </aside>
+
+        <button id="clearBtn" type="button" class="map-clear-btn">Clear map</button>
+        <div class="wb-footer"><span class="wb-footer-dot" aria-hidden="true"></span><p id="benchmarkRenderStatus">Road geometry will be rendered automatically when a benchmark sidecar is available.</p></div>
+        <div id="toast" class="toast"></div>
     </main>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="{leaflet_js_href}"></script>
     <script type="module" src="{js_href}"></script>
 </body>
 </html>
@@ -409,20 +360,15 @@ def generate_site_webapp(
             target_path.write_bytes(source_path.read_bytes())
             asset_paths.append(target_path)
             task.update(detail=target_path.name)
-    icon_source_dir = source_assets_dir / "icons"
-    if icon_source_dir.exists():
-        icon_target_dir = site_output / "webapp" / "icons"
-        if icon_target_dir.exists():
-            shutil.rmtree(icon_target_dir)
-        shutil.copytree(icon_source_dir, icon_target_dir)
-        asset_paths.extend(path for path in icon_target_dir.iterdir() if path.is_file())
-    logo_source_dir = source_assets_dir / "logos"
-    if logo_source_dir.exists():
-        logo_target_dir = site_output / "webapp" / "logos"
-        if logo_target_dir.exists():
-            shutil.rmtree(logo_target_dir)
-        shutil.copytree(logo_source_dir, logo_target_dir)
-        asset_paths.extend(path for path in logo_target_dir.iterdir() if path.is_file())
+    for asset_dir_name in ("icons", "logos", "fonts", "vendor"):
+        asset_source_dir = source_assets_dir / asset_dir_name
+        if not asset_source_dir.exists():
+            continue
+        asset_target_dir = site_output / "webapp" / asset_dir_name
+        if asset_target_dir.exists():
+            shutil.rmtree(asset_target_dir)
+        shutil.copytree(asset_source_dir, asset_target_dir)
+        asset_paths.extend(path for path in asset_target_dir.rglob("*") if path.is_file())
 
     html_paths: list[Path] = []
     route_payloads: dict[str, Path] = {}

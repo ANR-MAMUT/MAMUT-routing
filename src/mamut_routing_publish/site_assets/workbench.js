@@ -1,23 +1,38 @@
 const body = document.body;
 const runtimeParams = new URLSearchParams(window.location.search);
 const CANONICAL_WORKBENCH_ROUTE = "/workbench/";
-const ROUTE_COLORS = [
-  "#e63946",
-  "#457b9d",
-  "#2a9d8f",
-  "#f4a261",
-  "#8d5a97",
-  "#264653",
-  "#d62828",
-  "#3a86ff",
-  "#06d6a0",
-  "#ff7f51",
-  "#e76f51",
-  "#1d3557",
-  "#ff006e",
-  "#4d908e",
-  "#bc6c25",
+// Nocturne per-theme 20-color route palettes (VIVID_D / VIVID_L from the merged
+// demo). Leaflet's canvas renderer needs concrete color values, so the palette
+// is resolved per draw from the live theme; a theme change triggers a redraw.
+const ROUTE_COLORS_DARK = [
+  "#9d8bff", "#3cd6f5", "#45e8a5", "#ffc14d", "#ff7ab8",
+  "#7db1ff", "#c9ec55", "#d18cff", "#ff9866", "#3fe8cc",
+  "#e8e055", "#ff8f8f", "#66c2ff", "#9ff06b", "#f0d066",
+  "#b78cff", "#55f0e0", "#ffa8cc", "#8fd0f0", "#e8bb90",
 ];
+const ROUTE_COLORS_LIGHT = [
+  "#5a43e8", "#0d94ba", "#0f9e68", "#c47f00", "#d63d8c",
+  "#2f6fd6", "#7a9e0d", "#9b4fd6", "#d65f2a", "#0da893",
+  "#94940d", "#d64f4f", "#1f7fd6", "#4f9e1f", "#b8930f",
+  "#7a4fd6", "#0d9e94", "#d66a9b", "#3d85ad", "#a87a4f",
+];
+
+function isDarkTheme() {
+  return document.documentElement.dataset.theme === "dark";
+}
+
+function routeColor(routeIndex) {
+  const palette = isDarkTheme() ? ROUTE_COLORS_DARK : ROUTE_COLORS_LIGHT;
+  return palette[routeIndex % palette.length];
+}
+
+// Depot / unassigned-customer marker colors mirror the theme tokens (--acc,
+// --mut in site.css); canvas markers cannot consume CSS variables directly.
+function themeMarkerColors() {
+  return isDarkTheme()
+    ? { depot: "#9d8bff", unassigned: "#8d92b8" }
+    : { depot: "#5b43e8", unassigned: "#6f6f92" };
+}
 const MODE_BY_ROUTE = new Map([
   ["/workbench/", "catalog"],
   ["/workbench/catalog/", "catalog"],
@@ -163,7 +178,14 @@ const darkMatterBaseLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_
   subdomains: "abcd",
   attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
 });
-osmBaseLayer.addTo(map);
+// The theme picks the matching Carto base by default; OpenStreetMap stays
+// available in the layer control. A manual pick is respected until the user
+// toggles the theme again.
+let activeBaseLayer = isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer;
+activeBaseLayer.addTo(map);
+map.on("baselayerchange", (event) => {
+  activeBaseLayer = event.layer;
+});
 L.control.layers(
   {
     OpenStreetMap: osmBaseLayer,
@@ -173,6 +195,18 @@ L.control.layers(
   null,
   { position: "topright", collapsed: true },
 ).addTo(map);
+
+// Redraw markers/routes (canvas colors are resolved per theme) and swap the
+// theme-default base layer when the Nocturne theme toggles.
+new MutationObserver(() => {
+  const themedDefault = isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer;
+  if (activeBaseLayer !== themedDefault && (activeBaseLayer === darkMatterBaseLayer || activeBaseLayer === positronBaseLayer)) {
+    map.removeLayer(activeBaseLayer);
+    themedDefault.addTo(map);
+    activeBaseLayer = themedDefault;
+  }
+  renderVisualState({ fitMap: false });
+}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
 const state = {
   activeTab: initialWorkbenchMode === "generate" ? "generate" : "visualize",
@@ -927,9 +961,10 @@ function buildVisualGeometry() {
 
 function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
   const bounds = [];
+  const markerColors = themeMarkerColors();
   const customerToRoute = new Map();
   routes.forEach((route, routeIndex) => {
-    const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+    const color = routeColor(routeIndex);
     route.forEach((stopIndex) => {
       customerToRoute.set(Number(stopIndex), color);
     });
@@ -941,7 +976,7 @@ function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
     const lat = Number(coordinate[1]);
     const lon = Number(coordinate[0]);
     const isDepot = index === Number(instanceData.depot || 0);
-    const color = isDepot ? "#111111" : customerToRoute.get(index) || "#0f766e";
+    const color = isDepot ? markerColors.depot : customerToRoute.get(index) || markerColors.unassigned;
     const marker = L.circleMarker([lat, lon], {
       radius: isDepot ? 7 : 5,
       color,
@@ -967,7 +1002,7 @@ function drawRoutes(routeLines, routes, instanceData, routeMode) {
     if (!visible.has(routeIndex)) {
       return;
     }
-    const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+    const color = routeColor(routeIndex);
     const fullOpacity = state.selectedRoutes.has(routeIndex);
     const baseOpacity = fullOpacity ? (routeMode === "straight_line" ? 0.78 : 0.88) : state.routeView.fadedOpacity;
     const rawSegments = Array.isArray(routeLine.segments) && routeLine.segments.length > 0
