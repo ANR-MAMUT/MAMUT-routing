@@ -8,7 +8,7 @@ The workbench used to run OSM city fetches, CVRP/VRPTW instance generation, and 
 
 Local runs are faster (your CPU, no shared limits), work offline once a city extract is cached, support much larger instances than the public endpoints ever allowed, and write the generated files directly to your disk. The tools ship a command-line interface plus a local workbench GUI with the same generation flows the website tab used to host.
 
-Quick start: clone the [repository](https://github.com/ANR-MAMUT/MAMUT-routing-tools), install [uv](https://github.com/astral-sh/uv), and run `uv run mamut-tools --help` from the checkout. The uploaded-file visualizer in the public workbench still works; it draws straight-line routes, and road-following rendering for your own data is part of the local tools.
+Quick start: install [uv](https://github.com/astral-sh/uv), then run `uvx --from mamut-routing-tools mamut-tools --help` (the suite is [published on PyPI](https://pypi.org/project/mamut-routing-tools/), so nothing needs to be cloned or installed). The uploaded-file visualizer in the public workbench still works; it draws straight-line routes, and road-following rendering for your own data is part of the local tools.
 
 ## How to download and manipulate instances and BKS
 

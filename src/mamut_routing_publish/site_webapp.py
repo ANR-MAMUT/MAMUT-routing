@@ -349,7 +349,7 @@ def _render_workbench_shell_html(
                         <a class="button-link primary" href="https://github.com/ANR-MAMUT/MAMUT-routing-tools" rel="noopener">Get MAMUT-routing-tools</a>
                         <a class="mini-link" href="{faq_href}">Why local? See the FAQ</a>
                     </div>
-                    <p class="meta-line">Quick start: clone the repository, install <a href="https://github.com/astral-sh/uv" rel="noopener">uv</a>, then run <code>uv run mamut-tools --help</code>. The local workbench GUI offers the same generation flows this tab used to host, plus everything that was too heavy for the public site.</p>
+                    <p class="meta-line">Quick start: install <a href="https://github.com/astral-sh/uv" rel="noopener">uv</a>, then run <code>uvx --from mamut-routing-tools mamut-tools --help</code> (published on <a href="https://pypi.org/project/mamut-routing-tools/" rel="noopener">PyPI</a>). The local workbench GUI offers the same generation flows this tab used to host, plus everything that was too heavy for the public site.</p>
                 </section>
                 <section class="card note-card">
                     <h2>Notes</h2>
