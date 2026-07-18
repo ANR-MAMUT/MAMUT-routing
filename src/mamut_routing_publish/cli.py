@@ -63,7 +63,7 @@ app = typer.Typer(
 )
 
 site_app = typer.Typer(
-    help="Generate site payload JSON files and the static HTML shell consumed by the Julia webapp.",
+    help="Generate site payload JSON files and the static HTML shell of the published website.",
     no_args_is_help=True,
 )
 release_app = typer.Typer(
@@ -145,6 +145,21 @@ def _validate_jobs(jobs: str) -> None:
         raise typer.Exit(code=1) from exc
 
 
+def _parse_worker_jobs(jobs: str) -> int | str:
+    """Parse an 'auto'-or-integer worker option into materialize workers."""
+    value = jobs.strip().lower()
+    if value == "auto":
+        return "auto"
+    try:
+        parsed = int(value)
+        if parsed < 1:
+            raise ValueError
+    except ValueError:
+        typer.echo(f"jobs must be 'auto' or an integer >= 1, got: {jobs!r}", err=True)
+        raise typer.Exit(code=1) from None
+    return parsed
+
+
 def _ru_maxrss_to_gib(ru_maxrss: int) -> float:
     # Linux reports KiB; macOS reports bytes.
     bytes_value = ru_maxrss if sys.platform == "darwin" else ru_maxrss * 1024
@@ -189,6 +204,37 @@ def main_callback(
     ] = None,
 ) -> None:
     """Top-level ``mamut-routing-publish`` callback."""
+
+
+@app.command("serve")
+def serve_cmd(
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Bind address. Use 0.0.0.0 behind a reverse proxy."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            help="Bind port. Defaults to 8082 so a legacy Julia server on 8081 can keep running side by side; deployments pass their proxy target explicitly.",
+        ),
+    ] = 8082,
+    repo_root: Annotated[
+        Optional[Path],
+        typer.Option("--repo-root", help="MAMUT-routing repo root to serve. Defaults to $MAMUT_ROUTING_ROOT or the current directory."),
+    ] = None,
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="uvicorn log level."),
+    ] = "info",
+) -> None:
+    """Serve the built static website (dist/ plus repo artifact roots)."""
+    import uvicorn
+
+    from mamut_routing_publish.server import create_app
+
+    resolved_root = _resolve_repo_dir(repo_root)
+    uvicorn.run(create_app(resolved_root), host=host, port=port, log_level=log_level)
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +282,34 @@ def site_materialize_atf_cmd(
     typer.echo(json.dumps(summary.as_dict(), indent=1))
 
 
+@site_app.command("precompress")
+def site_precompress_cmd(
+    output_repo_dir: Annotated[
+        Optional[Path],
+        typer.Option("--output-repo-dir", help=_OUTPUT_REPO_DIR_HELP),
+    ] = None,
+    site_output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--site-output-dir",
+            help="Site tree to precompress. Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = DEFAULT_SITE_OUTPUT_DIR,
+    jobs: Annotated[
+        Optional[int],
+        typer.Option("--jobs", help="Parallel compression workers (default: cores - 2)."),
+    ] = None,
+) -> None:
+    """Write .gz + .br sidecars for compressible site files (incremental)."""
+    from mamut_routing_publish.precompress import precompress_tree
+    from mamut_routing_publish.publish_roots import PublishRoots
+
+    repo_dir = _resolve_repo_dir(output_repo_dir)
+    root = PublishRoots.resolve(repo_dir, site_output_dir).site_output
+    summary = precompress_tree(root, jobs=jobs)
+    typer.echo(json.dumps(summary.as_dict(), indent=1))
+
+
 @site_app.command("materialize-route-geometry")
 def site_materialize_route_geometry_cmd(
     output_repo_dir: Annotated[
@@ -246,9 +320,13 @@ def site_materialize_route_geometry_cmd(
         int,
         typer.Option(
             "--min-n",
-            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers.",
+            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers (default: all sizes).",
         ),
-    ] = 101,
+    ] = 1,
+    jobs: Annotated[
+        str,
+        typer.Option("--jobs", help="Parallel per-city materialization workers: 'auto' or an integer >= 1."),
+    ] = "auto",
 ) -> None:
     """Materialize hash-addressed BKS road geometry into dist/.
 
@@ -259,7 +337,7 @@ def site_materialize_route_geometry_cmd(
     from mamut_routing_publish.route_geometry import materialize_route_geometry
 
     repo_dir = _resolve_repo_dir(output_repo_dir)
-    summary = materialize_route_geometry(repo_dir, min_customers=min_n)
+    summary = materialize_route_geometry(repo_dir, min_customers=min_n, workers=_parse_worker_jobs(jobs))
     typer.echo(json.dumps(summary, indent=1))
 
 
@@ -310,6 +388,13 @@ def site_payloads_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    state_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--state-dir",
+            help="Persistent publication state dir (history ledger, snapshot inventories). Defaults to <repo>/publish-state. Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = None,
 ) -> None:
     """Generate site payload JSON files only."""
     repo_dir = _resolve_repo_dir(output_repo_dir)
@@ -329,6 +414,7 @@ def site_payloads_cmd(
         schema_version=schema_version,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        state_dir=state_dir,
     )
     _emit_summary(summary)
 
@@ -424,6 +510,20 @@ def site_build_cmd(
             help="Skip the ATF sidecar cache materialization phase. Instance pages of materialized-td-model families (Lera2026, Mamut2026 TD) then lose their schedule tables and arc-click viewer unless dist/atf-cache is already populated.",
         ),
     ] = False,
+    skip_route_geometry: Annotated[
+        bool,
+        typer.Option(
+            "--skip-route-geometry",
+            help="Skip BKS route-geometry materialization (route-geometry-cache). Pages whose BKS geometry is not already cached then fall back to straight lines. Staging builds materialize into the staging cache after seeding it from the active dist.",
+        ),
+    ] = False,
+    route_geometry_jobs: Annotated[
+        str,
+        typer.Option(
+            "--route-geometry-jobs",
+            help="Parallel per-city route-geometry workers: 'auto' or an integer >= 1. Each worker holds one city road graph at a time.",
+        ),
+    ] = "auto",
     schema_version: Annotated[
         str,
         typer.Option("--schema-version", help="Schema version string for the generated site payloads."),
@@ -453,6 +553,20 @@ def site_build_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    state_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--state-dir",
+            help="Persistent publication state dir (history ledger, snapshot inventories). Defaults to <repo>/publish-state. Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = None,
+    precompress: Annotated[
+        bool,
+        typer.Option(
+            "--precompress",
+            help="Write .gz + .br sidecars for compressible site files after the build, so `serve` can negotiate precompressed responses.",
+        ),
+    ] = False,
     progress_format: Annotated[
         str,
         typer.Option(
@@ -497,10 +611,40 @@ def site_build_cmd(
         # checkout silently builds their instance pages without schedule tables
         # or the arc-click viewer. Incremental: existing cache files are reused.
         from mamut_routing_publish.atf_cache import materialize_atf_cache
+        from mamut_routing_publish.publish_roots import PublishRoots
 
-        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n)
-        atf_summary = materialize_atf_cache(repo_dir, max_customers=atf_max_n)
+        roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
+        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n, cache_dir=roots.atf_cache_dir)
+        atf_summary = materialize_atf_cache(
+            repo_dir,
+            max_customers=atf_max_n,
+            cache_dir=roots.atf_cache_dir,
+            seed_from=(roots.active_dist / "atf-cache") if not roots.in_place else None,
+        )
         reporter.phase("materialized ATF sidecar cache", **atf_summary.as_dict())
+
+    if not skip_route_geometry:
+        from mamut_routing_publish.publish_roots import PublishRoots, hardlink_tree
+        from mamut_routing_publish.route_geometry import materialize_route_geometry
+
+        geometry_roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
+        if not geometry_roots.in_place:
+            # Seed the staging cache before the reuse check so unchanged BKS
+            # artifacts are found instead of regenerated; payload generation
+            # repeats this seeding, which is idempotent.
+            hardlink_tree(geometry_roots.active_dist / "route-geometry-cache", geometry_roots.route_geometry_publish_dir)
+        reporter.phase("materializing BKS route geometry", cache_dir=geometry_roots.route_geometry_publish_dir)
+        geometry_summary = materialize_route_geometry(
+            repo_dir,
+            cache_dir=geometry_roots.route_geometry_publish_dir,
+            workers=_parse_worker_jobs(route_geometry_jobs),
+        )
+        reporter.phase(
+            "materialized BKS route geometry",
+            generated=geometry_summary["generated"],
+            reused=geometry_summary["reused"],
+            workers=geometry_summary["workers"],
+        )
 
     payload_summary = generate_site_payloads(
         output_repo_dir=repo_dir,
@@ -512,6 +656,7 @@ def site_build_cmd(
         schema_version=schema_version,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
+        state_dir=state_dir,
         reporter=reporter,
         jobs=jobs,
         list_files=list_files,
@@ -525,6 +670,16 @@ def site_build_cmd(
         reporter=reporter,
         list_files=list_files,
     )
+    precompress_summary = None
+    if precompress:
+        from mamut_routing_publish.precompress import precompress_tree
+        from mamut_routing_publish.publish_roots import PublishRoots
+
+        precompress_root = PublishRoots.resolve(repo_dir, site_output_dir, state_dir).site_output
+        reporter.phase("precompressing site tree", root=precompress_root)
+        precompress_summary = precompress_tree(precompress_root)
+        reporter.phase("precompressed site tree", **precompress_summary.as_dict())
+
     elapsed_seconds = time.perf_counter() - build_started_at
     generated_files_written = (
         payload_summary.payload_files_written
@@ -544,6 +699,8 @@ def site_build_cmd(
         "jobs_resolved": resolve_site_build_jobs(jobs, payload_summary.instance_pages_written),
         "max_memory_gib": _max_memory_gib(),
     }
+    if precompress_summary is not None:
+        build_summary["precompress"] = precompress_summary.as_dict()
     reporter.phase(
         "build summary",
         wall_time=build_summary["wall_time"],

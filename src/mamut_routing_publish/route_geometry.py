@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
 from typing import Any
 
 
@@ -27,11 +26,17 @@ def _file_sha256(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
 
 
-def route_geometry_cache_path(output_repo_dir: str | Path, bks_path: str | Path) -> Path:
+def route_geometry_cache_path(
+    output_repo_dir: str | Path,
+    bks_path: str | Path,
+    *,
+    cache_dir: str | Path | None = None,
+) -> Path:
     repo = Path(output_repo_dir)
     bks = Path(bks_path)
     digest = _file_sha256(bks)
-    return repo / ROUTE_GEOMETRY_CACHE_DIR / digest[:2] / f"{digest}.route-geometry.json.gz"
+    base = Path(cache_dir) if cache_dir is not None else repo / ROUTE_GEOMETRY_CACHE_DIR
+    return base / digest[:2] / f"{digest}.route-geometry.json.gz"
 
 
 def load_route_geometry(path: str | Path) -> dict[str, Any]:
@@ -50,10 +55,11 @@ def route_geometry_for_bks(
     bks_path: str | Path,
     *,
     file_hash_cache: dict[Path, str] | None = None,
+    cache_dir: str | Path | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     repo = Path(output_repo_dir)
     bks = Path(bks_path)
-    target = route_geometry_cache_path(repo, bks)
+    target = route_geometry_cache_path(repo, bks, cache_dir=cache_dir)
     if not target.is_file():
         return None
     payload = load_route_geometry(target)
@@ -120,7 +126,12 @@ def _metric_for_instance(instance_path: Path, collection_root: Path) -> str | No
     return None
 
 
-def _discover_pending(output_repo_dir: Path, *, min_customers: int) -> tuple[list[_PendingBks], int]:
+def _discover_pending(
+    output_repo_dir: Path,
+    *,
+    min_customers: int,
+    cache_dir: Path | None = None,
+) -> tuple[list[_PendingBks], int]:
     collection_root = output_repo_dir / "benchmarks" / "Mamut2026"
     pending: list[_PendingBks] = []
     reused = 0
@@ -147,7 +158,7 @@ def _discover_pending(output_repo_dir: Path, *, min_customers: int) -> tuple[lis
             geo_file_hashes[geo_path] = _file_sha256(geo_path)
         geo_file_sha256 = geo_file_hashes[geo_path]
         for bks_path in sorted(instance_path.parent.glob(f"{instance_path.name.removesuffix('.vrp.json')}.bks.*.json")):
-            cached = route_geometry_for_bks(output_repo_dir, bks_path, file_hash_cache=validation_hashes)
+            cached = route_geometry_for_bks(output_repo_dir, bks_path, file_hash_cache=validation_hashes, cache_dir=cache_dir)
             if cached is not None:
                 reused += 1
                 continue
@@ -173,7 +184,9 @@ def _discover_pending(output_repo_dir: Path, *, min_customers: int) -> tuple[lis
     return pending, reused
 
 
-def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[dict[str, Any], dict[str, _PendingBks]]:
+def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[list[dict[str, Any]], dict[str, _PendingBks]]:
+    """Build slim (meta-free) groups; the batch worker loads each geo meta
+    itself, so multi-megabyte sidecars are never pickled across processes."""
     grouped: dict[tuple[Path, str], list[_PendingBks]] = defaultdict(list)
     pending_by_relpath: dict[str, _PendingBks] = {}
     for entry in pending:
@@ -182,15 +195,11 @@ def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[dict
 
     groups: list[dict[str, Any]] = []
     for group_index, ((geo_path, metric), entries) in enumerate(sorted(grouped.items(), key=lambda item: (str(item[0][0]), item[0][1]))):
-        with gzip.open(geo_path, "rt", encoding="utf-8") as handle:
-            meta = json.load(handle)
-        meta["depot_instance_node_id"] = 0
         groups.append(
             {
                 "result_file": f"group-{group_index:03d}.json",
                 "geo_path": geo_path.relative_to(output_repo_dir).as_posix(),
                 "metric": metric,
-                "meta": meta,
                 "entries": [
                     {
                         "bks_path": entry.bks_path.relative_to(output_repo_dir).as_posix(),
@@ -200,104 +209,58 @@ def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[dict
                 ],
             }
         )
-    return {"groups": groups}, pending_by_relpath
+    return groups, pending_by_relpath
 
 
-def _run_julia_materializer(output_repo_dir: Path, plan: dict[str, Any], temp_dir: Path) -> int:
-    julia = shutil.which("julia")
-    if julia is None:
-        raise RuntimeError("Route-geometry materialization requires Julia on PATH")
-    plan_path = temp_dir / "plan.json"
-    plan_path.write_text(json.dumps(plan, separators=(",", ":")), encoding="utf-8")
-    site_api_path = output_repo_dir / "webapp" / "site_api.jl"
-    julia_code = f"""
-using JSON3
-include({json.dumps(str(site_api_path))})
-repo_root = {json.dumps(str(output_repo_dir))}
-result_root = {json.dumps(str(temp_dir))}
-plan = materialize_json(JSON3.read(read({json.dumps(str(plan_path))}, String)))
-groups = plan["groups"]
-for (group_index, group) in enumerate(groups)
-    meta = group["meta"]
-    metric = String(group["metric"])
-    geo_path = String(group["geo_path"])
-    node_coordinates = workbench_node_coordinates_map(meta)
-    map_options = site_api_payload_get(meta, "map_options", Dict{{String,Any}}())
-    only_intersections = Bool(site_api_payload_get(map_options, "only_intersections", true))
-    trim_to_connected_graph = Bool(site_api_payload_get(map_options, "trim_to_connected_graph", true))
-    map_candidates = workbench_route_map_candidates(
-        repo_root,
-        meta,
-        geo_path,
-        only_intersections,
-        trim_to_connected_graph,
-    )
-    isempty(map_candidates) && error("No usable OSM road graph was available for " * geo_path)
-    edge_cache = Dict{{String,Vector{{Vector{{Float64}}}}}}()
-    straight_fallback_edges = Set{{String}}()
-    entry_edges = Any[]
-    required_edges = Set{{Tuple{{Int,Int}}}}()
-    for entry in group["entries"]
-        required = Set{{String}}()
-        for raw_route in entry["routes"]
-            route = Int.(collect(raw_route))
-            full_route = [0; route; 0]
-            for index in 1:(length(full_route) - 1)
-                edge = (full_route[index], full_route[index + 1])
-                push!(required_edges, edge)
-                push!(required, workbench_node_edge_cache_key(edge...))
-            end
-        end
-        push!(entry_edges, Dict("bks_path" => String(entry["bks_path"]), "edge_keys" => sort!(collect(required))))
-    end
-    ordered_edges = sort!(collect(required_edges))
-    resolved_segments = Vector{{Any}}(undef, length(ordered_edges))
-    Threads.@threads for index in eachindex(ordered_edges)
-        from_node, to_node = ordered_edges[index]
-        resolved_segments[index] = workbench_candidate_route_segment(
-            map_candidates,
-            from_node,
-            to_node,
-            node_coordinates[from_node],
-            node_coordinates[to_node],
-            metric,
-        )
-        if resolved_segments[index] === nothing
-            reverse_segment = workbench_candidate_route_segment(
-                map_candidates,
-                to_node,
-                from_node,
-                node_coordinates[to_node],
-                node_coordinates[from_node],
-                metric,
-            )
-            resolved_segments[index] = reverse_segment === nothing ? nothing : reverse(reverse_segment)
-        end
-    end
-    for (index, edge) in enumerate(ordered_edges)
-        segment = resolved_segments[index]
-        if segment === nothing
-            from_node, to_node = edge
-            segment = [node_coordinates[from_node], node_coordinates[to_node]]
-            push!(straight_fallback_edges, workbench_node_edge_cache_key(edge...))
-        end
-        edge_cache[workbench_node_edge_cache_key(edge...)] = segment
-    end
-    output = Dict("edge_cache" => edge_cache, "entries" => entry_edges, "straight_fallback_edges" => sort!(collect(straight_fallback_edges)))
-    save_json_to_file(output, joinpath(result_root, String(group["result_file"])); indent=0, sort_keys=true)
-    if group_index == length(groups) || String(groups[group_index + 1]["geo_path"]) != geo_path
-        empty!(WORKBENCH_MAP_CACHE)
-        GC.gc()
-    end
-end
-"""
-    completed = subprocess.run(
-        [julia, f"--project={output_repo_dir / 'webapp'}", "--startup-file=no", "--quiet", "-e", julia_code],
-        cwd=output_repo_dir,
-        check=False,
-        text=True,
-    )
-    return completed.returncode
+def _load_group_meta(output_repo_dir: Path, geo_relpath: str) -> dict[str, Any]:
+    with gzip.open(output_repo_dir / geo_relpath, "rt", encoding="utf-8") as handle:
+        meta = json.load(handle)
+    meta["depot_instance_node_id"] = 0
+    return meta
+
+
+def _city_key(geo_relpath: str) -> str:
+    """Batch key so every group of one city lands in the same worker: the
+    road graph is built once per (osm, options) and reused across the batch."""
+    parts = Path(geo_relpath).parts
+    if "sidecars" in parts:
+        index = parts.index("sidecars")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return str(Path(geo_relpath).parent)
+
+
+def _materialize_batch(output_repo_dir: str, groups: list[dict[str, Any]]) -> list[tuple[str, str, Any]]:
+    from mamut_routing_tools.geometry.materialize import materialize_group
+    from mamut_routing_tools.roadgraph import build as roadgraph_build
+
+    repo = Path(output_repo_dir)
+    results: list[tuple[str, str, Any]] = []
+    try:
+        for group in groups:
+            try:
+                full_group = {**group, "meta": _load_group_meta(repo, str(group["geo_path"]))}
+                results.append((str(group["result_file"]), "ok", materialize_group(repo, full_group)))
+            except Exception as error:  # noqa: BLE001 - reported per group by the caller
+                results.append((str(group["result_file"]), "error", f"{group['geo_path']} [{group['metric']}]: {error}"))
+    finally:
+        # Pooled workers survive across batches; without this a worker would
+        # accumulate one multi-gigabyte road graph per city it processed.
+        roadgraph_build.clear_caches()
+    return results
+
+
+def _resolve_workers(workers: int | str | None, batch_count: int) -> int:
+    if isinstance(workers, str):
+        if workers != "auto":
+            raise ValueError(f"workers must be 'auto' or a positive integer, got: {workers!r}")
+        workers = None
+    if workers is None:
+        workers = max(1, (os.cpu_count() or 2) - 1)
+    workers = int(workers)
+    if workers < 1:
+        raise ValueError(f"workers must be >= 1, got: {workers}")
+    return min(workers, max(batch_count, 1))
 
 
 def _indexed_paths(edge_cache: dict[str, list[list[float]]], edge_keys: list[str]) -> tuple[list[list[float]], dict[str, list[int]]]:
@@ -317,6 +280,7 @@ def _save_artifact(
     edge_cache: dict[str, list[list[float]]],
     edge_keys: list[str],
     straight_fallback_edges: list[str] | None = None,
+    cache_dir: Path | None = None,
 ) -> Path | None:
     if (
         _file_sha256(entry.bks_path) != entry.bks_sha256
@@ -346,7 +310,7 @@ def _save_artifact(
         ),
     }
     canonical = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
-    target = route_geometry_cache_path(output_repo_dir, entry.bks_path)
+    target = route_geometry_cache_path(output_repo_dir, entry.bks_path, cache_dir=cache_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
@@ -354,25 +318,45 @@ def _save_artifact(
     return target
 
 
-def materialize_route_geometry(output_repo_dir: str | Path, *, min_customers: int = 101) -> dict[str, Any]:
+def _canonical_cache_relpath(target: Path) -> str:
+    return (ROUTE_GEOMETRY_CACHE_DIR / target.parent.name / target.name).as_posix()
+
+
+def materialize_route_geometry(
+    output_repo_dir: str | Path,
+    *,
+    min_customers: int = 1,
+    cache_dir: str | Path | None = None,
+    workers: int | str | None = None,
+) -> dict[str, Any]:
     output_repo = Path(output_repo_dir).resolve()
-    pending, reused = _discover_pending(output_repo, min_customers=min_customers)
+    resolved_cache_dir = Path(cache_dir).resolve() if cache_dir is not None else None
+    pending, reused = _discover_pending(output_repo, min_customers=min_customers, cache_dir=resolved_cache_dir)
     if not pending:
-        return {"generated": 0, "reused": reused, "changed_during_run": 0, "groups": 0, "paths": []}
-    plan, pending_by_relpath = _group_plan(output_repo, pending)
+        return {"generated": 0, "reused": reused, "changed_during_run": 0, "groups": 0, "workers": 0, "paths": []}
+    groups, pending_by_relpath = _group_plan(output_repo, pending)
+
+    batches: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for group in groups:
+        batches[_city_key(str(group["geo_path"]))].append(group)
+    batch_list = [batches[key] for key in sorted(batches)]
+    effective_workers = _resolve_workers(workers, len(batch_list))
+
     written: list[str] = []
     changed_during_run = 0
-    with tempfile.TemporaryDirectory(prefix="mamut-route-geometry-") as temp_value:
-        temp_dir = Path(temp_value)
-        returncode = _run_julia_materializer(output_repo, plan, temp_dir)
-        for group in plan["groups"]:
-            result_path = temp_dir / group["result_file"]
-            if not result_path.is_file():
+    failures: list[str] = []
+
+    def _publish_batch(batch_result: list[tuple[str, str, Any]]) -> None:
+        # Per-group publication: completed groups publish immediately, so
+        # earlier results survive a later failure or an interrupted run.
+        nonlocal changed_during_run
+        for _result_file, status, payload in batch_result:
+            if status != "ok":
+                failures.append(str(payload))
                 continue
-            result = json.loads(result_path.read_text(encoding="utf-8"))
-            edge_cache = result["edge_cache"]
-            straight_fallback_edges = result.get("straight_fallback_edges", [])
-            for result_entry in result["entries"]:
+            edge_cache = payload["edge_cache"]
+            straight_fallback_edges = payload.get("straight_fallback_edges", [])
+            for result_entry in payload["entries"]:
                 entry = pending_by_relpath[result_entry["bks_path"]]
                 target = _save_artifact(
                     output_repo,
@@ -380,19 +364,31 @@ def materialize_route_geometry(output_repo_dir: str | Path, *, min_customers: in
                     edge_cache,
                     result_entry["edge_keys"],
                     straight_fallback_edges,
+                    cache_dir=resolved_cache_dir,
                 )
                 if target is None:
                     changed_during_run += 1
                     continue
-                written.append(target.relative_to(output_repo).as_posix())
-        if returncode != 0:
-            raise RuntimeError(
-                f"Julia route-geometry materialization failed after publishing {len(written)} completed BKS artifacts"
-            )
+                written.append(_canonical_cache_relpath(target))
+
+    if effective_workers == 1:
+        for batch in batch_list:
+            _publish_batch(_materialize_batch(str(output_repo), batch))
+    else:
+        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+            futures = [executor.submit(_materialize_batch, str(output_repo), batch) for batch in batch_list]
+            for future in as_completed(futures):
+                _publish_batch(future.result())
+    if failures:
+        details = "; ".join(failures)
+        raise RuntimeError(
+            f"Route-geometry materialization failed for {len(failures)} group(s) after publishing {len(written)} completed BKS artifacts: {details}"
+        )
     return {
         "generated": len(written),
         "reused": reused,
         "changed_during_run": changed_during_run,
-        "groups": len(plan["groups"]),
+        "groups": len(groups),
+        "workers": effective_workers,
         "paths": sorted(written),
     }

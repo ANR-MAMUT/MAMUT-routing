@@ -1,6 +1,6 @@
 # MAMUT-routing
 
-Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks, the static benchmark website, and the Julia webapp that visualizes instances and routes — all in one repository.
+Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes, all in one repository. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools); Julia remains only for the offline time-dependent benchmark generation pipeline.
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
 
@@ -21,11 +21,13 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
 | `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Mamut2026 generated benchmarks. |
-| `webapp/` | Julia webapp (Genie) serving the static site and the route-payload API. |
+| `webapp/` | Julia scripts of the offline time-dependent benchmark generation pipeline (`osm_generation.jl`, `td_traffic.jl`), driven by `workbench build-family`. The legacy site server they accompany is retired. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
 | `MAMUT-routing-lib/` *(submodule)* | Contract/runtime Python library — see [ANR-MAMUT/MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib). |
+| `MAMUT-routing-tools/` *(submodule)* | Local generation tool suite (road-graph engine, route geometry, OSM fetch) — see [ANR-MAMUT/MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools). `site build` uses its road engine for BKS route geometry. |
+| `publish-state/` *(generated, gitignored)* | Persistent publication state: history ledger + snapshot inventories, surviving fresh release directories. |
 | `tests/` | Pytest suite for `mamut_routing_publish`. |
 
 ### Benchmark family satellites
@@ -65,43 +67,40 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 
 #### Python
 ```bash
-# clone with the nested mamut-routing-lib submodule (benchmark family
-# satellites stay empty — opt in per family, see "Benchmark family satellites")
+# clone with the tooling submodules (benchmark family satellites stay
+# empty — opt in per family, see "Benchmark family satellites")
 git clone git@github.com:ANR-MAMUT/MAMUT-routing.git
 cd MAMUT-routing
-git submodule update --init MAMUT-routing-lib
+git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
 
-# install (uses the local editable submodule for mamut-routing-lib)
+# install (uv workspace: editable mamut-routing-lib + mamut-routing-tools)
 uv sync
 ```
 
-#### Julia
+#### Julia (offline TD generation only)
 
-From the repo root, run:
+Building and serving the website needs no Julia. Julia is only required to run the offline time-dependent benchmark generation pipeline (`workbench build-family` / `traffic-sim`). To set it up, run from the repo root:
 ```bash
 julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 ```
 
-This installs and precompiles the Julia dependencies declared in `webapp/Project.toml` and `webapp/Manifest.toml`.
-
 
 ### Publishing the site (build order)
 
-The whole publish is four chained steps: fetch the data, install, materialize the route-geometry sidecars, build, then serve:
+The whole publish is three chained steps: fetch the data, install, build, then serve:
 
 ```bash
-git submodule update --init MAMUT-routing-lib benchmarks/Mamut2026 \
+git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Mamut2026 \
   && uv sync \
-  && uv run mamut-routing-publish site materialize-route-geometry \
   && uv run mamut-routing-publish site build \
-  && julia -t auto --project=webapp webapp/run_site_api.jl --quiet --repo-root "$(pwd)"
+  && uv run mamut-routing-publish serve
 ```
 
-`site build` materializes the build-time ATF cache itself (TD schedule tables and arc-click sidecars for the materialized-model families, `dist/atf-cache/`, incremental). The standalone `site materialize-atf` command remains available to pre-warm that cache or change the size cap (`--atf-max-n` on build, default 400).
+`site build` materializes everything it needs itself, incrementally: the build-time ATF cache (`dist/atf-cache/`, TD schedule tables and arc-click sidecars for the materialized-model families; `--atf-max-n`, default 400) and the BKS route-geometry cache (`dist/route-geometry-cache/`, sha-pinned per BKS at every instance size, produced by the MAMUT-routing-tools road engine in parallel per city; `--route-geometry-jobs`, `--skip-route-geometry` to opt out). Staging builds seed the cache from the active `dist` and materialize the remainder into the staging output. The standalone `site materialize-atf` and `site materialize-route-geometry` commands remain available for pre-warming.
 
-The route-geometry materializer is incremental and keyed by the exact BKS SHA-256. Run it before every publication: unchanged BKS reuse their existing derived sidecar, while every new or modified BKS receives a new sidecar and payload reference.
+`serve` binds `127.0.0.1:8082` by default (pass `--host`/`--port` for deployments) and serves `dist/` plus the repo artifact roots with real cache headers, ETags, Range, and precompressed `.gz`/`.br` negotiation (build with `--precompress` to generate the sidecars). Persistent history state lives in `publish-state/`; release-style staging builds (`--site-output-dir`) never write the active `dist`.
 
-Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step (the Julia server additionally provides repo-artifact downloads and the interactive workbench, including the TD generation endpoint).
+Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step.
 
 ### CLI variants
 
@@ -122,8 +121,8 @@ uv run mamut-routing-publish site webapp
 uv run mamut-routing-publish release build
 
 # Generate a Mamut2026-pipeline family for a city (CVRP base, VRPTW TW sets,
-# 6 traffic overlays, 12 TD twins, shared sidecars); the workbench exposes the
-# same pipeline interactively for n <= 100
+# 6 traffic overlays, 12 TD twins, shared sidecars); requires Julia (offline
+# TD generation pipeline). Interactive generation lives in MAMUT-routing-tools.
 uv run mamut-routing-publish workbench build-family Lyon --n 25 --method poi_categories --out-root instances_v2/workbench-collection
 ```
 
@@ -135,17 +134,13 @@ By default, the CLI resolves the MAMUT-routing repo root from the current workin
 uv run pytest
 ```
 
-## Julia webapp
+## Serving
 
-See [`webapp/README.md`](webapp/README.md) for the site API server and
-geometry-cache filling instructions.
-
-To run Julia webapp locally:
 ```bash
-julia -t auto --project=webapp webapp/run_site_api.jl --repo-root "$(pwd)"
+uv run mamut-routing-publish serve --repo-root "$(pwd)"
 ```
 
-This command starts the server, serving the static site and the route-payload API from the local `dist/` directory. 
+This starts the static site server (Python, `127.0.0.1:8082` by default): the built `dist/` tree plus the repo artifact roots (`LICENSE`, `benchmarks/`, `dist/` caches referenced by payloads) and `/healthz`. There are no compute endpoints; generation and solving live in [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
 
 ## Archival and reproducibility
 
