@@ -1468,8 +1468,15 @@ tbody tr:hover {
 .inspector-actions {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.inspector-actions .button-link {
+  justify-content: center;
+  font-size: 14px;
+  padding: 9px 18px;
 }
 
 .download-chip {
