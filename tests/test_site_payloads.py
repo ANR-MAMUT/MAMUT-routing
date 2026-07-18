@@ -582,6 +582,36 @@ https://opendatacommons.org/licenses/odbl/1-0/
     assert "payload.license_markdown" in site_js
 
 
+def test_family_license_section_falls_back_to_collection_layout(tmp_path: Path) -> None:
+    # Mamut2026 stores its problem-type layers under benchmarks/Mamut2026/<PT>/
+    # with a single LICENSE at the collection root; the standard per-family
+    # path benchmarks/<PT>/Mamut2026/LICENSE does not exist there.
+    from mamut_routing_lib.enums import BenchmarkName, ProblemType
+    from mamut_routing_publish.site_payloads import _load_family_license_section
+
+    repo = tmp_path / "repo"
+    collection_license = repo / "benchmarks" / "Mamut2026" / "LICENSE"
+    collection_license.parent.mkdir(parents=True)
+    collection_license.write_text(
+        """SPDX-License-Identifier: ODbL-1.0
+
+OSM-derived artifacts use ODbL.
+""",
+        encoding="utf-8",
+    )
+    for problem_type in (ProblemType.CVRP, ProblemType.VRPTW, ProblemType.TDVRP, ProblemType.TDVRPTW):
+        section = _load_family_license_section(repo, problem_type, BenchmarkName.MAMUT_2026)
+        assert section.spdx_id == "ODbL-1.0"
+        assert "ODbL" in (section.markdown or "")
+
+    # A per-family LICENSE at the standard path wins over the collection root.
+    family_license = repo / "benchmarks" / "TDVRP" / "Mamut2026" / "LICENSE"
+    family_license.parent.mkdir(parents=True)
+    family_license.write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
+    assert _load_family_license_section(repo, ProblemType.TDVRP, BenchmarkName.MAMUT_2026).spdx_id == "MIT"
+    assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.MAMUT_2026).spdx_id == "ODbL-1.0"
+
+
 def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
     output_repo_dir = tmp_path / "MAMUT-routing"
     build_fixture_site_inputs(output_repo_dir)

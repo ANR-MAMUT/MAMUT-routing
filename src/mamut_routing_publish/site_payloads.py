@@ -1919,7 +1919,13 @@ _STANDALONE_URL_RE = re.compile(r"^https?://\S+$")
 
 
 def _license_file_path(output_repo_dir: Path, problem_type: ProblemType, benchmark_name: BenchmarkName) -> Path:
-    return output_repo_dir / "benchmarks" / problem_type.value / benchmark_name.value / "LICENSE"
+    family_path = output_repo_dir / "benchmarks" / problem_type.value / benchmark_name.value / "LICENSE"
+    if family_path.is_file():
+        return family_path
+    # Collection layout (Mamut2026): one LICENSE at benchmarks/<Benchmark>/
+    # covers every problem-type layer stored as benchmarks/<Benchmark>/<PT>/.
+    collection_path = output_repo_dir / "benchmarks" / benchmark_name.value / "LICENSE"
+    return collection_path if collection_path.is_file() else family_path
 
 
 def _markdown_link_for_url(url: str) -> str:
@@ -2565,7 +2571,7 @@ def _build_objectives_page_payload(
             description="Time-dependent duration-minimization objective: minimize the sum of route durations, where the depot departure time of each route is a decision variable and travel times vary with departure time (FIFO arrival-time functions).",
             interpretation_notes=[
                 "Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
-                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
+                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Mamut2026) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
         ),

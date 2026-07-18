@@ -19,7 +19,7 @@ Short, effective definitions for the acronyms and technical terms used across th
 - **TTF** — *Travel-Time Function*. Per-arc function `τ(t) = α(t) − t`, the travel time as a function of departure time, derived directly from the ATF. Plotted alongside the ATF in the arc-click viewer on TD instance pages.
 - **NDCPWLF** — *Non-Decreasing Continuous Piecewise-Linear Function*. The exact shape of a canonical ATF: continuous, piecewise-linear, and non-decreasing in departure time (the internal ATF model is named `atf-ndcpwlf`).
 - **FIFO** — *First-In, First-Out* property (no passing). A time-dependent travel model is FIFO when departing later can never lead to arriving earlier. All canonical ATFs are FIFO; some raw sources violate it and are FIFO-restored via the arrival-time lower envelope.
-- **IGP** — *Ichoua–Gendreau–Potvin* (2003) travel-time model. Piecewise-constant speeds per time zone and per arc speed profile, which integrate into FIFO piecewise-linear arrival-time functions. The generator behind the `Dabia2013`, `Ari2018`, and `Vu2020` families.
+- **IGP** — *Ichoua–Gendreau–Potvin* (2003) travel-time model. Piecewise-constant speeds per time zone and per arc speed profile, which integrate into FIFO piecewise-linear arrival-time functions. The generator behind the `Dabia2013`, `Ari2018`, and `Vu2020` families; `Lera2026` scales the same model to 1000 customers.
 - **EAT** — *Earliest Arrival Time*. On the per-route ready-time plot, the earliest possible arrival back at the depot for the route.
 - **MDT** — *Minimum-Duration Dispatch*. The checker's optimal depot departure `t*` and the resulting minimum route duration `Δ*` (the point `(t*, Δ*)` marked on the route ready-time function).
 
