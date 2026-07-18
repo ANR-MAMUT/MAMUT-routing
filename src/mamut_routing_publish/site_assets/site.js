@@ -1471,7 +1471,7 @@ function renderInspectorPaneShell(item) {
   const problemType = item.locator?.problem_type || "";
   const problemChip = problemType ? `<span class="badge">${escapeHtml(problemType)}</span>` : "";
   const workbenchAction = supportsWorkbenchInstance(item)
-    ? `<a class="mini-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Open in workbench →</a>`
+    ? `<a class="button-link" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(item.route_path)}">Open in workbench →</a>`
     : "";
   return `
     <div class="inspector-kicker">Inspector</div>
@@ -1479,7 +1479,7 @@ function renderInspectorPaneShell(item) {
     <div class="inspector-preview" data-inspector-preview><div class="inspector-preview-skeleton" aria-hidden="true"></div></div>
     <div data-inspector-details><div class="meta-line">Loading instance details…</div></div>
     <div class="inspector-actions">
-      <a class="mini-link" href="${routeHref(item.route_path)}">Open full record →</a>
+      <a class="button-link primary" href="${routeHref(item.route_path)}">Open full record →</a>
       ${workbenchAction}
     </div>`;
 }
@@ -2066,7 +2066,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
   const display = {
     hiddenRoutes: options.displayOptions?.hiddenRoutes || new Set(),
     depotLegMode: options.displayOptions?.depotLegMode || "full",
-    fadedOpacity: options.displayOptions?.fadedOpacity ?? 0.6,
+    fadedOpacity: options.displayOptions?.fadedOpacity ?? 0.25,
     routeOpacity: options.displayOptions?.routeOpacity ?? 1,
   };
   const polylineFor = (points, color, opacity) => {
@@ -2513,7 +2513,7 @@ async function renderInstancePage(payload, options = {}) {
   const displayOptions = {
     hiddenRoutes: new Set(),
     depotLegMode: "faded",
-    fadedOpacity: 0.6,
+    fadedOpacity: 0.25,
     routeOpacity: 1,
   };
 
