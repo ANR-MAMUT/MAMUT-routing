@@ -1812,10 +1812,8 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
 }
 
 function supportsWorkbenchInstance(value) {
-  // Historically gated on an OSM place slug; the workbench visualizes any
-  // published instance client-side (straight lines without road geometry),
-  // so every catalog row gets the action.
-  return Boolean(value?.route_path || value?.summary?.route_path);
+  const placeSlug = String(value?.place_slug || value?.summary?.place_slug || "").trim();
+  return placeSlug.length > 0;
 }
 
 function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
@@ -2259,7 +2257,7 @@ async function renderInstancePage(payload, options = {}) {
         "Actions",
         inWorkbench
           ? `<div class="inline-actions"><a class="button-link primary" href="${routeHref(payload.route_path)}">Open Public Page</a><a class="button-link" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div>`
-          : supportsWorkbenchInstance(payload)
+          : supportsWorkbenchInstance(payload.summary)
             ? `<div class="inline-actions"><a class="button-link primary" href="${routeHref(payload.workbench_route_path)}?instance=${encodeURIComponent(payload.route_path)}">Open In Workbench</a></div>`
             : `<div class="inline-actions"><a class="button-link primary" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div>`,
       ),
