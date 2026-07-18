@@ -48,9 +48,6 @@ const PALETTE = [
   "#0891b2",
   "#8b5cf6",
 ];
-const WORKBENCH_GENERATION_CITIES_PATH = "/api/workbench/generation/cities";
-const WORKBENCH_GENERATION_PREVIEW_PATH = "/api/workbench/generation/preview";
-const WORKBENCH_RENDER_ROUTES_PATH = "/api/workbench/render-routes";
 const HOME_PREVIEW_ROTATION_MS = 5000;
 const ROAD_CACHE_ENDPOINT_TOLERANCE_METERS = 250;
 const WGS84_A = 6378137.0;
@@ -298,6 +295,32 @@ function fetchRouteGeometryMetaMemo(bksEntry) {
   return promise;
 }
 
+async function routeGeometryMetaForEntry(bksEntry) {
+  if (!bksEntry?.route_geometry_path) {
+    return null;
+  }
+  try {
+    return await fetchRouteGeometryMetaMemo(bksEntry);
+  } catch (error) {
+    console.warn("Unable to load the BKS route-geometry artifact", error);
+    return null;
+  }
+}
+
+function mergeGeometryMeta(geometryMeta, routeGeometryMeta) {
+  if (!routeGeometryMeta) {
+    return geometryMeta;
+  }
+  return {
+    ...(geometryMeta || {}),
+    ...routeGeometryMeta,
+    road_cache: {
+      ...(geometryMeta?.road_cache || {}),
+      ...(routeGeometryMeta.road_cache || {}),
+    },
+  };
+}
+
 async function fetchWorkbenchPayloadForRoute(routePath) {
   const sourcePath = payloadUrlForRoute(routePath);
   const cacheKey = `${state.payloadMode}:${sourcePath}`;
@@ -307,58 +330,6 @@ async function fetchWorkbenchPayloadForRoute(routePath) {
   const payload = await fetchJson(sourcePath);
   WORKBENCH_PAYLOAD_CACHE.set(cacheKey, payload);
   return payload;
-}
-
-async function fetchWorkbenchJson(sourcePath, init = {}) {
-  const response = await fetch(sourcePath, {
-    cache: "no-store",
-    ...init,
-    headers: {
-      ...(init.headers || {}),
-    },
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || `Unable to fetch ${sourcePath}: ${response.status}`);
-  }
-  return data;
-}
-
-function postWorkbenchJson(sourcePath, payload) {
-  return fetchWorkbenchJson(sourcePath, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-}
-
-async function postWorkbenchBlob(sourcePath, payload) {
-  const response = await fetch(sourcePath, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    let message = `Request failed: ${response.status}`;
-    try {
-      const data = await response.json();
-      if (data && (data.error || data.message)) {
-        message = data.error || data.message;
-      }
-    } catch (_) {
-      // not JSON; keep status-based message
-    }
-    throw new Error(message);
-  }
-  const disposition = response.headers.get("Content-Disposition") || "";
-  const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
-  const filename = match ? decodeURIComponent(match[1] || match[2] || "").trim() : "";
-  const blob = await response.blob();
-  return { blob, filename };
 }
 
 function payloadStaticHref(routePath) {
@@ -1247,9 +1218,12 @@ function loadHomePreviewSampleGeometry(sample, onLoaded) {
   if (sample.preview.geometryMeta) {
     return;
   }
-  fetchGeometryMetaMemo(artifactLinks)
-    .then((data) => {
-      sample.preview.geometryMeta = data;
+  Promise.all([
+    fetchGeometryMetaMemo(artifactLinks),
+    routeGeometryMetaForEntry(sample.preview.selectedEntry),
+  ])
+    .then(([data, routeGeometryMeta]) => {
+      sample.preview.geometryMeta = mergeGeometryMeta(data, routeGeometryMeta);
       onLoaded?.(sample);
     })
     .catch((error) => console.warn("Unable to load homepage geometry sidecar", error));
@@ -1880,16 +1854,46 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     ...previewGeometry.routeLines.flatMap((routeLine) => routeLine.coordinates || []),
   ]);
   const projectedNodes = projectCoordinates(previewGeometry.nodeCoordinates || [], width, height, projectionBounds);
+  const display = {
+    hiddenRoutes: options.displayOptions?.hiddenRoutes || new Set(),
+    depotLegMode: options.displayOptions?.depotLegMode || "full",
+    fadedOpacity: options.displayOptions?.fadedOpacity ?? 0.6,
+    routeOpacity: options.displayOptions?.routeOpacity ?? 1,
+  };
+  const polylineFor = (points, color, opacity) => {
+    const projected = projectCoordinates(points || [], width, height, projectionBounds).filter(Boolean);
+    if (projected.length < 2) {
+      return "";
+    }
+    const opacityAttr = opacity < 1 ? ` stroke-opacity="${opacity.toFixed(3)}"` : "";
+    return `<polyline fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${projected
+      .map((point) => `${point.x},${point.y}`)
+      .join(" ")}" />`;
+  };
   const routePaths = previewGeometry.routeLines
     .map((routeLine) => {
-      const projectedRoute = projectCoordinates(routeLine.coordinates, width, height, projectionBounds).filter(Boolean);
-      if (projectedRoute.length < 2) {
+      if (display.hiddenRoutes.has(routeLine.routeIndex)) {
+        return "";
+      }
+      const color = PALETTE[routeLine.routeIndex % PALETTE.length];
+      let body;
+      if (display.depotLegMode === "full" || !Array.isArray(routeLine.segments) || routeLine.segments.length < 2) {
+        body = polylineFor(routeLine.coordinates, color, display.routeOpacity);
+      } else {
+        // Depot legs (first and last segments) drawn separately so they can
+        // fade or hide; the route body keeps full presence.
+        body = polylineFor(mergeGeometrySegments(routeLine.segments.slice(1, -1)), color, display.routeOpacity);
+        if (display.depotLegMode === "faded") {
+          const legOpacity = Math.max(0, Math.min(1, display.fadedOpacity * display.routeOpacity));
+          body += polylineFor(routeLine.segments[0], color, legOpacity);
+          body += polylineFor(routeLine.segments[routeLine.segments.length - 1], color, legOpacity);
+        }
+      }
+      if (!body) {
         return "";
       }
       const routeTitle = `Route ID ${routeLine.routeIndex + 1} · ${routeLine.stopCount} customer${routeLine.stopCount === 1 ? "" : "s"} · ${String(routeLine.source).replaceAll("_", " ")}`;
-      return `<g class="route-line"><title>${escapeHtml(routeTitle)}</title><polyline fill="none" stroke="${PALETTE[routeLine.routeIndex % PALETTE.length]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${projectedRoute
-        .map((point) => `${point.x},${point.y}`)
-        .join(" ")}" /></g>`;
+      return `<g class="route-line"><title>${escapeHtml(routeTitle)}</title>${body}</g>`;
     })
     .join("");
   const nodes = projectedNodes
@@ -1910,7 +1914,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
   let arcHitTargets = "";
   if (options.interactiveArcs) {
     arcHitTargets = previewGeometry.routeLines
-      .filter((routeLine) => routeLine.source === "straight_line")
+      .filter((routeLine) => routeLine.source === "straight_line" && !display.hiddenRoutes.has(routeLine.routeIndex))
       .map((routeLine) => {
         const projectedRoute = projectCoordinates(routeLine.coordinates, width, height, projectionBounds);
         const segments = [];
@@ -1939,70 +1943,34 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     </div>`;
 }
 
-function renderGenerationPreviewSvg(geojson, summary = {}) {
-  const width = 860;
-  const height = 520;
-  const features = Array.isArray(geojson?.features) ? geojson.features : [];
-  const featurePoints = features
-    .map((feature) => normalizeGeometryPoint(feature?.geometry?.coordinates))
-    .filter(Boolean);
-
-  if (featurePoints.length === 0) {
-    return `<div class="empty-state">No preview geometry was returned for the requested generation parameters.</div>`;
+function renderDisplayOptionsCard(bksData, displayOptions) {
+  const routes = Array.isArray(bksData?.routes) ? bksData.routes : [];
+  if (routes.length === 0) {
+    return "";
   }
-
-  const projectedPoints = projectCoordinates(featurePoints, width, height);
-  const nodes = projectedPoints
-    .map((point, index) => {
-      if (!point) {
-        return "";
-      }
-      const feature = features[index];
-      const role = feature?.properties?.role || "customer";
-      const sourceTag = String(feature?.properties?.source_tag || "unknown");
-      const fill = role === "depot" ? "#111111" : sourceTag === "catalog_sample" ? "#16a34a" : sourceTag.startsWith("poi") ? "#b83a06" : "#0891b2";
-      const radius = role === "depot" ? 8 : 5;
-      return `<g class="viewer-node"><title>${escapeHtml(role)} · ${escapeHtml(sourceTag)}</title><circle cx="${point.x}" cy="${point.y}" r="${radius}" fill="${fill}" opacity="0.92" /></g>`;
-    })
+  const hiddenCount = routes.reduce((count, _, index) => count + (displayOptions.hiddenRoutes.has(index) ? 1 : 0), 0);
+  const routeToggles = routes
+    .map(
+      (route, index) =>
+        `<label class="route-toggle"><input type="checkbox" data-route-toggle="${index}"${displayOptions.hiddenRoutes.has(index) ? "" : " checked"} /><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span>Route ${index + 1} · ${route.length} stop${route.length === 1 ? "" : "s"}</span></label>`,
+    )
     .join("");
-
-  const customerCounts = [];
-  if (summary.customers !== undefined) {
-    customerCounts.push(`${summary.customers} customers`);
-  }
-  if (summary.requested_customers !== undefined && summary.requested_customers !== summary.customers) {
-    customerCounts.push(`requested ${summary.requested_customers}`);
-  }
-
-  return `
-    <div class="viewer-toolbar">
-      <div>${badge(`${summary.city || "Preview"} · ${summary.method || "generation"}`, true)}</div>
-      <div class="meta-line">${escapeHtml(summary.note || "Preview generated from workbench parameters")}</div>
-    </div>
-    <div class="viewer-frame">
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Generation preview">${nodes}</svg>
-    </div>
-    <div class="preview-summary">
-      <article class="mini-card">
-        <h3>Preview Summary</h3>
-        ${renderStatGrid([
-          ["Mode", summary.preview_mode || "n/a"],
-          ["City", summary.city || "n/a"],
-          ["Method", summary.method || "n/a"],
-          ["Customers", customerCounts.join(" · ") || "n/a"],
-          ["POI", summary.poi_customers ?? "n/a"],
-          ["Parametric", summary.parametric_customers ?? "n/a"],
-        ])}
-      </article>
-      <article class="mini-card">
-        <h3>Preview Source</h3>
-        ${renderStatGrid([
-          ["Sample instance", summary.sample_instance_name || "live selection"],
-          ["Sample method", summary.sample_method || "live"],
-          ["Sample size", summary.sample_size_dir || "live"],
-        ])}
-      </article>
-    </div>`;
+  return renderCard(
+    "Display Options",
+    `<label class="field"><span>Depot legs</span><select data-display-depot-legs>
+        <option value="full"${displayOptions.depotLegMode === "full" ? " selected" : ""}>Full</option>
+        <option value="faded"${displayOptions.depotLegMode === "faded" ? " selected" : ""}>Faded</option>
+        <option value="hidden"${displayOptions.depotLegMode === "hidden" ? " selected" : ""}>Hidden</option>
+      </select></label>
+      <label class="field"><span>Legs opacity: <output data-legs-opacity-value>${Math.round(displayOptions.fadedOpacity * 100)}%</output></span><input type="range" min="0" max="1" step="0.05" value="${displayOptions.fadedOpacity}" data-display-legs-opacity${displayOptions.depotLegMode === "faded" ? "" : " disabled"} /></label>
+      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>
+      <div class="route-toggle-toolbar">
+        <button type="button" class="bks-chip" data-routes-all>All</button>
+        <button type="button" class="bks-chip" data-routes-none>None</button>
+        <span class="meta-line">${routes.length - hiddenCount}/${routes.length} visible</span>
+      </div>
+      <div class="route-toggle-list">${routeToggles}</div>`,
+  );
 }
 
 function renderBksSelector(entries, selectedIndex) {
@@ -2314,7 +2282,10 @@ async function renderInstancePage(payload, options = {}) {
     await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path)),
   );
   let geometryMeta = null;
-  if (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete" && geometryMetaSourcePath(payload.artifact_links)) {
+  const hasRouteGeometryEntries = (payload.bks_entries || []).some((entry) => entry?.route_geometry_path);
+  const wantsSidecarGeometry =
+    (payload.summary.viewer_render_mode === "cached_road" && payload.summary.road_cache_status === "complete") || hasRouteGeometryEntries;
+  if (wantsSidecarGeometry && geometryMetaSourcePath(payload.artifact_links)) {
     try {
       geometryMeta = await fetchGeometryMetaMemo(payload.artifact_links);
     } catch (error) {
@@ -2324,16 +2295,24 @@ async function renderInstancePage(payload, options = {}) {
   let selectedIndex = 0;
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+  let selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
   let selectedScheduleRoute = 0;
   let arcState = null;
   let routeFunctionsData = null;
   let routeFunctionsStatus = "idle";
   const supportsArcFunctions = Boolean(payload.artifact_links.atf_json_path);
+  const displayOptions = {
+    hiddenRoutes: new Set(),
+    depotLegMode: "faded",
+    fadedOpacity: 0.6,
+    routeOpacity: 1,
+  };
 
   const renderSelectedState = () => {
     const asideCards = [
       inWorkbench ? renderWorkbenchModeCard(payload.route_path) : "",
       inWorkbench ? renderWorkbenchVisualizeSourceCard(payload.route_path) : "",
+      renderDisplayOptionsCard(selectedBksData, displayOptions),
       renderCard(
         "Instance Summary",
         `${renderStatGrid([
@@ -2397,11 +2376,12 @@ async function renderInstancePage(payload, options = {}) {
     state.stage.innerHTML = `
       <div class="viewer-stage">
         ${renderPreviewSvg(instanceData, selectedBksData, selectedEntry, {
-          geometryMeta,
+          geometryMeta: mergeGeometryMeta(geometryMeta, selectedRouteGeometryMeta),
           metricVariant: payload.summary.metric_variant,
-          viewerRenderMode: payload.summary.viewer_render_mode,
-          roadCacheStatus: payload.summary.road_cache_status,
+          viewerRenderMode: selectedRouteGeometryMeta ? "cached_road" : payload.summary.viewer_render_mode,
+          roadCacheStatus: selectedRouteGeometryMeta ? "complete" : payload.summary.road_cache_status,
           interactiveArcs: supportsArcFunctions,
+          displayOptions,
         })}
         <section class="mini-card">
           <h3>Route Legend</h3>
@@ -2431,11 +2411,56 @@ async function renderInstancePage(payload, options = {}) {
         selectedIndex = Number(button.dataset.bksIndex);
         selectedEntry = payload.bks_entries[selectedIndex] || null;
         selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
+        selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
         selectedScheduleRoute = 0;
         routeFunctionsData = null;
         routeFunctionsStatus = "idle";
+        // Route indices are objective-specific; visibility resets, the
+        // rendering preferences carry over.
+        displayOptions.hiddenRoutes = new Set();
         renderSelectedState();
       });
+    });
+    state.aside.querySelectorAll("[data-route-toggle]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const routeIndex = Number(checkbox.dataset.routeToggle);
+        if (checkbox.checked) {
+          displayOptions.hiddenRoutes.delete(routeIndex);
+        } else {
+          displayOptions.hiddenRoutes.add(routeIndex);
+        }
+        renderSelectedState();
+      });
+    });
+    state.aside.querySelector("[data-routes-all]")?.addEventListener("click", () => {
+      displayOptions.hiddenRoutes = new Set();
+      renderSelectedState();
+    });
+    state.aside.querySelector("[data-routes-none]")?.addEventListener("click", () => {
+      displayOptions.hiddenRoutes = new Set((selectedBksData?.routes || []).map((_, index) => index));
+      renderSelectedState();
+    });
+    state.aside.querySelector("[data-display-depot-legs]")?.addEventListener("change", (event) => {
+      displayOptions.depotLegMode = event.target.value;
+      renderSelectedState();
+    });
+    const legsOpacitySlider = state.aside.querySelector("[data-display-legs-opacity]");
+    legsOpacitySlider?.addEventListener("input", (event) => {
+      const output = state.aside.querySelector("[data-legs-opacity-value]");
+      if (output) output.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+    });
+    legsOpacitySlider?.addEventListener("change", (event) => {
+      displayOptions.fadedOpacity = Number(event.target.value);
+      renderSelectedState();
+    });
+    const routeOpacitySlider = state.aside.querySelector("[data-display-route-opacity]");
+    routeOpacitySlider?.addEventListener("input", (event) => {
+      const output = state.aside.querySelector("[data-route-opacity-value]");
+      if (output) output.textContent = `${Math.round(Number(event.target.value) * 100)}%`;
+    });
+    routeOpacitySlider?.addEventListener("change", (event) => {
+      displayOptions.routeOpacity = Number(event.target.value);
+      renderSelectedState();
     });
     if (routeFunctionsStatus === "ready") {
       const entry = routeFunctionsData?.routes?.[Math.min(selectedScheduleRoute, (routeFunctionsData?.routes?.length || 1) - 1)];
@@ -2748,76 +2773,12 @@ function renderHistoryDetail(payload) {
   setStatus(`Loaded snapshot ${payload.snapshot.snapshot_id}`);
 }
 
-function buildGenerationPreviewPayload(formData) {
-  return {
-    city: formData.get("city") || "",
-    method: formData.get("method") || "poi_categories",
-    nCustomers: Number.parseInt(formData.get("nCustomers") || "50", 10),
-    seed: Number.parseInt(formData.get("seed") || "0", 10),
-    onlyIntersections: formData.get("onlyIntersections") === "on",
-    depotMode: formData.get("depotMode") || "center",
-    customerMode: formData.get("customerMode") || "random_clustered",
-    clusterSeeds: Number.parseInt(formData.get("clusterSeeds") || "4", 10),
-    clusterDecayMeters: Number.parseFloat(formData.get("clusterDecayMeters") || "800"),
-    hybridPoiShare: Number.parseFloat(formData.get("hybridPoiShare") || "0.5"),
-    categories: String(formData.get("categories") || "restaurant,cafe")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  };
-}
-
-async function loadWorkbenchInstanceContext(instanceRoute) {
-  if (!instanceRoute) {
-    return null;
-  }
-  try {
-    const payload = await fetchJson(payloadUrlForRoute(instanceRoute));
-    return payload?.payload_kind === "instance_page" ? payload : null;
-  } catch (error) {
-    console.warn("Unable to hydrate workbench instance context", error);
-    return null;
-  }
-}
-
-function renderWorkbenchInstanceContextCard(instancePayload) {
-  if (!instancePayload) {
-    return renderCard(
-      "Benchmark Context",
-      '<div class="empty-state">Choose a benchmark instance first to prefill city and customer-count defaults.</div>',
-    );
-  }
-
-  return renderCard(
-    "Benchmark Context",
-    `${renderStatGrid([
-      ["Instance", instancePayload.summary.instance_identifier || instancePayload.title],
-      ["Problem", instancePayload.summary.problem_type],
-      ["Family", instancePayload.summary.benchmark_name],
-      ["Place", instancePayload.summary.place_slug || "n/a"],
-      ["Customers", instancePayload.summary.num_customers],
-    ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${routeHref(instancePayload.route_path)}">Open benchmark instance</a></div>`,
-  );
-}
-
 function matchesWorkbenchValue(left, right) {
   return String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase();
 }
 
 function selectWorkbenchOption(options, predicate) {
   return options.find(predicate) || options[0] || null;
-}
-
-function buildWorkbenchSeedFromInstancePayload(instancePayload, preferredObjectiveFunction = null) {
-  return {
-    problemType: instancePayload?.summary?.problem_type || null,
-    benchmarkName: instancePayload?.summary?.benchmark_name || null,
-    metricVariant: instancePayload?.summary?.metric_variant || null,
-    placeSlug: instancePayload?.summary?.place_slug || null,
-    sizeBucket: instancePayload?.summary?.size_bucket || null,
-    instanceRoute: instancePayload?.route_path || null,
-    objectiveFunction: preferredObjectiveFunction || instancePayload?.bks_entries?.[0]?.objective_function || null,
-  };
 }
 
 async function buildWorkbenchBenchmarkSelection(seed = {}) {
@@ -2914,434 +2875,6 @@ async function loadWorkbenchInstancePreview(instancePayload, preferredObjectiveF
     selectedEntry,
     selectedBksData,
   };
-}
-
-function renderWorkbenchSelectField(label, name, options, selectedValue, hint = "") {
-  const normalizedValue = String(selectedValue ?? "");
-  const renderedOptions = options.length > 0
-    ? options
-        .map((option) => `<option value="${escapeHtml(option.value)}"${String(option.value) === normalizedValue ? " selected" : ""}>${escapeHtml(option.label)}</option>`)
-        .join("")
-    : '<option value="">Unavailable</option>';
-  return `<label class="form-field"><span>${escapeHtml(label)}</span><select name="${escapeHtml(name)}"${options.length === 0 ? " disabled" : ""}>${renderedOptions}</select>${hint ? `<small class="field-hint">${escapeHtml(hint)}</small>` : ""}</label>`;
-}
-
-function renderWorkbenchRouteLegend(routes) {
-  if (!Array.isArray(routes) || routes.length === 0) {
-    return '<div class="empty-state">No route overlay is available for this selection.</div>';
-  }
-
-  return `<div class="route-legend">${routes
-    .map(
-      (route, index) =>
-        `<div class="legend-item"><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span>Route ${index + 1} · ${route.length} clients</span></div>`,
-    )
-    .join("")}</div>`;
-}
-
-function renderWorkbenchBenchmarkSelectionCard(selection) {
-  const summary = selection.activeCatalogPayload?.summary || null;
-  return renderCard(
-    "Benchmark Selection",
-    `${renderStatGrid([
-      ["Problem", selection.selectedProblem?.problem_type || "n/a"],
-      ["Family", selection.selectedFamily?.benchmark_name || "n/a"],
-      ["Variant", selection.selectedVariant?.label || selection.instancePayload?.summary?.metric_variant || "n/a"],
-      ["Place", selection.selectedPlace?.label || selection.instancePayload?.summary?.place_slug || "n/a"],
-      ["Size", selection.selectedSize?.label || selection.instancePayload?.summary?.size_bucket || "n/a"],
-      ["Instances", summary?.instance_count ?? selection.items.length ?? "n/a"],
-      ["BKS", summary?.bks_count ?? selection.instancePayload?.bks_entries?.length ?? "n/a"],
-    ])}`,
-  );
-}
-
-function renderWorkbenchSelectedObjectiveCard(selectedEntry) {
-  if (!selectedEntry) {
-    return renderCard("Selected Objective", '<div class="empty-state">No BKS entry is available for the selected instance.</div>');
-  }
-
-  return renderCard(
-    "Selected Objective",
-    `${renderStatGrid([
-      ["Objective", selectedEntry.objective_function],
-      ["Routes", routesStatValue(selectedEntry)],
-      ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }],
-      ...optimalityStatRows(selectedEntry),
-      ["Method", selectedEntry.method || "n/a"],
-      ["Authors", selectedEntry.authors || "n/a"],
-    ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div>`,
-  );
-}
-
-function renderWorkbenchArtifactsCard(instancePayload) {
-  return renderCard(
-    "Artifacts",
-    `<ul class="artifact-list">
-      <li><a href="${artifactHref(instancePayload.artifact_links.vrp_json_path)}">vrp.json</a></li>
-      ${instancePayload.artifact_links.vrp_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
-      ${instancePayload.artifact_links.meta_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
-      ${instancePayload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
-      ${instancePayload.artifact_links.manifest_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
-      ${instancePayload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(instancePayload.artifact_links.atf_json_path)}">${escapeHtml(instancePayload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
-    </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(instancePayload.snapshot.published_at)} from commit ${escapeHtml(instancePayload.snapshot.source_commit)}</div>`,
-  );
-}
-
-async function renderWorkbenchBenchmarkPage() {
-  const seededInstancePayload = await loadWorkbenchInstanceContext(runtimeParams.get("instance"));
-  let workbenchState = seededInstancePayload
-    ? buildWorkbenchSeedFromInstancePayload(seededInstancePayload, runtimeParams.get("objective"))
-    : {
-        problemType: null,
-        benchmarkName: null,
-        metricVariant: null,
-        placeSlug: null,
-        sizeBucket: null,
-        instanceRoute: runtimeParams.get("instance"),
-        objectiveFunction: runtimeParams.get("objective"),
-      };
-
-  const refreshSelection = async () => {
-    setStatus("Loading benchmark selector…");
-    const selection = await buildWorkbenchBenchmarkSelection(workbenchState);
-    const preview = await loadWorkbenchInstancePreview(selection.instancePayload, workbenchState.objectiveFunction);
-
-    workbenchState = {
-      problemType: selection.selectedProblem?.problem_type || null,
-      benchmarkName: selection.selectedFamily?.benchmark_name || null,
-      metricVariant: selection.selectedVariant?.key || null,
-      placeSlug: selection.selectedPlace?.key || null,
-      sizeBucket: selection.selectedSize?.key || selection.instancePayload?.summary?.size_bucket || null,
-      instanceRoute: selection.selectedInstance?.route_path || null,
-      objectiveFunction: preview?.selectedEntry?.objective_function || null,
-    };
-    updateWorkbenchRuntimeParams({ instance: workbenchState.instanceRoute, objective: workbenchState.objectiveFunction, deriveTarget: null });
-
-    setPage(
-      selection.instancePayload ? `Workbench: ${selection.instancePayload.title}` : "Workbench: Visualize Benchmarks",
-      selection.instancePayload
-        ? "Navigate the benchmark hierarchy, keep the current instance selection in sync with the menus, and switch objective overlays from one workbench surface."
-        : "Browse the published benchmark hierarchy directly from the workbench, then preview one instance and objective at a time.",
-      [{ label: "Workbench", route_path: "/workbench/" }],
-      "explorer",
-    );
-
-    const asideCards = [
-      renderWorkbenchModeCard(workbenchState.instanceRoute),
-      renderWorkbenchVisualizeSourceCard(workbenchState.instanceRoute),
-      renderWorkbenchBenchmarkSelectionCard(selection),
-    ];
-    if (selection.instancePayload) {
-      asideCards.push(
-        renderCard(
-          "Instance Summary",
-          `${renderStatGrid([
-            ["Problem", selection.instancePayload.summary.problem_type],
-            ["Family", selection.instancePayload.summary.benchmark_name],
-            ["Variant", selection.instancePayload.summary.metric_variant || "historical"],
-            ["Place", selection.instancePayload.summary.place_slug || selection.instancePayload.summary.historical_topology_type || "n/a"],
-            ["Size", selection.instancePayload.summary.size_bucket],
-            ["Customers", selection.instancePayload.summary.num_customers],
-            ["Vehicles", selection.instancePayload.summary.num_vehicles ?? selection.instancePayload.summary.num_vehicles_lb ?? "n/a"],
-            ["Capacity", selection.instancePayload.summary.vehicle_capacity],
-          ])}<div class="badge-row">${(selection.instancePayload.summary.supported_objective_functions || []).map((objective) => badge(objective)).join("")}${selection.instancePayload.summary.historical_topology_type ? badge(selection.instancePayload.summary.historical_topology_type, true) : ""}${selection.instancePayload.summary.historical_tw_type ? badge(`TW${selection.instancePayload.summary.historical_tw_type}`, true) : ""}</div>`,
-        ),
-        renderGeometryCard(selection.instancePayload.summary),
-        renderWorkbenchSelectedObjectiveCard(preview?.selectedEntry || null),
-        renderWorkbenchArtifactsCard(selection.instancePayload),
-      );
-    } else {
-      asideCards.push(renderCard("Instance Summary", '<div class="empty-state">Select a benchmark instance to populate the preview and artifact cards.</div>'));
-    }
-    state.aside.innerHTML = asideCards.join("");
-
-    const problemOptions = selection.problemCards.map((problem) => ({ value: problem.problem_type, label: problem.problem_type }));
-    const familyOptions = selection.familyCards.map((family) => ({ value: family.benchmark_name, label: family.benchmark_name }));
-    const variantOptions = selection.variantEntries.map((entry) => ({ value: entry.key, label: entry.label }));
-    const placeOptions = selection.placeEntries.map((entry) => ({ value: entry.key, label: entry.label }));
-    const sizeOptions = selection.sizeEntries.map((entry) => ({ value: entry.key, label: entry.label }));
-    const instanceOptions = selection.items.map((item) => ({ value: item.route_path, label: item.display_name }));
-    const objectiveOptions = Array.isArray(selection.instancePayload?.bks_entries)
-      ? selection.instancePayload.bks_entries.map((entry) => ({ value: entry.objective_function, label: entry.objective_function }))
-      : [];
-
-    const previewMarkup = selection.instancePayload && preview
-      ? `
-        ${renderPreviewSvg(preview.instanceData, preview.selectedBksData, preview.selectedEntry, {
-          geometryMeta: preview.geometryMeta,
-          metricVariant: selection.instancePayload.summary.metric_variant,
-          viewerRenderMode: selection.instancePayload.summary.viewer_render_mode,
-          roadCacheStatus: selection.instancePayload.summary.road_cache_status,
-        })}
-        <section class="mini-card">
-          <h3>Route Legend</h3>
-          ${renderWorkbenchRouteLegend(preview.selectedBksData?.routes)}
-        </section>`
-      : '<div class="empty-state">No benchmark instance is available for the current selector combination.</div>';
-
-    state.stage.innerHTML = `
-      <div class="viewer-stage">
-        <section class="mini-card">
-          <h2>Benchmark Selection</h2>
-          <form class="form-grid" data-benchmark-selector>
-            ${renderWorkbenchSelectField("Problem", "problemType", problemOptions, workbenchState.problemType, "Choose the top-level problem family first.")}
-            ${renderWorkbenchSelectField("Benchmark Family", "benchmarkName", familyOptions, workbenchState.benchmarkName, "Families come from the selected problem payload.")}
-            ${variantOptions.length > 0 ? renderWorkbenchSelectField("Variant", "metricVariant", variantOptions, workbenchState.metricVariant, "Generated Mamut families expose metric variants here.") : ""}
-            ${placeOptions.length > 0 ? renderWorkbenchSelectField("Place", "placeSlug", placeOptions, workbenchState.placeSlug, "Historical families skip this level.") : ""}
-            ${sizeOptions.length > 0 ? renderWorkbenchSelectField("Size", "sizeBucket", sizeOptions, workbenchState.sizeBucket, "Sizes come from the currently active catalog slice.") : ""}
-            ${renderWorkbenchSelectField("Instance", "instanceRoute", instanceOptions, workbenchState.instanceRoute, "The selected instance keeps the workbench query string in sync.")}
-            ${objectiveOptions.length > 0 ? renderWorkbenchSelectField("Objective", "objectiveFunction", objectiveOptions, workbenchState.objectiveFunction, "Use this menu to switch the active BKS overlay.") : ""}
-            <div class="inline-actions form-field-wide">
-              ${selection.instancePayload ? `<a class="button-link primary" href="${routeHref(selection.instancePayload.route_path)}">Open Public Instance</a>` : ""}
-              <a class="button-link" href="${routeHref('/benchmarks/')}">Browse Full Catalog</a>
-            </div>
-          </form>
-        </section>
-        <section class="mini-card">
-          <h2>Preview Surface</h2>
-          ${previewMarkup}
-        </section>
-      </div>`;
-
-    const form = state.stage.querySelector("[data-benchmark-selector]");
-    form?.querySelector('select[name="problemType"]')?.addEventListener("change", async (event) => {
-      workbenchState.problemType = event.target.value || null;
-      workbenchState.benchmarkName = null;
-      workbenchState.metricVariant = null;
-      workbenchState.placeSlug = null;
-      workbenchState.sizeBucket = null;
-      workbenchState.instanceRoute = null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="benchmarkName"]')?.addEventListener("change", async (event) => {
-      workbenchState.benchmarkName = event.target.value || null;
-      workbenchState.metricVariant = null;
-      workbenchState.placeSlug = null;
-      workbenchState.sizeBucket = null;
-      workbenchState.instanceRoute = null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="metricVariant"]')?.addEventListener("change", async (event) => {
-      workbenchState.metricVariant = event.target.value || null;
-      workbenchState.placeSlug = null;
-      workbenchState.sizeBucket = null;
-      workbenchState.instanceRoute = null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="placeSlug"]')?.addEventListener("change", async (event) => {
-      workbenchState.placeSlug = event.target.value || null;
-      workbenchState.sizeBucket = null;
-      workbenchState.instanceRoute = null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="sizeBucket"]')?.addEventListener("change", async (event) => {
-      workbenchState.sizeBucket = event.target.value || null;
-      workbenchState.instanceRoute = null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="instanceRoute"]')?.addEventListener("change", async (event) => {
-      workbenchState.instanceRoute = event.target.value || null;
-      workbenchState.objectiveFunction = null;
-      await refreshSelection();
-    });
-    form?.querySelector('select[name="objectiveFunction"]')?.addEventListener("change", async (event) => {
-      workbenchState.objectiveFunction = event.target.value || null;
-      await refreshSelection();
-    });
-
-    setStatus(preview?.selectedEntry ? `Showing ${preview.selectedEntry.objective_function}` : "Benchmark selector ready");
-  };
-
-  await refreshSelection();
-}
-
-function buildWorkbenchRelatedEntries(instancePayload) {
-  const groups = [
-    {
-      key: "source",
-      label: "Source Problems",
-      entries: Object.entries(instancePayload?.source_problem_routes || {}).map(([entryKey, routePath]) => ({
-        entryKey,
-        label: labelizeCapability(entryKey),
-        routePath,
-      })),
-    },
-    {
-      key: "derived",
-      label: "Derived Problems",
-      entries: Object.entries(instancePayload?.derived_problem_routes || {}).map(([entryKey, routePath]) => ({
-        entryKey,
-        label: labelizeCapability(entryKey),
-        routePath,
-      })),
-    },
-    {
-      key: "sibling",
-      label: "Sibling Variants",
-      entries: Object.entries(instancePayload?.sibling_variant_routes || {}).map(([entryKey, routePath]) => ({
-        entryKey,
-        label: labelizeCapability(entryKey),
-        routePath,
-      })),
-    },
-  ];
-  return groups.map((group) => ({ ...group, count: group.entries.length }));
-}
-
-function renderWorkbenchRelationGroup(instanceRoute, group, activeRoute, objectiveFunction) {
-  if (!Array.isArray(group.entries) || group.entries.length === 0) {
-    return "";
-  }
-
-  const chips = group.entries
-    .map((entry) => {
-      const isActive = normalizeRoute(entry.routePath) === normalizeRoute(activeRoute || "");
-      const params = new URLSearchParams();
-      params.set("instance", instanceRoute);
-      params.set("deriveTarget", entry.routePath);
-      if (objectiveFunction) {
-        params.set("objective", objectiveFunction);
-      }
-      return `<a class="selector-chip${isActive ? ' active' : ''}" href="${routeHref('/workbench/derive/')}?${params.toString()}">${escapeHtml(entry.label)}</a>`;
-    })
-    .join("");
-
-  return `<section class="mini-card"><h3>${escapeHtml(group.label)}</h3><div class="chip-row">${chips}</div></section>`;
-}
-
-async function renderWorkbenchDerivePage() {
-  const instanceRoute = runtimeParams.get("instance");
-  const currentPayload = await loadWorkbenchInstanceContext(instanceRoute);
-  if (!currentPayload) {
-    setPage(
-      "Workbench: Derive",
-      "Derive mode needs a benchmark instance context so it can trace source, derived, and sibling routes.",
-      [{ label: "Workbench", route_path: "/workbench/derive/" }],
-      "explorer",
-    );
-    state.aside.innerHTML = [
-      renderWorkbenchModeCard(null),
-      renderCard("Derive Context", '<div class="empty-state">Open a benchmark instance first, then switch to derive mode to inspect related published instances.</div>'),
-    ].join("");
-    state.stage.innerHTML = `<div class="viewer-stage"><section class="mini-card"><h2>Derive Mode</h2><p>Select an instance in benchmark visualize mode to inspect source-problem, derived-problem, and sibling-variant links here.</p><div class="inline-actions"><a class="button-link primary" href="${routeHref('/workbench/')}">Open Benchmark Visualize</a><a class="button-link" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div></section></div>`;
-    setStatus("Derive mode needs an instance selection");
-    return;
-  }
-
-  const relationGroups = buildWorkbenchRelatedEntries(currentPayload);
-  const relatedEntries = relationGroups.flatMap((group) => group.entries.map((entry) => ({ ...entry, groupKey: group.key, groupLabel: group.label })));
-  const selectedRelation = selectWorkbenchOption(
-    relatedEntries,
-    (entry) => normalizeRoute(entry.routePath) === normalizeRoute(runtimeParams.get("deriveTarget") || ""),
-  );
-  const relatedPayload = selectedRelation ? await loadWorkbenchInstanceContext(selectedRelation.routePath) : null;
-  const relatedPreview = await loadWorkbenchInstancePreview(relatedPayload, runtimeParams.get("objective"));
-  const selectedObjective = relatedPreview?.selectedEntry?.objective_function || null;
-  updateWorkbenchRuntimeParams({ instance: currentPayload.route_path, deriveTarget: selectedRelation?.routePath || null, objective: selectedObjective });
-
-  setPage(
-    `Workbench: Derive ${currentPayload.title}`,
-    "Inspect the published source-problem, derived-problem, and sibling-variant links attached to the selected benchmark instance.",
-    [{ label: "Workbench", route_path: "/workbench/derive/" }],
-    "explorer",
-  );
-
-  const relationCounts = relationGroups.map((group) => [group.label, group.count]);
-  const asideCards = [
-    renderWorkbenchModeCard(currentPayload.route_path),
-    renderWorkbenchInstanceContextCard(currentPayload),
-    renderCard("Derivation Graph", `${renderStatGrid(relationCounts)}`),
-  ];
-  if (relatedPayload) {
-    asideCards.push(
-      renderCard(
-        "Selected Related Instance",
-        `${renderStatGrid([
-          ["Relation", `${selectedRelation.groupLabel} · ${selectedRelation.label}`],
-          ["Problem", relatedPayload.summary.problem_type],
-          ["Family", relatedPayload.summary.benchmark_name],
-          ["Variant", relatedPayload.summary.metric_variant || "historical"],
-          ["Place", relatedPayload.summary.place_slug || relatedPayload.summary.historical_topology_type || "n/a"],
-          ["Size", relatedPayload.summary.size_bucket],
-          ["Customers", relatedPayload.summary.num_customers],
-        ])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${routeHref(relatedPayload.route_path)}">Open public page</a></div>`,
-      ),
-      renderWorkbenchSelectedObjectiveCard(relatedPreview?.selectedEntry || null),
-      renderWorkbenchArtifactsCard(relatedPayload),
-    );
-  } else {
-    asideCards.push(renderCard("Selected Related Instance", '<div class="empty-state">This instance does not expose any published source, derived, or sibling links.</div>'));
-  }
-  state.aside.innerHTML = asideCards.join("");
-
-  const objectiveOptions = Array.isArray(relatedPayload?.bks_entries)
-    ? relatedPayload.bks_entries.map((entry) => ({ value: entry.objective_function, label: entry.objective_function }))
-    : [];
-  const relationMarkup = relationGroups.map((group) => renderWorkbenchRelationGroup(currentPayload.route_path, group, selectedRelation?.routePath || null, selectedObjective)).join("");
-  const previewMarkup = relatedPayload && relatedPreview
-    ? `
-      <section class="mini-card">
-        <h2>Relation Preview</h2>
-        ${renderPreviewSvg(relatedPreview.instanceData, relatedPreview.selectedBksData, relatedPreview.selectedEntry, {
-          geometryMeta: relatedPreview.geometryMeta,
-          metricVariant: relatedPayload.summary.metric_variant,
-          viewerRenderMode: relatedPayload.summary.viewer_render_mode,
-          roadCacheStatus: relatedPayload.summary.road_cache_status,
-        })}
-        <div class="preview-summary">
-          <article class="mini-card">
-            <h3>Current Instance</h3>
-            ${renderStatGrid([
-              ["Problem", currentPayload.summary.problem_type],
-              ["Family", currentPayload.summary.benchmark_name],
-              ["Variant", currentPayload.summary.metric_variant || "historical"],
-              ["Customers", currentPayload.summary.num_customers],
-            ])}
-          </article>
-          <article class="mini-card">
-            <h3>Related Instance</h3>
-            ${renderStatGrid([
-              ["Relation", `${selectedRelation.groupLabel} · ${selectedRelation.label}`],
-              ["Problem", relatedPayload.summary.problem_type],
-              ["Family", relatedPayload.summary.benchmark_name],
-              ["Variant", relatedPayload.summary.metric_variant || "historical"],
-              ["Customers", relatedPayload.summary.num_customers],
-            ])}
-          </article>
-        </div>
-        <section class="mini-card">
-          <h3>Route Legend</h3>
-          ${renderWorkbenchRouteLegend(relatedPreview.selectedBksData?.routes)}
-        </section>
-      </section>`
-    : '<section class="mini-card"><h2>Relation Preview</h2><div class="empty-state">No related instance is selected yet.</div></section>';
-
-  state.stage.innerHTML = `
-    <div class="viewer-stage">
-      <section class="mini-card">
-        <h2>Derivation Links</h2>
-        ${relationMarkup || '<div class="empty-state">No source, derived, or sibling routes are published for this instance.</div>'}
-        ${objectiveOptions.length > 0 ? `<form class="form-grid" data-derive-form>${renderWorkbenchSelectField("Related Objective", "objectiveFunction", objectiveOptions, selectedObjective, "Switch the active BKS overlay for the selected related instance.")}</form>` : ""}
-        <div class="inline-actions">
-          <a class="button-link primary" href="${routeHref('/workbench/')}?instance=${encodeURIComponent(currentPayload.route_path)}">Back To Benchmark Visualize</a>
-          <a class="button-link" href="${routeHref(currentPayload.route_path)}">Open Current Public Instance</a>
-        </div>
-      </section>
-      ${previewMarkup}
-    </div>`;
-
-  const objectiveSelect = state.stage.querySelector('select[name="objectiveFunction"]');
-  objectiveSelect?.addEventListener("change", async (event) => {
-    updateWorkbenchRuntimeParams({ objective: event.target.value || null });
-    await renderWorkbenchDerivePage();
-  });
-
-  setStatus(relatedPreview?.selectedEntry ? `Showing ${relatedPreview.selectedEntry.objective_function}` : "Derive mode ready");
 }
 
 function degToRad(value) {
@@ -3650,437 +3183,6 @@ function uploadedRouteLoad(route, instanceData) {
   }, 0);
 }
 
-function uploadedPreviewRoutesToMetaRoutes(routes, meta) {
-  const nodeIds = Array.isArray(meta?.nodes)
-    ? meta.nodes.map((node) => Number(node?.instance_node_id)).filter(Number.isFinite)
-    : [];
-  const offset = nodeIds.length > 0 && Math.min(...nodeIds) === 0 ? 0 : 1;
-  return routes.map((route) => route.map((stopIndex) => stopIndex + offset));
-}
-
-function uploadedStraightRouteCoordinates(instanceData, routes) {
-  const depotIndex = Number(instanceData?.depot || 0);
-  const nodeCoordinates = Array.isArray(instanceData?.coordinates) ? instanceData.coordinates : [];
-  return routes.map((route, routeIndex) => {
-    const sequence = [depotIndex, ...route, depotIndex];
-    return {
-      routeIndex,
-      coordinates: sequence.map((nodeIndex) => normalizeGeometryPoint(nodeCoordinates[nodeIndex])).filter(Boolean),
-      source: "straight_line",
-    };
-  });
-}
-
-function uploadedRoadRouteCoordinates(roadGeojson) {
-  const features = Array.isArray(roadGeojson?.features) ? roadGeojson.features : [];
-  return features.map((feature, routeIndex) => ({
-    routeIndex,
-    coordinates: Array.isArray(feature?.geometry?.coordinates) ? feature.geometry.coordinates.map(normalizeGeometryPoint).filter(Boolean) : [],
-    source: String(feature?.properties?.render_mode || "cached_road"),
-  }));
-}
-
-function renderUploadedRoutePreviewSvg(instanceData, routes, options = {}) {
-  const width = 860;
-  const height = 520;
-  const nodeCoordinates = Array.isArray(instanceData?.coordinates) ? instanceData.coordinates : [];
-  if (nodeCoordinates.length === 0) {
-    return '<div class="empty-state">The uploaded instance did not yield any previewable coordinates.</div>';
-  }
-
-  const roadRouteLines = uploadedRoadRouteCoordinates(options.roadGeojson);
-  const hasRoadRoutes = roadRouteLines.length === routes.length && roadRouteLines.every((routeLine) => routeLine.coordinates.length >= 2);
-  const routeLines = hasRoadRoutes ? roadRouteLines : uploadedStraightRouteCoordinates(instanceData, routes);
-  const routeMembership = routeNodeLookup(routes);
-  const projectedNodes = projectCoordinates(nodeCoordinates, width, height);
-  const routePaths = routeLines
-    .map((routeLine) => {
-      const projectedRoute = projectCoordinates(routeLine.coordinates, width, height).filter(Boolean);
-      if (projectedRoute.length < 2) {
-        return "";
-      }
-      const route = routes[routeLine.routeIndex] || [];
-      const routeTitle = `Route ID ${routeLine.routeIndex + 1} · ${route.length} customer${route.length === 1 ? "" : "s"} · ${String(routeLine.source).replaceAll("_", " ")}`;
-      return `<g class="route-line"><title>${escapeHtml(routeTitle)}</title><polyline fill="none" stroke="${PALETTE[routeLine.routeIndex % PALETTE.length]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${projectedRoute.map((point) => `${point.x},${point.y}`).join(" ")}" /></g>`;
-    })
-    .join("");
-  const nodes = projectedNodes
-    .map((point, index) => {
-      if (!point) {
-        return "";
-      }
-      const isDepot = index === Number(instanceData?.depot || 0);
-      const routeIndex = routeMembership.get(index);
-      const nodeTitle = isDepot
-        ? `Depot · ${routes.length} route${routes.length === 1 ? "" : "s"}`
-        : routeIndex === undefined
-          ? `Customer ID ${index} · no route`
-          : `Customer ID ${index} · Route ID ${routeIndex + 1}`;
-      return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title><circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" fill="${isDepot ? '#b83a06' : '#111111'}" opacity="${isDepot ? 1 : 0.84}" /></g>`;
-    })
-    .join("");
-
-  const routeLegend = routes
-    .map(
-      (route, index) => `<div class="legend-item"><span class="legend-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span><span>Route ${index + 1} · ${route.length} clients · load ${uploadedRouteLoad(route, instanceData)}</span></div>`,
-    )
-    .join("");
-
-  return `
-    <div class="viewer-toolbar">
-      <div>${badge(`${instanceData.name || "Upload"} · ${routes.length} route${routes.length === 1 ? "" : "s"}`, true)}</div>
-      <div class="meta-line">${escapeHtml(hasRoadRoutes ? `Road-following preview (${options.metric || "shortest"})` : "Straight-line preview from uploaded instance coordinates")}</div>
-    </div>
-    <div class="viewer-frame">
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Uploaded routing preview">${routePaths}${nodes}</svg>
-    </div>
-    <div class="preview-summary">
-      <article class="mini-card">
-        <h3>Upload Summary</h3>
-        ${renderStatGrid([
-          ["Instance", instanceData.name || "n/a"],
-          ["Nodes", instanceData.dimension || nodeCoordinates.length],
-          ["Routes", routes.length],
-          ["Coverage", options.solutionInfo?.coverage || "n/a"],
-          ["Route ids", options.solutionInfo?.mode || "n/a"],
-          ["Render", options.renderSummary?.render_mode || (hasRoadRoutes ? "cached_road" : "straight_line")],
-        ])}
-      </article>
-      <article class="mini-card">
-        <h3>Routes</h3>
-        <div class="route-legend">${routeLegend}</div>
-      </article>
-    </div>`;
-}
-
-async function renderWorkbenchGeneratePage() {
-  const instanceRoute = runtimeParams.get("instance");
-  const instancePayload = await loadWorkbenchInstanceContext(instanceRoute);
-  const benchmarkCitySlug = String(instancePayload?.summary?.place_slug || "").trim().toLowerCase();
-  const benchmarkCustomerCount = Number(instancePayload?.summary?.num_customers);
-
-  setPage(
-    "Workbench: Generate",
-    instancePayload
-      ? "Preview generation parameters against local OSM-backed Mamut2026 data, starting from the selected benchmark instance context."
-      : "Preview generation parameters against local OSM-backed Mamut2026 data before exporting new instances.",
-    [{ label: "Workbench", route_path: "/workbench/" }],
-    "explorer",
-  );
-
-  state.aside.innerHTML = [
-    renderWorkbenchModeCard(instanceRoute),
-    renderWorkbenchInstanceContextCard(instancePayload),
-    renderCard(
-      "Preview Contract",
-      '<p class="meta-line" id="generationModeHint">Loading generation preview capabilities…</p>',
-    ),
-    renderCard(
-      "Source Data",
-      '<p class="meta-line">City options come from local MAMUT OSM extracts under osmdata/. Generated sample sizes come from local instances_v2/osm when present.</p>',
-    ),
-  ].join("");
-
-  state.stage.innerHTML = `
-    <div class="viewer-stage">
-      <section class="mini-card">
-        <h2>Generation Parameters</h2>
-        <form class="form-grid" data-generation-form>
-          <label class="form-field">
-            <span>City</span>
-            <select name="city" required></select>
-            <small class="field-hint" data-size-hint>Loading city sizes…</small>
-          </label>
-          <label class="form-field">
-            <span>Method</span>
-            <select name="method">
-              <option value="poi_categories">poi_categories</option>
-              <option value="hybrid">hybrid</option>
-              <option value="parametric_attach">parametric_attach</option>
-            </select>
-            <small class="field-hint">Preview honors live OSM parameters when raw extracts are configured.</small>
-          </label>
-          <label class="form-field">
-            <span>Customers</span>
-            <input name="nCustomers" type="number" min="2" step="1" value="51" />
-            <small class="field-hint">Use generated sizes for the closest local sample-backed preview.</small>
-          </label>
-          <label class="form-field">
-            <span>Seed</span>
-            <input name="seed" type="number" step="1" value="0" />
-            <small class="field-hint">Kept for parity with the MAMUT OSM generator.</small>
-          </label>
-          <label class="form-field">
-            <span>Depot Mode</span>
-            <select name="depotMode">
-              <option value="center">center</option>
-              <option value="random">random</option>
-              <option value="corner">corner</option>
-            </select>
-            <small class="field-hint">Matches the local preview request contract.</small>
-          </label>
-          <label class="form-field">
-            <span>Customer Mode</span>
-            <select name="customerMode">
-              <option value="random_clustered">random_clustered</option>
-              <option value="random">random</option>
-              <option value="clustered">clustered</option>
-            </select>
-            <small class="field-hint">Used for live parametric or hybrid previews.</small>
-          </label>
-          <label class="form-field">
-            <span>Cluster Seeds</span>
-            <input name="clusterSeeds" type="number" min="1" step="1" value="4" />
-            <small class="field-hint">Relevant for clustered and hybrid previews.</small>
-          </label>
-          <label class="form-field">
-            <span>Cluster Decay (m)</span>
-            <input name="clusterDecayMeters" type="number" min="100" step="50" value="800" />
-            <small class="field-hint">Controls clustering radius in the live generator.</small>
-          </label>
-          <label class="form-field">
-            <span>Hybrid POI Share</span>
-            <input name="hybridPoiShare" type="number" min="0" max="1" step="0.05" value="0.5" />
-            <small class="field-hint">Blend between POI and parametric placement for hybrid mode.</small>
-          </label>
-          <label class="form-field form-field-wide">
-            <span>POI Categories</span>
-            <input name="categories" type="text" value="restaurant,cafe" />
-            <small class="field-hint">Comma-separated categories used by POI and hybrid generation modes.</small>
-          </label>
-          <label class="form-field checkbox-field form-field-wide">
-            <input name="onlyIntersections" type="checkbox" checked />
-            <span>Restrict live previews to road intersections when raw OSM extracts are configured.</span>
-          </label>
-          <div class="inline-actions form-field-wide">
-            <button type="submit" class="button-link primary" data-preview-button>Preview Selection</button>
-          </div>
-        </form>
-      </section>
-      <section class="mini-card">
-        <h2>Preview Surface</h2>
-        <div class="preview-shell" data-generation-preview>
-          <div class="empty-state">Submit generation parameters to load a preview.</div>
-        </div>
-      </section>
-    </div>`;
-
-  const modeHint = state.aside.querySelector("#generationModeHint");
-  const form = state.stage.querySelector("[data-generation-form]");
-  const citySelect = form.querySelector('select[name="city"]');
-  const customersInput = form.querySelector('input[name="nCustomers"]');
-  const sizeHint = form.querySelector("[data-size-hint]");
-  const previewButton = form.querySelector("[data-preview-button]");
-  const previewRoot = state.stage.querySelector("[data-generation-preview]");
-
-  if (Number.isFinite(benchmarkCustomerCount) && benchmarkCustomerCount > 0) {
-    customersInput.value = String(benchmarkCustomerCount);
-  }
-
-  if (window.location.protocol === "file:") {
-    const message = "Generation preview requires the Paper7 site API server. Open the workbench over HTTP instead of file://.";
-    modeHint.textContent = message;
-    previewRoot.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
-    setStatus("Generation preview requires the site API server");
-    return;
-  }
-
-  setStatus("Loading generation preview options…");
-  let cityOptions;
-  try {
-    const response = await fetchWorkbenchJson(WORKBENCH_GENERATION_CITIES_PATH);
-    cityOptions = Array.isArray(response.cities) ? response.cities : [];
-    if (cityOptions.length === 0) {
-      throw new Error("No local OSM cities are available for generation preview.");
-    }
-
-    citySelect.innerHTML = cityOptions
-      .map((city, index) => `<option value="${escapeHtml(city.slug)}"${index === 0 ? " selected" : ""}>${escapeHtml(city.label || city.slug)}</option>`)
-      .join("");
-
-    const cityLookup = new Map(cityOptions.map((city) => [city.slug, city]));
-    if (benchmarkCitySlug && cityLookup.has(benchmarkCitySlug)) {
-      citySelect.value = benchmarkCitySlug;
-    }
-
-    const updateSizeHint = () => {
-      const city = cityLookup.get(citySelect.value);
-      if (!city) {
-        sizeHint.textContent = "No generated sizes are registered for the selected city.";
-        return;
-      }
-      const counts = Array.isArray(city.customer_counts) ? city.customer_counts : [];
-      if (counts.length > 0) {
-        sizeHint.textContent = `Generated sizes: ${counts.join(", ")}`;
-        if (!customersInput.value) {
-          customersInput.value = String(counts[0]);
-        }
-      } else {
-        sizeHint.textContent = "No generated sizes are registered for the selected city.";
-      }
-    };
-
-    citySelect.addEventListener("change", updateSizeHint);
-    updateSizeHint();
-
-    modeHint.textContent = response.preview_available
-      ? "Live preview is available because local raw OSM extracts are configured."
-      : "Raw OSM extracts are not configured here, so preview uses local generated Mamut2026 samples when available.";
-    setStatus(`Loaded ${cityOptions.length} generation preview cities`);
-  } catch (error) {
-    const message = error.message || String(error);
-    modeHint.textContent = message;
-    previewRoot.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
-    setStatus("Generation preview options unavailable");
-    return;
-  }
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const payload = buildGenerationPreviewPayload(new FormData(form));
-    previewButton.disabled = true;
-    previewRoot.innerHTML = '<div class="empty-state">Loading generation preview…</div>';
-    setStatus(`Generating preview for ${payload.city}…`);
-    try {
-      const response = await postWorkbenchJson(WORKBENCH_GENERATION_PREVIEW_PATH, payload);
-      previewRoot.innerHTML = renderGenerationPreviewSvg(response.geojson, response.summary || {});
-      setStatus(`Preview ready for ${response.summary?.city || payload.city}`);
-    } catch (error) {
-      previewRoot.innerHTML = `<div class="empty-state">${escapeHtml(error.message || String(error))}</div>`;
-      setStatus("Generation preview failed");
-    } finally {
-      previewButton.disabled = false;
-    }
-  });
-}
-
-async function renderWorkbenchUploadPage() {
-  const instanceRoute = runtimeParams.get("instance");
-  const instancePayload = await loadWorkbenchInstanceContext(instanceRoute);
-
-  setPage(
-    "Workbench: Visualize Uploads",
-    "Load local .vrp or .json instances, attach .sol or JSON routes, and optionally use a metadata sidecar to request road-following geometry.",
-    [{ label: "Workbench", route_path: "/workbench/" }],
-    "explorer",
-  );
-
-  state.aside.innerHTML = [
-    renderWorkbenchModeCard(instanceRoute),
-    renderWorkbenchVisualizeSourceCard(instanceRoute),
-    renderWorkbenchInstanceContextCard(instancePayload),
-    renderCard(
-      "Upload Contract",
-      '<p class="meta-line">The instance input accepts .vrp and benchmark-style .json files. The solution input accepts .sol and JSON route payloads. Metadata sidecars are optional but enable road-following rendering.</p>',
-    ),
-  ].join("");
-
-  state.stage.innerHTML = `
-    <div class="viewer-stage">
-      <section class="mini-card">
-        <h2>Upload Files</h2>
-        <form class="form-grid" data-upload-form>
-          <label class="form-field">
-            <span>Instance (.vrp or .json)</span>
-            <input name="instanceFile" type="file" accept=".vrp,.json,.txt" required />
-            <small class="field-hint">Use benchmark vrp.json files or original .vrp exports with embedded reference LLA.</small>
-          </label>
-          <label class="form-field">
-            <span>Solution (.sol or .json)</span>
-            <input name="solutionFile" type="file" accept=".sol,.json,.txt" required />
-            <small class="field-hint">JSON solutions can be either a raw routes array or an object with a routes field.</small>
-          </label>
-          <label class="form-field">
-            <span>Metadata sidecar (.json)</span>
-            <input name="metaFile" type="file" accept=".json" />
-            <small class="field-hint">Optional. When present, the workbench can request road-following geometry from embedded road cache data.</small>
-          </label>
-          <label class="form-field">
-            <span>Route metric</span>
-            <select name="metric">
-              <option value="shortest">shortest</option>
-              <option value="fastest">fastest</option>
-              <option value="euclidean">euclidean</option>
-            </select>
-            <small class="field-hint">Used only when a metadata sidecar is supplied and the site API is available.</small>
-          </label>
-          <label class="form-field checkbox-field form-field-wide">
-            <input name="preferRoadGeometry" type="checkbox" checked />
-            <span>Prefer road-following geometry when a metadata sidecar is available.</span>
-          </label>
-          <div class="inline-actions form-field-wide">
-            <button type="submit" class="button-link primary" data-upload-preview-button>Preview Uploads</button>
-          </div>
-        </form>
-      </section>
-      <section class="mini-card">
-        <h2>Preview Surface</h2>
-        <div class="preview-shell" data-upload-preview>
-          <div class="empty-state">Upload an instance and a solution to render a preview.</div>
-        </div>
-      </section>
-    </div>`;
-
-  const form = state.stage.querySelector("[data-upload-form]");
-  const previewButton = state.stage.querySelector("[data-upload-preview-button]");
-  const previewRoot = state.stage.querySelector("[data-upload-preview]");
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const formData = new FormData(form);
-    const instanceFile = form.querySelector('input[name="instanceFile"]').files?.[0];
-    const solutionFile = form.querySelector('input[name="solutionFile"]').files?.[0];
-    const metaFile = form.querySelector('input[name="metaFile"]').files?.[0] || null;
-    if (!instanceFile || !solutionFile) {
-      previewRoot.innerHTML = '<div class="empty-state">Both an instance file and a solution file are required.</div>';
-      return;
-    }
-
-    previewButton.disabled = true;
-    previewRoot.innerHTML = '<div class="empty-state">Loading uploaded files…</div>';
-    setStatus(`Parsing ${instanceFile.name} and ${solutionFile.name}…`);
-    try {
-      const [instanceText, solutionText, metaText] = await Promise.all([
-        instanceFile.text(),
-        solutionFile.text(),
-        metaFile ? metaFile.text() : Promise.resolve(null),
-      ]);
-
-      const instanceData = parseUploadedInstanceText(instanceText, instanceFile.name);
-      const solutionPayload = parseUploadedSolutionText(solutionText, solutionFile.name, instanceData.dimension);
-      const metaPayload = metaText && metaFile ? parseUploadedMetaText(metaText, metaFile.name) : null;
-      const metric = String(formData.get("metric") || "shortest");
-      const preferRoadGeometry = formData.get("preferRoadGeometry") === "on";
-
-      let roadResponse = null;
-      if (preferRoadGeometry && metaPayload && window.location.protocol !== "file:") {
-        try {
-          roadResponse = await postWorkbenchJson(WORKBENCH_RENDER_ROUTES_PATH, {
-            meta: metaPayload,
-            routes: uploadedPreviewRoutesToMetaRoutes(solutionPayload.routes, metaPayload),
-            metric,
-          });
-        } catch (error) {
-          console.warn("Unable to render uploaded road geometry", error);
-        }
-      }
-
-      previewRoot.innerHTML = renderUploadedRoutePreviewSvg(instanceData, solutionPayload.routes, {
-        metric,
-        roadGeojson: roadResponse?.geojson || null,
-        renderSummary: roadResponse?.summary || null,
-        solutionInfo: solutionPayload.info,
-      });
-      setStatus(`Preview ready for ${instanceData.name || instanceFile.name}`);
-    } catch (error) {
-      previewRoot.innerHTML = `<div class="empty-state">${escapeHtml(error.message || String(error))}</div>`;
-      setStatus("Upload preview failed");
-    } finally {
-      previewButton.disabled = false;
-    }
-  });
-}
-
 function renderObjectives(payload) {
   setPage(payload.title, "Objective semantics are part of the benchmark contract, not a display detail.", [], "editorial");
   state.aside.innerHTML = renderCard(
@@ -4186,41 +3288,6 @@ function renderProjectTextPage(payload) {
   setStatus(`Loaded ${payload.title}`);
 }
 
-function renderWorkbenchPlaceholder() {
-  const instanceRoute = runtimeParams.get("instance");
-  setPage("Workbench", "The shared workbench shell is reserved for expert interactions and will hydrate benchmark-backed state next.", [], "explorer");
-  state.aside.innerHTML = [
-    renderWorkbenchModeCard(instanceRoute),
-    renderWorkbenchVisualizeSourceCard(instanceRoute),
-    renderCard(
-      "Requested Instance",
-      instanceRoute ? `<p class="mono-block">${escapeHtml(instanceRoute)}</p><div class="inline-actions"><a class="button-link primary" href="${routeHref(instanceRoute)}">Back to Instance</a></div>` : `<div class="empty-state">Open an instance page and use the workbench action to arrive here with context.</div>`,
-    ),
-  ].join("");
-  state.stage.innerHTML = `<div class="viewer-stage"><section class="mini-card"><h2>Workbench Shell Placeholder</h2><p>The static shell is in place so benchmark pages can link into one shared workbench surface. The next slice will hydrate catalog-backed loading, uploads, generation drafts, and derivation-aware flows here.</p><div class="inline-actions"><a class="button-link primary" href="${routeHref('/benchmarks/')}">Browse Benchmarks</a></div></section></div>`;
-  setStatus(`Workbench mode: ${state.workbenchMode}`);
-}
-
-async function renderWorkbenchPage() {
-  if (state.workbenchMode === "generate") {
-    await renderWorkbenchGeneratePage();
-    return;
-  }
-
-  if (state.workbenchMode === "upload") {
-    await renderWorkbenchUploadPage();
-    return;
-  }
-
-  if (state.workbenchMode === "derive") {
-    await renderWorkbenchDerivePage();
-    return;
-  }
-
-
-  await renderWorkbenchBenchmarkPage();
-}
-
 function renderUnknownPayload(payload) {
   setPage(payload.payload_kind || "Unknown", "No renderer is registered for this payload yet.", [], "editorial");
   state.aside.innerHTML = renderCard("Payload Kind", `<p class="mono-block">${escapeHtml(payload.payload_kind || 'unknown')}</p>`);
@@ -4302,10 +3369,6 @@ async function renderPayloadPage() {
 async function init() {
   setupThemeToggle();
   try {
-    if (state.pageKind === "workbench-placeholder") {
-      await renderWorkbenchPage();
-      return;
-    }
     await renderPayloadPage();
   } catch (error) {
     setPage("Unable to load page", "The static shell could not hydrate this route.", [], "editorial");
@@ -4317,26 +3380,20 @@ async function init() {
 
 export {
   artifactHref,
-  buildGenerationPreviewPayload,
   escapeHtml,
   fetchJson,
   fetchGeometryMetaMemo,
   fetchRouteGeometryMetaMemo,
-  fetchWorkbenchJson,
   fetchWorkbenchPayloadForRoute,
-  loadWorkbenchInstanceContext,
   normalizeRoute,
   parseUploadedInstanceText,
   parseUploadedMetaText,
   projectEnuInstanceCoordinates,
   parseUploadedSolutionText,
-  postWorkbenchBlob,
-  postWorkbenchJson,
   relativeFromCurrent,
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
-  uploadedPreviewRoutesToMetaRoutes,
 };
 
 if (!window.__PAPER7_SITE_NO_BOOTSTRAP__) {
