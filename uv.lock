@@ -329,6 +329,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/55/8f8cab2afd404cf578136ef2cc5dfb50baa1761b68c9da1fb1e4eed343c9/docopt-0.6.2.tar.gz", hash = "sha256:49b3a825280bd66b3aa83585ef59c4a8c82f2c8a522dbe754a8bc8d08c85c491", size = 25901, upload-time = "2014-06-16T11:18:57.406Z" }
 
 [[package]]
+name = "fastapi"
+version = "0.139.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/95/d3f0ae10836324a2eab98a52b61210ac609f08200bf4bb0dc8132d32f78a/fastapi-0.139.2.tar.gz", hash = "sha256:333145a6891e9b5b3cfceb69baf817e8240cde4d4588ae5a10bf56ffacb6255e", size = 423428, upload-time = "2026-07-16T15:06:17.912Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/c7/cb03251d9dfb177246a9809a76f189d21df32dbd4a845951881d11323b7f/fastapi-0.139.2-py3-none-any.whl", hash = "sha256:b9ad015a835173d59865e2f5d8296fbc2b317bf56a2ba1a5bfbdd03de2fd4b1c", size = 130234, upload-time = "2026-07-16T15:06:19.557Z" },
+]
+
+[[package]]
 name = "fonttools"
 version = "4.62.1"
 source = { registry = "https://pypi.org/simple" }
@@ -457,6 +473,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe", size = 18437, upload-time = "2025-09-08T01:34:57.871Z" },
+]
+
+[[package]]
+name = "kayros"
+version = "1.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mamut-routing-lib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1c/51/7ce8c176548632733a18d2bc4afa539a1f2c36f9d2239b1bac9e5e383295/kayros-1.1.3.tar.gz", hash = "sha256:1af759e59b5162f935d6802bf6f9715f5e441e074557aedf2623884e05cfff85", size = 384229, upload-time = "2026-07-20T10:47:45.425Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/70/7085cc183a46944f202b1caac0389250c07f137ffce96ef61f040ae1768e/kayros-1.1.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:aef9e87b03a23b9bffe6c152d140e3a3ede3ebb9520969a5742c27bbcc6bd4dd", size = 22369164, upload-time = "2026-07-20T10:47:36.072Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/45/a9669134bba30b85455aa72639e36216754841b981fe28665596552deed9/kayros-1.1.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0109e99f0f6655e1dc754e3024a132eb8155293ce7bb00f81c4488b5ff7ef9e1", size = 22373295, upload-time = "2026-07-20T10:47:39.619Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/13/17f2e4ce89fb2903ecb248adadc322967ea0e76514f2da0a9f4f8af6dc06/kayros-1.1.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:77ee17975e73e5d064daed47bc0c33d357de5fe053fce4c66c69757c9dafd060", size = 22373406, upload-time = "2026-07-20T10:47:43.338Z" },
 ]
 
 [[package]]
@@ -641,17 +671,24 @@ dev = [
 
 [[package]]
 name = "mamut-routing-tools"
-version = "0.1.0"
+version = "0.3.3"
 source = { editable = "MAMUT-routing-tools" }
 dependencies = [
+    { name = "fastapi" },
     { name = "httpx" },
-    { name = "mamut-routing-lib" },
+    { name = "mamut-routing-lib", extra = ["pyvrp"] },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "rustworkx" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+kayros = [
+    { name = "kayros" },
 ]
 
 [package.dev-dependencies]
@@ -661,14 +698,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "mamut-routing-lib", editable = "MAMUT-routing-lib" },
+    { name = "kayros", marker = "extra == 'kayros'", specifier = ">=1.1.2" },
+    { name = "mamut-routing-lib", extras = ["pyvrp"], editable = "MAMUT-routing-lib" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "rustworkx", specifier = ">=0.15" },
     { name = "scipy", specifier = ">=1.13" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
+provides-extras = ["kayros"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]
