@@ -8,14 +8,16 @@ from dataclasses import dataclass
 import gzip
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 ROUTE_GEOMETRY_FORMAT = "mamut-bks-geometry"
 ROUTE_GEOMETRY_FORMAT_VERSION = 1
 ROUTE_GEOMETRY_CACHE_DIR = Path("dist/route-geometry-cache")
+OSM_BOUNDS_TOLERANCE_DEGREES = 1e-5
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -219,6 +221,264 @@ def _load_group_meta(output_repo_dir: Path, geo_relpath: str) -> dict[str, Any]:
     return meta
 
 
+def _partition_groups_by_source_osm(
+    output_repo_dir: Path,
+    groups: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Separate groups whose referenced raw OSM file is absent or invalid.
+
+    Raw extracts live under the gitignored ``osmdata/`` directory, so a
+    normal checkout can publish the site without having every city extract.
+    Malformed metadata (including a missing ``source_osm_file`` field) stays
+    in the runnable set and is allowed to fail loudly in the materializer.
+    """
+    from mamut_routing_tools.osm import validate_osm_extract
+    from mamut_routing_tools.osm.fetch import FetchError
+
+    available: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    missing_sources: set[str] = set()
+    source_by_geo: dict[str, str | None] = {}
+    availability_by_source: dict[str, bool] = {}
+    for group in groups:
+        geo_relpath = str(group["geo_path"])
+        if geo_relpath not in source_by_geo:
+            meta = _load_group_meta(output_repo_dir, geo_relpath)
+            raw_source = meta.get("source_osm_file")
+            source_by_geo[geo_relpath] = str(raw_source) if raw_source else None
+        source_name = source_by_geo[geo_relpath]
+        if source_name is None:
+            source_available = True
+        else:
+            cached_availability = availability_by_source.get(source_name)
+            if cached_availability is None:
+                source = Path(source_name)
+                candidates = (
+                    (source,) if source.is_absolute() else (
+                        (output_repo_dir / geo_relpath).parent / source,
+                        output_repo_dir / source,
+                    )
+                )
+                source_available = False
+                for candidate in candidates:
+                    try:
+                        validate_osm_extract(candidate)
+                    except FetchError:
+                        continue
+                    source_available = True
+                    break
+                availability_by_source[source_name] = source_available
+            else:
+                source_available = cached_availability
+        if source_available:
+            available.append(group)
+        else:
+            skipped.append(group)
+            if source_name is not None:
+                missing_sources.add(source_name)
+    return available, skipped, sorted(missing_sources)
+
+
+def _empty_osm_summary() -> dict[str, Any]:
+    return {
+        "required_files": 0,
+        "valid_existing": 0,
+        "fetched": 0,
+        "invalid_existing": 0,
+        "paths": [],
+        "downloads": [],
+    }
+
+
+def _requirement_points(output_repo_dir: Path, geo_relpath: str, meta: dict[str, Any]) -> list[tuple[float, float]]:
+    geo_path = output_repo_dir / geo_relpath
+    road_name = geo_path.name.removesuffix(".geo.json.gz") + ".road.json.gz"
+    road_path = geo_path.with_name(road_name)
+    if road_path.is_file():
+        with gzip.open(road_path, "rt", encoding="utf-8") as handle:
+            road = json.load(handle)
+        points = road.get("vertex_lonlat")
+        if isinstance(points, list) and points:
+            return [(float(point[0]), float(point[1])) for point in points]
+    nodes = meta.get("nodes")
+    if isinstance(nodes, list):
+        return [
+            (float(node["poi_lon"]), float(node["poi_lat"]))
+            for node in nodes
+            if isinstance(node, dict) and node.get("poi_lon") is not None and node.get("poi_lat") is not None
+        ]
+    return []
+
+
+def _required_osm_files(
+    output_repo_dir: Path,
+    groups: list[dict[str, Any]],
+    *,
+    padding_km: float,
+) -> list[dict[str, Any]]:
+    by_source: dict[str, dict[str, Any]] = {}
+    seen_geo: set[str] = set()
+    for group in groups:
+        geo_relpath = str(group["geo_path"])
+        if geo_relpath in seen_geo:
+            continue
+        seen_geo.add(geo_relpath)
+        meta = _load_group_meta(output_repo_dir, geo_relpath)
+        raw_source = meta.get("source_osm_file")
+        if not raw_source:
+            raise ValueError(f"Sidecar '{geo_relpath}' is missing 'source_osm_file'")
+        source = Path(str(raw_source))
+        if source.is_absolute():
+            if not source.is_file():
+                raise ValueError(
+                    f"Cannot automatically fetch missing absolute source OSM path '{source}' "
+                    f"referenced by '{geo_relpath}'"
+                )
+            target = source
+        else:
+            target = (output_repo_dir / source).resolve()
+            if not target.is_relative_to(output_repo_dir):
+                raise ValueError(f"Source OSM path escapes the repository: {raw_source!r}")
+        points = _requirement_points(output_repo_dir, geo_relpath, meta)
+        if not points:
+            raise ValueError(f"Cannot derive an OSM download bbox from '{geo_relpath}'")
+        requirement = by_source.setdefault(
+            str(raw_source),
+            {
+                "source_osm_file": str(raw_source),
+                "target": target,
+                "cities": set(),
+                "minlon": float("inf"),
+                "minlat": float("inf"),
+                "maxlon": float("-inf"),
+                "maxlat": float("-inf"),
+            },
+        )
+        requirement["cities"].add(str(meta.get("city") or _city_key(geo_relpath)))
+        requirement["minlon"] = min(requirement["minlon"], min(point[0] for point in points))
+        requirement["minlat"] = min(requirement["minlat"], min(point[1] for point in points))
+        requirement["maxlon"] = max(requirement["maxlon"], max(point[0] for point in points))
+        requirement["maxlat"] = max(requirement["maxlat"], max(point[1] for point in points))
+
+    requirements = []
+    for requirement in by_source.values():
+        requirement["required_bbox"] = {
+            "minlat": requirement["minlat"],
+            "minlon": requirement["minlon"],
+            "maxlat": requirement["maxlat"],
+            "maxlon": requirement["maxlon"],
+        }
+        mean_lat = (requirement["minlat"] + requirement["maxlat"]) / 2.0
+        dlat = padding_km / 111.0
+        dlon = padding_km / max(1e-6, 111.0 * math.cos(math.radians(mean_lat)))
+        requirement["minlat"] -= dlat
+        requirement["maxlat"] += dlat
+        requirement["minlon"] -= dlon
+        requirement["maxlon"] += dlon
+        requirement["cities"] = sorted(requirement["cities"])
+        requirements.append(requirement)
+    return sorted(requirements, key=lambda item: item["source_osm_file"])
+
+
+def _bounds_cover_required(validation: dict[str, Any], requirement: dict[str, Any]) -> bool:
+    bounds = validation["bounds"]
+    required = requirement["required_bbox"]
+    tolerance = OSM_BOUNDS_TOLERANCE_DEGREES
+    return (
+        float(bounds["minlat"]) <= required["minlat"] + tolerance
+        and float(bounds["minlon"]) <= required["minlon"] + tolerance
+        and float(bounds["maxlat"]) >= required["maxlat"] - tolerance
+        and float(bounds["maxlon"]) >= required["maxlon"] - tolerance
+    )
+
+
+def ensure_route_geometry_osm(
+    output_repo_dir: str | Path,
+    groups: list[dict[str, Any]],
+    *,
+    padding_km: float = 2.0,
+    progress: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Validate or fetch every raw road extract required by pending groups."""
+    from mamut_routing_tools.osm import fetch_and_store_bbox_osm, validate_osm_extract
+    from mamut_routing_tools.osm.fetch import FetchError
+
+    output_repo = Path(output_repo_dir).resolve()
+    requirements = _required_osm_files(output_repo, groups, padding_km=padding_km)
+    summary = _empty_osm_summary()
+    summary["required_files"] = len(requirements)
+    for index, requirement in enumerate(requirements, start=1):
+        target = Path(requirement["target"])
+        existing_validation = None
+        if target.is_file():
+            try:
+                existing_validation = validate_osm_extract(target)
+            except FetchError:
+                summary["invalid_existing"] += 1
+        if existing_validation is not None and _bounds_cover_required(existing_validation, requirement):
+            summary["valid_existing"] += 1
+            summary["paths"].append(str(target))
+            continue
+        if progress is not None:
+            progress(
+                "fetching",
+                {
+                    "source": requirement["source_osm_file"],
+                    "city": ",".join(requirement["cities"]),
+                    "current": index,
+                    "total": len(requirements),
+                },
+            )
+        download = fetch_and_store_bbox_osm(
+            requirement["minlat"],
+            requirement["minlon"],
+            requirement["maxlat"],
+            requirement["maxlon"],
+            target,
+            profile="road_cache",
+            progress=(
+                None
+                if progress is None
+                else lambda event: progress(
+                    "fetching",
+                    {
+                        "source": requirement["source_osm_file"],
+                        "phase": event["phase"],
+                        "current": event["current"],
+                        "total": event["total"],
+                        "tiles_ok": event["tiles_ok"],
+                    },
+                )
+            ),
+        )
+        summary["fetched"] += 1
+        summary["paths"].append(str(target))
+        summary["downloads"].append(
+            {
+                "source_osm_file": requirement["source_osm_file"],
+                "cities": requirement["cities"],
+                "bbox": download["bbox"],
+                "dataset_mode": download["dataset_mode"],
+                "nodes": download["validation"]["nodes"],
+                "ways": download["validation"]["ways"],
+                "road_tiles": download["road_tiling"]["tiles_total"],
+            }
+        )
+        if progress is not None:
+            progress(
+                "fetched",
+                {
+                    "source": requirement["source_osm_file"],
+                    "nodes": download["validation"]["nodes"],
+                    "ways": download["validation"]["ways"],
+                    "current": index,
+                    "total": len(requirements),
+                },
+            )
+    summary["paths"].sort()
+    return summary
+
+
 def _city_key(geo_relpath: str) -> str:
     """Batch key so every group of one city lands in the same worker: the
     road graph is built once per (osm, options) and reused across the batch."""
@@ -328,19 +588,48 @@ def materialize_route_geometry(
     min_customers: int = 1,
     cache_dir: str | Path | None = None,
     workers: int | str | None = None,
+    skip_missing_osm: bool = False,
+    fetch_missing_osm: bool = False,
+    osm_padding_km: float = 2.0,
+    osm_progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     output_repo = Path(output_repo_dir).resolve()
     resolved_cache_dir = Path(cache_dir).resolve() if cache_dir is not None else None
     pending, reused = _discover_pending(output_repo, min_customers=min_customers, cache_dir=resolved_cache_dir)
     if not pending:
-        return {"generated": 0, "reused": reused, "changed_during_run": 0, "groups": 0, "workers": 0, "paths": []}
-    groups, pending_by_relpath = _group_plan(output_repo, pending)
+        return {
+            "generated": 0,
+            "reused": reused,
+            "changed_during_run": 0,
+            "groups": 0,
+            "processed_groups": 0,
+            "skipped_missing_osm_groups": 0,
+            "skipped_missing_osm_bks": 0,
+            "missing_osm_files": [],
+            "osm": _empty_osm_summary(),
+            "workers": 0,
+            "paths": [],
+        }
+    planned_groups, pending_by_relpath = _group_plan(output_repo, pending)
+    osm_summary = _empty_osm_summary()
+    if fetch_missing_osm:
+        osm_summary = ensure_route_geometry_osm(
+            output_repo,
+            planned_groups,
+            padding_km=osm_padding_km,
+            progress=osm_progress,
+        )
+    groups = planned_groups
+    skipped_groups: list[dict[str, Any]] = []
+    missing_osm_files: list[str] = []
+    if skip_missing_osm:
+        groups, skipped_groups, missing_osm_files = _partition_groups_by_source_osm(output_repo, planned_groups)
 
     batches: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for group in groups:
         batches[_city_key(str(group["geo_path"]))].append(group)
     batch_list = [batches[key] for key in sorted(batches)]
-    effective_workers = _resolve_workers(workers, len(batch_list))
+    effective_workers = _resolve_workers(workers, len(batch_list)) if batch_list else 0
 
     written: list[str] = []
     changed_during_run = 0
@@ -371,14 +660,15 @@ def materialize_route_geometry(
                     continue
                 written.append(_canonical_cache_relpath(target))
 
-    if effective_workers == 1:
-        for batch in batch_list:
-            _publish_batch(_materialize_batch(str(output_repo), batch))
-    else:
-        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
-            futures = [executor.submit(_materialize_batch, str(output_repo), batch) for batch in batch_list]
-            for future in as_completed(futures):
-                _publish_batch(future.result())
+    if batch_list:
+        if effective_workers == 1:
+            for batch in batch_list:
+                _publish_batch(_materialize_batch(str(output_repo), batch))
+        else:
+            with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+                futures = [executor.submit(_materialize_batch, str(output_repo), batch) for batch in batch_list]
+                for future in as_completed(futures):
+                    _publish_batch(future.result())
     if failures:
         details = "; ".join(failures)
         raise RuntimeError(
@@ -388,7 +678,12 @@ def materialize_route_geometry(
         "generated": len(written),
         "reused": reused,
         "changed_during_run": changed_during_run,
-        "groups": len(groups),
+        "groups": len(planned_groups),
+        "processed_groups": len(groups),
+        "skipped_missing_osm_groups": len(skipped_groups),
+        "skipped_missing_osm_bks": sum(len(group["entries"]) for group in skipped_groups),
+        "missing_osm_files": missing_osm_files,
+        "osm": osm_summary,
         "workers": effective_workers,
         "paths": sorted(written),
     }

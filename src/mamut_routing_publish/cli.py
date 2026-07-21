@@ -327,6 +327,13 @@ def site_materialize_route_geometry_cmd(
         str,
         typer.Option("--jobs", help="Parallel per-city materialization workers: 'auto' or an integer >= 1."),
     ] = "auto",
+    fetch_missing_osm: Annotated[
+        bool,
+        typer.Option(
+            "--fetch-missing-osm/--no-fetch-missing-osm",
+            help="Fetch and validate missing source road extracts from benchmark sidecar bounds before materializing.",
+        ),
+    ] = False,
 ) -> None:
     """Materialize hash-addressed BKS road geometry into dist/.
 
@@ -337,7 +344,21 @@ def site_materialize_route_geometry_cmd(
     from mamut_routing_publish.route_geometry import materialize_route_geometry
 
     repo_dir = _resolve_repo_dir(output_repo_dir)
-    summary = materialize_route_geometry(repo_dir, min_customers=min_n, workers=_parse_worker_jobs(jobs))
+
+    def report_osm_progress(event: str, fields: dict[str, Any]) -> None:
+        typer.echo(
+            f"[route geometry] {event} "
+            + " ".join(f"{key}={value}" for key, value in fields.items()),
+            err=True,
+        )
+
+    summary = materialize_route_geometry(
+        repo_dir,
+        min_customers=min_n,
+        workers=_parse_worker_jobs(jobs),
+        fetch_missing_osm=fetch_missing_osm,
+        osm_progress=report_osm_progress if fetch_missing_osm else None,
+    )
     typer.echo(json.dumps(summary, indent=1))
 
 
@@ -517,6 +538,13 @@ def site_build_cmd(
             help="Skip BKS route-geometry materialization (route-geometry-cache). Pages whose BKS geometry is not already cached then fall back to straight lines. Staging builds materialize into the staging cache after seeding it from the active dist.",
         ),
     ] = False,
+    fetch_missing_osm: Annotated[
+        bool,
+        typer.Option(
+            "--fetch-missing-osm/--no-fetch-missing-osm",
+            help="Automatically fetch and validate missing Mamut2026 source road extracts before route-geometry materialization.",
+        ),
+    ] = True,
     route_geometry_jobs: Annotated[
         str,
         typer.Option(
@@ -604,6 +632,7 @@ def site_build_cmd(
         raise typer.Exit(code=1)
     resolved_branch = source_branch or _resolve_git_value(repo_dir, "rev-parse", "--abbrev-ref", "HEAD")
     reporter.phase("resolved source snapshot", commit=resolved_commit, branch=resolved_branch)
+    geometry_summary: dict[str, Any] | None = None
 
     if not skip_atf_cache:
         # Materialized-td-model families (Lera2026 igp-profile, Mamut2026 TD
@@ -634,15 +663,26 @@ def site_build_cmd(
             # repeats this seeding, which is idempotent.
             hardlink_tree(geometry_roots.active_dist / "route-geometry-cache", geometry_roots.route_geometry_publish_dir)
         reporter.phase("materializing BKS route geometry", cache_dir=geometry_roots.route_geometry_publish_dir)
+
+        def report_osm_progress(event: str, fields: dict[str, Any]) -> None:
+            reporter.phase(f"{event} route-geometry OSM", **fields)
+
         geometry_summary = materialize_route_geometry(
             repo_dir,
             cache_dir=geometry_roots.route_geometry_publish_dir,
             workers=_parse_worker_jobs(route_geometry_jobs),
+            fetch_missing_osm=fetch_missing_osm,
+            skip_missing_osm=not fetch_missing_osm,
+            osm_progress=report_osm_progress,
         )
         reporter.phase(
             "materialized BKS route geometry",
             generated=geometry_summary["generated"],
             reused=geometry_summary["reused"],
+            osm_fetched=geometry_summary["osm"]["fetched"],
+            osm_valid_existing=geometry_summary["osm"]["valid_existing"],
+            skipped_missing_osm_groups=geometry_summary["skipped_missing_osm_groups"],
+            skipped_missing_osm_bks=geometry_summary["skipped_missing_osm_bks"],
             workers=geometry_summary["workers"],
         )
 
@@ -701,6 +741,10 @@ def site_build_cmd(
     }
     if precompress_summary is not None:
         build_summary["precompress"] = precompress_summary.as_dict()
+    if geometry_summary is not None:
+        build_summary["route_geometry"] = {
+            key: value for key, value in geometry_summary.items() if key != "paths"
+        }
     reporter.phase(
         "build summary",
         wall_time=build_summary["wall_time"],
