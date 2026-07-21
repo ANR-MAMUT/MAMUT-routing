@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from mamut_routing_publish.route_geometry import (
     _resolve_workers,
     _save_artifact,
     load_route_geometry,
+    materialize_route_geometry,
     route_geometry_cache_path,
     route_geometry_for_bks,
 )
@@ -113,3 +116,148 @@ def test_resolve_workers_clamps_to_batches_and_validates() -> None:
         _resolve_workers(0, 3)
     with pytest.raises(ValueError):
         _resolve_workers("three", 3)
+
+
+def test_site_materialization_can_skip_groups_whose_gitignored_osm_extract_is_absent(tmp_path: Path) -> None:
+    collection = tmp_path / "benchmarks" / "Mamut2026"
+    instance_path = _write(
+        collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
+        json.dumps(
+            {
+                "num_customers": 1,
+                "metadata": {
+                    "sidecars": {
+                        "geo": {
+                            "path": "sidecars/missing_city/n=10/sample/sample.geo.json.gz",
+                            "sha256": "geo-digest",
+                        }
+                    }
+                },
+            }
+        ),
+    )
+    _write(instance_path.with_name("sample.bks.MonoCost.json"), '{"routes":[[1]]}\n')
+    geo_path = collection / "sidecars" / "missing_city" / "n=10" / "sample" / "sample.geo.json.gz"
+    geo_path.parent.mkdir(parents=True)
+    with gzip.open(geo_path, "wt", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "source_osm_file": "osmdata/Missing-City.osm",
+                "nodes": [
+                    {"instance_node_id": 0, "poi_lon": 4.0, "poi_lat": 45.0},
+                    {"instance_node_id": 1, "poi_lon": 4.1, "poi_lat": 45.1},
+                ],
+            },
+            handle,
+        )
+
+    summary = materialize_route_geometry(tmp_path, workers=1, skip_missing_osm=True)
+
+    assert summary["generated"] == 0
+    assert summary["groups"] == 1
+    assert summary["processed_groups"] == 0
+    assert summary["skipped_missing_osm_groups"] == 1
+    assert summary["skipped_missing_osm_bks"] == 1
+    assert summary["missing_osm_files"] == ["osmdata/Missing-City.osm"]
+    assert summary["workers"] == 0
+
+    with pytest.raises(RuntimeError, match="Unable to resolve source OSM file 'osmdata/Missing-City.osm'"):
+        materialize_route_geometry(tmp_path, workers=1)
+
+
+def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mamut_routing_tools.osm as osm_module
+
+    collection = tmp_path / "benchmarks" / "Mamut2026"
+    instance_path = _write(
+        collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
+        json.dumps(
+            {
+                "num_customers": 1,
+                "metadata": {
+                    "sidecars": {
+                        "geo": {
+                            "path": "sidecars/missing_city/n=10/sample/sample.geo.json.gz",
+                            "sha256": "geo-digest",
+                        }
+                    }
+                },
+            }
+        ),
+    )
+    _write(instance_path.with_name("sample.bks.MonoCost.json"), '{"routes":[[1]]}\n')
+    sidecar_dir = collection / "sidecars" / "missing_city" / "n=10" / "sample"
+    sidecar_dir.mkdir(parents=True)
+    geo_path = sidecar_dir / "sample.geo.json.gz"
+    with gzip.open(geo_path, "wt", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "city": "Missing City",
+                "source_osm_file": "osmdata/Missing-City.osm",
+                "map_options": {"only_intersections": True, "trim_to_connected_graph": True},
+                "nodes": [
+                    {"instance_node_id": 0, "poi_lon": 4.0, "poi_lat": 45.0},
+                    {"instance_node_id": 1, "poi_lon": 4.008, "poi_lat": 45.0},
+                ],
+            },
+            handle,
+        )
+    with gzip.open(sidecar_dir / "sample.road.json.gz", "wt", encoding="utf-8") as handle:
+        json.dump({"vertex_lonlat": [[4.0, 45.0], [4.008, 45.0]]}, handle)
+    _write(
+        tmp_path / "osmdata" / "Missing-City.osm",
+        (
+            '<osm version="0.6"><bounds minlat="44.9" minlon="3.9" '
+            'maxlat="45.1" maxlon="4.1"/><remark>runtime error: out of memory</remark></osm>'
+        ),
+    )
+
+    def fake_fetch(
+        min_lat: float,
+        min_lon: float,
+        max_lat: float,
+        max_lon: float,
+        outpath: str | Path,
+        *,
+        profile: str,
+        progress=None,
+    ) -> dict:
+        assert profile == "road_cache"
+        assert min_lat < 45.0 < max_lat
+        assert min_lon < 4.0 < 4.008 < max_lon
+        target = Path(outpath)
+        _write(
+            target,
+            """<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <bounds minlat="44.9" minlon="3.9" maxlat="45.1" maxlon="4.1"/>
+  <node id="1" lat="45.0" lon="4.0"/>
+  <node id="2" lat="45.0" lon="4.008"/>
+  <way id="10">
+    <nd ref="1"/><nd ref="2"/>
+    <tag k="highway" v="residential"/>
+  </way>
+</osm>
+""",
+        )
+        return {
+            "bbox": {"minlat": min_lat, "minlon": min_lon, "maxlat": max_lat, "maxlon": max_lon},
+            "dataset_mode": "tiled_roads",
+            "validation": {"nodes": 2, "ways": 1},
+            "road_tiling": {"tiles_total": 1},
+        }
+
+    monkeypatch.setattr(osm_module, "fetch_and_store_bbox_osm", fake_fetch)
+
+    summary = materialize_route_geometry(tmp_path, workers=1, fetch_missing_osm=True)
+
+    assert summary["generated"] == 1
+    assert summary["processed_groups"] == 1
+    assert summary["osm"]["required_files"] == 1
+    assert summary["osm"]["fetched"] == 1
+    assert summary["osm"]["valid_existing"] == 0
+    assert summary["osm"]["invalid_existing"] == 1
+    assert (tmp_path / "osmdata" / "Missing-City.osm").is_file()
