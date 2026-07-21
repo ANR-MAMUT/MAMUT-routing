@@ -1,6 +1,6 @@
 # MAMUT-routing
 
-Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes, all in one repository. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools); Julia remains only for the offline time-dependent benchmark generation pipeline.
+Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes, all in one repository. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
 
@@ -21,7 +21,6 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
 | `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Mamut2026 generated benchmarks. |
-| `webapp/` | Julia scripts of the offline time-dependent benchmark generation pipeline (`osm_generation.jl`, `td_traffic.jl`), driven by `workbench build-family`. The legacy site server they accompany is retired. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
@@ -65,7 +64,6 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 
 ### Setup
 
-#### Python
 ```bash
 # clone with the tooling submodules (benchmark family satellites stay
 # empty — opt in per family, see "Benchmark family satellites")
@@ -76,14 +74,6 @@ git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
 # install (uv workspace: editable mamut-routing-lib + mamut-routing-tools)
 uv sync
 ```
-
-#### Julia (offline TD generation only)
-
-Building and serving the website needs no Julia. Julia is only required to run the offline time-dependent benchmark generation pipeline (`workbench build-family` / `traffic-sim`). To set it up, run from the repo root:
-```bash
-julia --project=webapp -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
-```
-
 
 ### Publishing the site (build order)
 
@@ -119,11 +109,6 @@ uv run mamut-routing-publish site webapp
 
 # Build release archives + manifest into ./dist-release/
 uv run mamut-routing-publish release build
-
-# Generate a Mamut2026-pipeline family for a city (CVRP base, VRPTW TW sets,
-# 6 traffic overlays, 12 TD twins, shared sidecars); requires Julia (offline
-# TD generation pipeline). Interactive generation lives in MAMUT-routing-tools.
-uv run mamut-routing-publish workbench build-family Lyon --n 25 --method poi_categories --out-root instances_v2/workbench-collection
 ```
 
 By default, the CLI resolves the MAMUT-routing repo root from the current working directory, or from the `MAMUT_ROUTING_ROOT` environment variable (shared with `mamut-routing-lib`). Override via `--output-repo-dir` / `--source-repo-dir`. `site build` reports progress and a final human-readable duration/file/memory summary to stderr by default, then keeps the machine-readable JSON summary on stdout. Instance payload resolution runs in parallel by default with `--jobs auto`, defined as `max(1, os.cpu_count() - 2)` and capped by the number of discovered instances. Use `--jobs 1` for serial resolution.
