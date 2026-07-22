@@ -63,7 +63,7 @@ def test_staging_build_never_writes_active_dist(tmp_path: Path) -> None:
     )
     active_dist = output_repo_dir / "dist"
     # Simulate previously materialized caches the payloads may reference.
-    fake_atf = active_dist / "atf-cache" / "Mamut2026" / "fake.atf.json.gz"
+    fake_atf = active_dist / "atf-cache" / "Poryos2026" / "fake.atf.json.gz"
     fake_atf.parent.mkdir(parents=True, exist_ok=True)
     fake_atf.write_bytes(b"gzipped-bytes")
     fake_geometry = active_dist / "route-geometry-cache" / "ab" / "abcdef.json"
@@ -84,7 +84,7 @@ def test_staging_build_never_writes_active_dist(tmp_path: Path) -> None:
     assert (staging_dir / "site" / "history.json").is_file()
     assert (staging_dir / "site-payloads" / "index.json").is_file()
     # Caches are seeded into the staging output (hardlink or copy).
-    assert (staging_dir / "atf-cache" / "Mamut2026" / "fake.atf.json.gz").is_file()
+    assert (staging_dir / "atf-cache" / "Poryos2026" / "fake.atf.json.gz").is_file()
     assert (staging_dir / "route-geometry-cache" / "ab" / "abcdef.json").is_file()
 
 

@@ -1,4 +1,4 @@
-"""Hash-addressed, publication-only BKS road geometry for Mamut2026."""
+"""Hash-addressed, publication-only BKS road geometry for Poryos2026."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ def _discover_pending(
     min_customers: int,
     cache_dir: Path | None = None,
 ) -> tuple[list[_PendingBks], int]:
-    collection_root = output_repo_dir / "benchmarks" / "Mamut2026"
+    collection_root = output_repo_dir / "benchmarks" / "Poryos2026"
     pending: list[_PendingBks] = []
     reused = 0
     geo_file_hashes: dict[Path, str] = {}

@@ -38,11 +38,11 @@ mamut-routing <command> --help
 mamut-routing remote list
 
 # Filter by problem-type and benchmark family
-mamut-routing remote list --problem-type CVRP --benchmark-name Mamut2026
+mamut-routing remote list --problem-type CVRP --benchmark-name Poryos2026
 
 # Download and extract one or more archives into ./benchmarks
 mamut-routing --benchmarks-dir ./benchmarks remote \
-    fetch --problem-type CVRP --benchmark-name Mamut2026
+    fetch --problem-type CVRP --benchmark-name Poryos2026
 
 # Verify local zip checksums against the remote manifest
 mamut-routing --benchmarks-dir ./benchmarks remote verify
@@ -53,7 +53,7 @@ Once instances are on disk, list and load them locally:
 ```bash
 # List local instances under ./benchmarks
 mamut-routing --benchmarks-dir ./benchmarks list \
-    --problem-type CVRP --benchmark-name Mamut2026
+    --problem-type CVRP --benchmark-name Poryos2026
 
 # Print only matching paths (useful for piping into other tools)
 mamut-routing --benchmarks-dir ./benchmarks list \
@@ -67,7 +67,7 @@ from pathlib import Path
 from mamut_routing_lib import discover_benchmark_instances, load_benchmark_instance
 
 items = discover_benchmark_instances(benchmarks_root=Path("./benchmarks"))
-instance = load_benchmark_instance("benchmarks/.../mamut-n100-9517368.vrp.json")
+instance = load_benchmark_instance("benchmarks/.../poryos-n100-9517368.vrp.json")
 ```
 
 A `[pyvrp]` extra wires up the [PyVRP](https://github.com/PyVRP/PyVRP) HGS metaheuristic so the same CLI can also solve loaded instances. See the [MAMUT-routing-lib README](https://github.com/ANR-MAMUT/MAMUT-routing-lib) for the full reference.

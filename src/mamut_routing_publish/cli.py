@@ -269,7 +269,7 @@ def site_materialize_atf_cmd(
     """Materialize ATF sidecars into dist/atf-cache (git-ignored).
 
     Covers materialized-td-model families with no committed sidecar (Lera2026
-    igp-profile, Mamut2026 TD road-graph) so the arc-click viewer and BKS
+    igp-profile, Poryos2026 TD road-graph) so the arc-click viewer and BKS
     schedule tables work. `site build` runs this phase automatically; this
     standalone command exists to pre-warm the cache or use a custom cap.
     Incremental: existing cache files are reused; TDVRPTW/TDVRP twins share
@@ -320,7 +320,7 @@ def site_materialize_route_geometry_cmd(
         int,
         typer.Option(
             "--min-n",
-            help="Materialize BKS route geometry for Mamut2026 instances with at least this many customers (default: all sizes).",
+            help="Materialize BKS route geometry for Poryos2026 instances with at least this many customers (default: all sizes).",
         ),
     ] = 1,
     jobs: Annotated[
@@ -528,7 +528,7 @@ def site_build_cmd(
         bool,
         typer.Option(
             "--skip-atf-cache",
-            help="Skip the ATF sidecar cache materialization phase. Instance pages of materialized-td-model families (Lera2026, Mamut2026 TD) then lose their schedule tables and arc-click viewer unless dist/atf-cache is already populated.",
+            help="Skip the ATF sidecar cache materialization phase. Instance pages of materialized-td-model families (Lera2026, Poryos2026 TD) then lose their schedule tables and arc-click viewer unless dist/atf-cache is already populated.",
         ),
     ] = False,
     skip_route_geometry: Annotated[
@@ -542,7 +542,7 @@ def site_build_cmd(
         bool,
         typer.Option(
             "--fetch-missing-osm/--no-fetch-missing-osm",
-            help="Automatically fetch and validate missing Mamut2026 source road extracts before route-geometry materialization.",
+            help="Automatically fetch and validate missing Poryos2026 source road extracts before route-geometry materialization.",
         ),
     ] = True,
     route_geometry_jobs: Annotated[
@@ -635,7 +635,7 @@ def site_build_cmd(
     geometry_summary: dict[str, Any] | None = None
 
     if not skip_atf_cache:
-        # Materialized-td-model families (Lera2026 igp-profile, Mamut2026 TD
+        # Materialized-td-model families (Lera2026 igp-profile, Poryos2026 TD
         # road-graph) ship no committed ATF sidecar; without this phase a fresh
         # checkout silently builds their instance pages without schedule tables
         # or the arc-click viewer. Incremental: existing cache files are reused.

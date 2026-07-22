@@ -19,8 +19,8 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 |---|---|
 | `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
-| `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
-| `osmdata/` | OpenStreetMap-derived data feeding the Mamut2026 generated benchmarks. |
+| `benchmarks/Poryos2026/` *(submodule)* | The generated **Poryos2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
+| `osmdata/` | OpenStreetMap-derived data feeding the Poryos2026 generated benchmarks. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
@@ -46,15 +46,15 @@ The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW 
 
 `Lera2026` is the first `igp-profile` family: it ships compact IGP specifications instead of ATF sidecars (the canonical arrival-time functions materialize deterministically on load, pinned by `atf_sha256`), which keeps its two satellites at ~50 MB despite covering 200–1000 customers.
 
-### The Mamut2026 collection
+### The Poryos2026 collection
 
-[MAMUT-routing-Mamut2026](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026), mounted at `benchmarks/Mamut2026/`, is the generated city family and the first **family-first collection**: instead of one satellite per problem type, a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Mamut2026 satellites are archived with tombstone READMEs.
+[MAMUT-routing-Poryos2026](https://github.com/ANR-MAMUT/MAMUT-routing-Poryos2026), mounted at `benchmarks/Poryos2026/`, is the generated city family and the first **family-first collection**: instead of one satellite per problem type, a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Poryos2026 satellites are archived with tombstone READMEs.
 
 A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
 
 ```bash
 git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one TD family (0.1–0.8 GB each)
-git submodule update --init benchmarks/Mamut2026           # the generated collection (~0.4 GB)
+git submodule update --init benchmarks/Poryos2026           # the generated collection (~0.4 GB)
 git submodule update --init                                # everything (~2.5 GB of satellite data)
 ```
 
@@ -80,7 +80,7 @@ uv sync
 The whole publish is three chained steps: fetch the data, install, build, then serve:
 
 ```bash
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Mamut2026 \
+git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 \
   && uv sync \
   && uv run mamut-routing-publish site build \
   && uv run mamut-routing-publish serve
@@ -149,6 +149,6 @@ The source code is licensed under the [MIT License](LICENSE).
 
 This repository also contains benchmark data and generated artifacts under
 family-specific terms. In particular, `Ortec2022` material is under
-`CC BY-NC 4.0`, and OSM-derived `Mamut2026` artifacts are under `ODbL 1.0`
+`CC BY-NC 4.0`, and OSM-derived `Poryos2026` artifacts are under `ODbL 1.0`
 where applicable. See [NOTICE](NOTICE) and the `README.md`/`LICENSE` files in
 each benchmark family directory.

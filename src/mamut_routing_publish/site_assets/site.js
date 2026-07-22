@@ -168,7 +168,7 @@ function fetchJsonMemo(sourcePath) {
   return promise;
 }
 
-// --- Collection geo sidecars (Mamut2026 v2) ------------------------------
+// --- Collection geo sidecars (Poryos2026 v2) ------------------------------
 // v1 instances ship an explicit .meta.json geometry sidecar; collection
 // instances ship a shared, gzipped geo sidecar with an indexed road cache
 // (a local vertex table + per-metric paths as index lists). The loader below
@@ -968,10 +968,10 @@ function homePreviewSampleKey(sample) {
 // Mirror of HOME_PREVIEW_SEEDS in src/mamut_routing_publish/site_payloads.py,
 // only used by the seed-walker fallback below.
 const HOME_PREVIEW_SEEDS = [
-  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
-  { problemType: "VRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
-  { problemType: "TDVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
-  { problemType: "TDVRPTW", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
+  { problemType: "CVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
+  { problemType: "VRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
+  { problemType: "TDVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
+  { problemType: "TDVRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
 ];
 
 async function loadHomePreviewSample(seed) {
@@ -1643,9 +1643,9 @@ function renderCatalogIndex(payload) {
     renderSubrouteList("Places", payload.place_routes),
     renderSubrouteList("Sizes", payload.size_routes),
   ].join("");
-  const isMamut2026FamilyPage =
-    payload.payload_kind === "family_index" && payload.benchmark_name === "Mamut2026";
-  const tableHtml = isMamut2026FamilyPage
+  const isPoryos2026FamilyPage =
+    payload.payload_kind === "family_index" && payload.benchmark_name === "Poryos2026";
+  const tableHtml = isPoryos2026FamilyPage
     ? renderInstanceGroups(filteredItems, true, { inspector: true })
     : renderInstanceRows(filteredItems, { inspector: true });
   const tableHint = filteredItems.length

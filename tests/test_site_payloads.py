@@ -22,9 +22,9 @@ from mamut_routing_publish.site_webapp import generate_site_webapp
 
 def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
     return BenchmarkInstanceCVRP(
-        instance_name="mamut-n2-cafe123",
+        instance_name="poryos-n2-cafe123",
         instance_origin="OsmCvrpGen",
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         num_customers=2,
         vehicle_capacity=10,
         coordinates=[(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
@@ -44,16 +44,16 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp.json",
-                "vrp": "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp",
-                "meta": "benchmarks/CVRP/Mamut2026/sidecars/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.meta.json",
-                "manifest": "benchmarks/CVRP/Mamut2026/sidecars/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.manifest.json",
+                "vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
+                "vrp": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
+                "meta": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
+                "manifest": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
             },
             "sibling_variant_paths": {
-                "euclidean": "benchmarks/CVRP/Mamut2026/euclidean/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp.json"
+                "euclidean": "benchmarks/CVRP/Poryos2026/euclidean/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
             },
             "derived_problem_paths": {
-                "fastest": "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp.json"
+                "fastest": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
             },
             "source_problem_paths": {},
         },
@@ -62,9 +62,9 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
 
 def make_generated_vrptw_instance() -> BenchmarkInstance:
     return BenchmarkInstance(
-        instance_name="mamut-n2-beef456",
+        instance_name="poryos-n2-beef456",
         instance_origin="OsmCvrpGen",
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         num_customers=2,
         vehicle_capacity=10,
         coordinates=[(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
@@ -86,17 +86,17 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp.json",
-                "vrp": "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp",
-                "meta": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.meta.json",
-                "manifest": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.manifest.json",
+                "vrp_json": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
+                "vrp": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
+                "meta": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
+                "manifest": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
             },
             "sibling_variant_paths": {
-                "euclidean": "benchmarks/VRPTW/Mamut2026/euclidean/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp.json"
+                "euclidean": "benchmarks/VRPTW/Poryos2026/euclidean/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
             },
             "derived_problem_paths": {},
             "source_problem_paths": {
-                "cvrp_vrp_json": "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp.json"
+                "cvrp_vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
             },
         },
     )
@@ -147,7 +147,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "CVRP"
-        / "Mamut2026"
+        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -158,7 +158,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "VRPTW"
-        / "Mamut2026"
+        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -184,7 +184,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "CVRP"
-        / "Mamut2026"
+        / "Poryos2026"
         / "sidecars"
         / "brest"
         / "n=2"
@@ -196,7 +196,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "CVRP"
-        / "Mamut2026"
+        / "Poryos2026"
         / "sidecars"
         / "brest"
         / "n=2"
@@ -208,7 +208,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "VRPTW"
-        / "Mamut2026"
+        / "Poryos2026"
         / "sidecars"
         / "brest"
         / "n=2"
@@ -220,7 +220,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         output_repo_dir
         / "benchmarks"
         / "VRPTW"
-        / "Mamut2026"
+        / "Poryos2026"
         / "sidecars"
         / "brest"
         / "n=2"
@@ -377,7 +377,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
             payload_root
             / "benchmarks"
             / "vrptw"
-            / "mamut2026"
+            / "poryos2026"
             / "fastest"
             / "brest"
             / "n=2"
@@ -389,7 +389,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
         "HierarchicalVehicleCost",
         "MonoCost",
     ]
-    assert vrptw_instance_page["source_problem_routes"]["cvrp_vrp_json"] == "/benchmarks/cvrp/mamut2026/fastest/brest/n=2/mamut-n2-cafe123/"
+    assert vrptw_instance_page["source_problem_routes"]["cvrp_vrp_json"] == "/benchmarks/cvrp/poryos2026/fastest/brest/n=2/poryos-n2-cafe123/"
 
     history_payload = json.loads((site_output / "site" / "history.json").read_text(encoding="utf-8"))
     routed_history_payload = json.loads((payload_root / "history" / "index.json").read_text(encoding="utf-8"))
@@ -422,7 +422,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
         site_output
         / "benchmarks"
         / "vrptw"
-        / "mamut2026"
+        / "poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -515,7 +515,7 @@ SINTEF context first paragraph with `HierarchicalVehicleCost` and a [source](htt
 
 This heading is intentionally not a benchmark-family page.
 
-### `Mamut2026` (CVRP)
+### `Poryos2026` (CVRP)
 
 MAMUT CVRP context first paragraph.
 """,
@@ -530,7 +530,7 @@ https://mit-license.org/
 """,
         encoding="utf-8",
     )
-    mamut_cvrp_license = output_repo_dir / "benchmarks" / "CVRP" / "Mamut2026" / "LICENSE"
+    mamut_cvrp_license = output_repo_dir / "benchmarks" / "CVRP" / "Poryos2026" / "LICENSE"
     mamut_cvrp_license.write_text(
         """SPDX-License-Identifier: ODbL-1.0
 
@@ -552,7 +552,7 @@ https://opendatacommons.org/licenses/odbl/1-0/
     payload_root = output_repo_dir / "dist" / "site-payloads"
     vrptw_problem = json.loads((payload_root / "benchmarks" / "vrptw" / "index.json").read_text(encoding="utf-8"))
     sintef_card = next(family for family in vrptw_problem["families"] if family["benchmark_name"] == "Sintef2008")
-    mamut_vrptw_card = next(family for family in vrptw_problem["families"] if family["benchmark_name"] == "Mamut2026")
+    mamut_vrptw_card = next(family for family in vrptw_problem["families"] if family["benchmark_name"] == "Poryos2026")
     assert sintef_card["context_route_path"] == "/benchmarks/vrptw/sintef2008/context/"
     assert mamut_vrptw_card["context_route_path"] is None
 
@@ -577,10 +577,10 @@ https://opendatacommons.org/licenses/odbl/1-0/
     assert not (payload_root / "benchmarks" / "related-benchmark-infrastructure").exists()
 
     cvrp_problem = json.loads((payload_root / "benchmarks" / "cvrp" / "index.json").read_text(encoding="utf-8"))
-    mamut_cvrp_card = next(family for family in cvrp_problem["families"] if family["benchmark_name"] == "Mamut2026")
-    assert mamut_cvrp_card["context_route_path"] == "/benchmarks/cvrp/mamut2026/context/"
+    mamut_cvrp_card = next(family for family in cvrp_problem["families"] if family["benchmark_name"] == "Poryos2026")
+    assert mamut_cvrp_card["context_route_path"] == "/benchmarks/cvrp/poryos2026/context/"
     mamut_cvrp_context_payload = json.loads(
-        (payload_root / "benchmarks" / "cvrp" / "mamut2026" / "context" / "index.json").read_text(encoding="utf-8")
+        (payload_root / "benchmarks" / "cvrp" / "poryos2026" / "context" / "index.json").read_text(encoding="utf-8")
     )
     assert mamut_cvrp_context_payload["license_spdx_id"] == "ODbL-1.0"
     assert (
@@ -598,14 +598,14 @@ https://opendatacommons.org/licenses/odbl/1-0/
 
 
 def test_family_license_section_falls_back_to_collection_layout(tmp_path: Path) -> None:
-    # Mamut2026 stores its problem-type layers under benchmarks/Mamut2026/<PT>/
+    # Poryos2026 stores its problem-type layers under benchmarks/Poryos2026/<PT>/
     # with a single LICENSE at the collection root; the standard per-family
-    # path benchmarks/<PT>/Mamut2026/LICENSE does not exist there.
+    # path benchmarks/<PT>/Poryos2026/LICENSE does not exist there.
     from mamut_routing_lib.enums import BenchmarkName, ProblemType
     from mamut_routing_publish.site_payloads import _load_family_license_section
 
     repo = tmp_path / "repo"
-    collection_license = repo / "benchmarks" / "Mamut2026" / "LICENSE"
+    collection_license = repo / "benchmarks" / "Poryos2026" / "LICENSE"
     collection_license.parent.mkdir(parents=True)
     collection_license.write_text(
         """SPDX-License-Identifier: ODbL-1.0
@@ -615,16 +615,16 @@ OSM-derived artifacts use ODbL.
         encoding="utf-8",
     )
     for problem_type in (ProblemType.CVRP, ProblemType.VRPTW, ProblemType.TDVRP, ProblemType.TDVRPTW):
-        section = _load_family_license_section(repo, problem_type, BenchmarkName.MAMUT_2026)
+        section = _load_family_license_section(repo, problem_type, BenchmarkName.PORYOS_2026)
         assert section.spdx_id == "ODbL-1.0"
         assert "ODbL" in (section.markdown or "")
 
     # A per-family LICENSE at the standard path wins over the collection root.
-    family_license = repo / "benchmarks" / "TDVRP" / "Mamut2026" / "LICENSE"
+    family_license = repo / "benchmarks" / "TDVRP" / "Poryos2026" / "LICENSE"
     family_license.parent.mkdir(parents=True)
     family_license.write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
-    assert _load_family_license_section(repo, ProblemType.TDVRP, BenchmarkName.MAMUT_2026).spdx_id == "MIT"
-    assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.MAMUT_2026).spdx_id == "ODbL-1.0"
+    assert _load_family_license_section(repo, ProblemType.TDVRP, BenchmarkName.PORYOS_2026).spdx_id == "MIT"
+    assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.PORYOS_2026).spdx_id == "ODbL-1.0"
 
 
 def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
@@ -650,7 +650,7 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
                     "summary": "Legacy history entry before change counts.",
                     "detail_route_path": "/history/2026-04-22-legacy/",
                     "affected_problem_types": ["CVRP"],
-                    "affected_benchmark_names": ["Mamut2026"],
+                    "affected_benchmark_names": ["Poryos2026"],
                     "affected_objective_functions": ["MonoCost"],
                 }
             ],
@@ -716,7 +716,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             payload_root
             / "benchmarks"
             / "vrptw"
-            / "mamut2026"
+            / "poryos2026"
             / "fastest"
             / "brest"
             / "n=2"
@@ -726,8 +726,8 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
     assert len(vrptw_size_index["items"]) == 1
     mamut_item = vrptw_size_index["items"][0]
     assert mamut_item["num_customers"] == 2
-    assert mamut_item["instance_id"] == f"vrptw-mamut2026-fastest-brest-n2-{generated_vrptw.instance_name}"
-    mamut_dir = f"benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/{generated_vrptw.instance_name}"
+    assert mamut_item["instance_id"] == f"vrptw-poryos2026-fastest-brest-n2-{generated_vrptw.instance_name}"
+    mamut_dir = f"benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/{generated_vrptw.instance_name}"
     assert mamut_item["objective_availability"] == [
         {
             "objective_function": "HierarchicalVehicleCost",
@@ -859,8 +859,8 @@ def test_compute_change_log_pure_family_addition() -> None:
     new = {
         "instances": {
             "vrptw-sintef2008-n2-C101": _bks_only_record(bks={"MonoCost": {"cost": 100}}),
-            "cvrp-mamut2026-fastest-brest-n2-foo": _bks_only_record(
-                problem_type="CVRP", benchmark_name="Mamut2026",
+            "cvrp-poryos2026-fastest-brest-n2-foo": _bks_only_record(
+                problem_type="CVRP", benchmark_name="Poryos2026",
                 metric_variant="fastest", place_slug="brest", instance_name="foo",
                 bks={"MonoCost": {"cost": 50, "num_routes": 2}},
             ),
@@ -873,7 +873,7 @@ def test_compute_change_log_pure_family_addition() -> None:
     assert log.counts.instances_added == 1
     assert log.counts.bks_added == 1
     family_kinds = [(c.kind, c.problem_type.value, c.benchmark_name.value) for c in log.family_changes]
-    assert family_kinds == [("added", "CVRP", "Mamut2026")]
+    assert family_kinds == [("added", "CVRP", "Poryos2026")]
 
 
 def test_compute_change_log_instance_removal_emits_bks_removed_per_objective() -> None:
@@ -1000,7 +1000,7 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
         output_repo_dir
         / "benchmarks"
         / "VRPTW"
-        / "Mamut2026"
+        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -1254,11 +1254,11 @@ def test_evaluate_on_domain_absorbs_horizon_ulp_overshoot() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Family-first collection (Mamut2026 v2): slim instances, shared sidecars,
+# Family-first collection (Poryos2026 v2): slim instances, shared sidecars,
 # identity-based cross-links, geo-sidecar geometry.
 # ---------------------------------------------------------------------------
 
-_COLLECTION_BASE = "mamut-toyville-n2-poi"
+_COLLECTION_BASE = "poryos-toyville-n2-poi"
 _COLLECTION_CITY = "toyville"
 
 
@@ -1266,7 +1266,7 @@ def _collection_static_payload(*, metric: str, arc_costs_source: dict, name: str
     payload = {
         "instance_name": name or _COLLECTION_BASE,
         "instance_origin": "OsmCvrpGen",
-        "benchmark_name": "Mamut2026",
+        "benchmark_name": "Poryos2026",
         "num_customers": 2,
         "num_vehicles": None,
         "vehicle_capacity": 10,
@@ -1298,12 +1298,12 @@ def build_collection_fixture(output_repo_dir: Path) -> Path:
     from mamut_routing_lib.geo import GeoNode, GeoRoadCache, InstanceGeo, save_instance_geo
     from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 
-    collection = output_repo_dir / "benchmarks" / "Mamut2026"
-    save_collection_marker(CollectionMarker(family="Mamut2026"), collection)
+    collection = output_repo_dir / "benchmarks" / "Poryos2026"
+    save_collection_marker(CollectionMarker(family="Poryos2026"), collection)
 
     distances = InstanceDistances(
         base_name=_COLLECTION_BASE,
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         metric="fastest",
         num_customers=2,
         values=[[0.0, 120.5, 240.25], [120.5, 0.0, 130.75], [240.25, 130.75, 0.0]],
@@ -1327,7 +1327,7 @@ def build_collection_fixture(output_repo_dir: Path) -> Path:
     )
     geo = InstanceGeo(
         base_name=_COLLECTION_BASE,
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         city=_COLLECTION_CITY,
         method="poi",
         source_osm_file="osmdata/Toyville.osm",
@@ -1379,7 +1379,7 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     payload_root = site_output / "site-payloads"
 
     cvrp_page = json.loads(
-        (payload_root / "benchmarks" / "cvrp" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
+        (payload_root / "benchmarks" / "cvrp" / "poryos2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
     )
     summary = cvrp_page["summary"]
     assert summary["viewer_render_mode"] == "cached_road"
@@ -1388,36 +1388,36 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     assert summary["license"] == "ODbL-1.0"
     assert summary["source_city"] == _COLLECTION_CITY
     links = cvrp_page["artifact_links"]
-    assert links["geo_json_path"] == f"benchmarks/Mamut2026/sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz"
+    assert links["geo_json_path"] == f"benchmarks/Poryos2026/sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz"
     assert links["meta_path"] is None
     assert cvrp_page["sibling_variant_routes"] == {
-        "CVRP (euclidean)": f"/benchmarks/cvrp/mamut2026/euclidean/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+        "CVRP (euclidean)": f"/benchmarks/cvrp/poryos2026/euclidean/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
     }
     assert cvrp_page["derived_problem_routes"] == {
-        "VRPTW (td-shared)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
-        "VRPTW (tight)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
+        "VRPTW (td-shared)": f"/benchmarks/vrptw/poryos2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+        "VRPTW (tight)": f"/benchmarks/vrptw/poryos2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
     }
     assert cvrp_page["source_problem_routes"] == {}
     assert [entry["objective_function"] for entry in cvrp_page["bks_entries"]] == ["MonoCost"]
 
     tight_page = json.loads(
-        (payload_root / "benchmarks" / "vrptw" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / f"{_COLLECTION_BASE}-tw-tight" / "index.json").read_text(encoding="utf-8")
+        (payload_root / "benchmarks" / "vrptw" / "poryos2026" / "fastest" / _COLLECTION_CITY / "n=2" / f"{_COLLECTION_BASE}-tw-tight" / "index.json").read_text(encoding="utf-8")
     )
     assert tight_page["sibling_variant_routes"] == {
-        "VRPTW (td-shared)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+        "VRPTW (td-shared)": f"/benchmarks/vrptw/poryos2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
     }
     assert tight_page["source_problem_routes"] == {
-        "CVRP (fastest)": f"/benchmarks/cvrp/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
+        "CVRP (fastest)": f"/benchmarks/cvrp/poryos2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
     }
     assert tight_page["derived_problem_routes"] == {}
 
     shared_page = json.loads(
-        (payload_root / "benchmarks" / "vrptw" / "mamut2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
+        (payload_root / "benchmarks" / "vrptw" / "poryos2026" / "fastest" / _COLLECTION_CITY / "n=2" / _COLLECTION_BASE / "index.json").read_text(encoding="utf-8")
     )
     # The TD twins do not exist in this fixture: no phantom links may appear.
     assert shared_page["derived_problem_routes"] == {}
     assert shared_page["sibling_variant_routes"] == {
-        "VRPTW (tight)": f"/benchmarks/vrptw/mamut2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
+        "VRPTW (tight)": f"/benchmarks/vrptw/poryos2026/fastest/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}-tw-tight/",
     }
 
     root_index = json.loads((payload_root / "benchmarks" / "index.json").read_text(encoding="utf-8"))

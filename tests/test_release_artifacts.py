@@ -22,9 +22,9 @@ from mamut_routing_publish.release_artifacts import (
 
 def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
     return BenchmarkInstanceCVRP(
-        instance_name="mamut-n2-cafe123",
+        instance_name="poryos-n2-cafe123",
         instance_origin="OsmCvrpGen",
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         num_customers=2,
         vehicle_capacity=10,
         coordinates=[(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
@@ -44,10 +44,10 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp.json",
-                "vrp": "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp",
-                "meta": "benchmarks/CVRP/Mamut2026/sidecars/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.meta.json",
-                "manifest": "benchmarks/CVRP/Mamut2026/sidecars/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.manifest.json",
+                "vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
+                "vrp": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
+                "meta": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
+                "manifest": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
             },
         },
     )
@@ -55,9 +55,9 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
 
 def make_generated_vrptw_instance() -> BenchmarkInstance:
     return BenchmarkInstance(
-        instance_name="mamut-n2-beef456",
+        instance_name="poryos-n2-beef456",
         instance_origin="OsmCvrpGen",
-        benchmark_name="Mamut2026",
+        benchmark_name="Poryos2026",
         num_customers=2,
         vehicle_capacity=10,
         coordinates=[(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)],
@@ -79,10 +79,10 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp.json",
-                "vrp": "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp",
-                "meta": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.meta.json",
-                "manifest": "benchmarks/VRPTW/Mamut2026/sidecars/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.manifest.json",
+                "vrp_json": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
+                "vrp": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
+                "meta": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
+                "manifest": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
             },
         },
     )
@@ -129,7 +129,7 @@ def _write_fixture_tree(source_repo_dir: Path) -> None:
         source_repo_dir
         / "benchmarks"
         / "CVRP"
-        / "Mamut2026"
+        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -140,7 +140,7 @@ def _write_fixture_tree(source_repo_dir: Path) -> None:
         source_repo_dir
         / "benchmarks"
         / "VRPTW"
-        / "Mamut2026"
+        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -198,13 +198,13 @@ def test_generate_release_artifacts_writes_expected_archives_and_manifest(tmp_pa
     assert summary.archive_count == 3
     assert manifest.snapshot_id == "2026-04-24-abcdef1"
     assert sorted(asset.filename for asset in manifest.assets) == [
-        "CVRP-Mamut2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Mamut2026-snapshot-2026-04-24-abcdef1.zip",
+        "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
+        "VRPTW-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
         "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]
     assert not (output_dir / "CVRP-snapshot-2026-04-24-abcdef1.zip").exists()
     assert not (output_dir / "VRPTW-snapshot-2026-04-24-abcdef1.zip").exists()
-    assert not (output_dir / "Mamut2026-snapshot-2026-04-24-abcdef1.zip").exists()
+    assert not (output_dir / "Poryos2026-snapshot-2026-04-24-abcdef1.zip").exists()
     for asset in manifest.assets:
         assert asset.download_url.endswith(asset.filename)
         assert asset.size_bytes is not None and asset.size_bytes > 0
@@ -212,12 +212,12 @@ def test_generate_release_artifacts_writes_expected_archives_and_manifest(tmp_pa
         archive_path = output_dir / asset.filename
         assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == asset.checksum_sha256
 
-    family_archive = output_dir / "CVRP-Mamut2026-snapshot-2026-04-24-abcdef1.zip"
+    family_archive = output_dir / "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip"
     with zipfile.ZipFile(family_archive, "r") as archive:
         names = sorted(archive.namelist())
 
-    assert "benchmarks/CVRP/Mamut2026/fastest/brest/n=2/mamut-n2-cafe123/mamut-n2-cafe123.vrp.json" in names
-    assert "benchmarks/VRPTW/Mamut2026/fastest/brest/n=2/mamut-n2-beef456/mamut-n2-beef456.vrp.json" not in names
+    assert "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json" in names
+    assert "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json" not in names
 
 
 def test_generate_release_artifacts_is_deterministic_for_same_snapshot(tmp_path: Path) -> None:
@@ -248,8 +248,8 @@ def test_generate_release_artifacts_is_deterministic_for_same_snapshot(tmp_path:
     assert first_manifest == second_manifest
 
     for filename in [
-        "CVRP-Mamut2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Mamut2026-snapshot-2026-04-24-abcdef1.zip",
+        "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
+        "VRPTW-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
         "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]:
         assert (first_output_dir / filename).read_bytes() == (second_output_dir / filename).read_bytes()
