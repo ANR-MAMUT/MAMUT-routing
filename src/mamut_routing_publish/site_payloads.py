@@ -475,7 +475,7 @@ class HomePreviewSample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # `instance_payload` mirrors what the workbench would fetch when navigating to
-    # the instance route — included verbatim to skip the seven-step catalog walk.
+    # the instance route, included verbatim to skip the seven-step catalog walk.
     instance_payload: "InstancePagePayload"
     # `instance_data` is the parsed vrp.json contents (~60 KB) inlined.
     instance_data: dict
@@ -1657,7 +1657,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
     for entry in entries:
         if entry.objective_function in by_objective:
             raise ValueError(
-                f"Multiple BKS entries for objective {entry.objective_function} on the same instance — "
+                f"Multiple BKS entries for objective {entry.objective_function} on the same instance: "
                 "this violates the one-BKS-per-(instance, objective) invariant."
             )
         by_objective[entry.objective_function] = entry
@@ -3499,7 +3499,7 @@ def generate_site_payloads(
                 written_paths.append(_write_payload(site_output, context_payload.route_path, context_payload, payload_root))
                 benchmark_pages_written += 1
 
-            # Size pages directly under the family — only when no further partitioning.
+            # Size pages directly under the family, only when no further partitioning.
             for size_bucket, size_items in family_size_groups.items():
                 if metric_variants or family_subsets:
                     continue

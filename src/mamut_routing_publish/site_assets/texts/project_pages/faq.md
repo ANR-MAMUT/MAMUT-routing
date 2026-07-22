@@ -14,7 +14,7 @@ Quick start: install [uv](https://github.com/astral-sh/uv), then run `uvx --from
 
 The benchmark instances and their best-known solutions (BKS) can be retrieved in two complementary ways. Pick whichever fits your workflow best.
 
-### Option A — Install `mamut-routing-lib` and use its CLI
+### Option A: Install `mamut-routing-lib` and use its CLI
 
 Recommended for selective downloads, programmatic access, and scripting. The library is published on PyPI and ships an optional `mamut-routing` CLI backed by per-family release archives, so you only pull what you need (typically a few MB to a few hundred MB per family rather than the whole tree).
 
@@ -72,7 +72,7 @@ instance = load_benchmark_instance("benchmarks/.../poryos-n100-9517368.vrp.json"
 
 A `[pyvrp]` extra wires up the [PyVRP](https://github.com/PyVRP/PyVRP) HGS metaheuristic so the same CLI can also solve loaded instances. See the [MAMUT-routing-lib README](https://github.com/ANR-MAMUT/MAMUT-routing-lib) for the full reference.
 
-### Option B — Add MAMUT-routing as a git submodule
+### Option B: Add MAMUT-routing as a git submodule
 
 Recommended when you want the **entire** benchmark tree available offline and pinned to a specific commit, for example to reference a frozen snapshot from a paper or experiment.
 
