@@ -15,7 +15,7 @@ SUPPORTED_PAYLOAD_MODES = {"static", "api"}
 
 
 # Synchronous theme bootstrap. Must run before the stylesheet link so the very
-# first paint already carries the correct data-theme attribute — otherwise the
+# first paint already carries the correct data-theme attribute; otherwise the
 # page paints in light defaults and re-paints once site.js applies the stored
 # preference, producing a visible flash on dark-mode reloads.
 THEME_INIT_SCRIPT = (

@@ -516,7 +516,7 @@ function bksLinkChip(formatted, artifactPath, objective, optimalityProven = fals
     return badgeWithTitleHtml(`${iconHtml}${formatted.labelHtml}`, formatted.title);
   }
   const href = artifactHref(artifactPath);
-  const title = `${optimalityProven ? "Proven optimal — open" : "Open"} BKS JSON · ${objective}`;
+  const title = `${optimalityProven ? "Proven optimal: open" : "Open"} BKS JSON · ${objective}`;
   return `<a class="bks-link-chip${optimalityProven ? " optimal" : ""}" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${iconHtml}${formatted.labelHtml}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span></a>`;
 }
 
@@ -528,18 +528,18 @@ function formatObjectiveBadge(entry) {
     const routesHtml = `<span class="badge-cost">${escapeHtml(String(entry.num_routes))}</span>`;
     return {
       labelHtml: `${objective} · ${routesHtml} / ${costHtml}`,
-      title: `Hierarchical objective — vehicles / cost = ${entry.num_routes} / ${costPlain}`,
+      title: `Hierarchical objective: vehicles / cost = ${entry.num_routes} / ${costPlain}`,
     };
   }
   if (entry.num_routes != null) {
     return {
       labelHtml: `${objective} · ${escapeHtml(String(entry.num_routes))} / ${costHtml}`,
-      title: `Mono-cost objective — vehicles / cost = ${entry.num_routes} / ${costPlain}`,
+      title: `Mono-cost objective: vehicles / cost = ${entry.num_routes} / ${costPlain}`,
     };
   }
   return {
     labelHtml: `${objective} · ${costHtml}`,
-    title: `Mono-cost objective — cost = ${costPlain}`,
+    title: `Mono-cost objective: cost = ${costPlain}`,
   };
 }
 
@@ -1420,7 +1420,7 @@ function renderBenchmarksIndex(payload) {
   state.aside.innerHTML = [
     renderCard(
       "Browse Benchmarks",
-      `<p>This static publication separates the problem classes — CVRP, VRPTW, and the time-dependent TDVRPTW/TDVRP — at the top level, then preserves family and variant structure inside each class.</p>${renderStatGrid([
+      `<p>This static publication separates the problem classes (CVRP, VRPTW, and the time-dependent TDVRPTW/TDVRP) at the top level, then preserves family and variant structure inside each class.</p>${renderStatGrid([
         ["Snapshot", payload.snapshot.snapshot_id],
         ["Published", payload.snapshot.published_at],
         ["Commit", payload.snapshot.source_commit],
@@ -2942,7 +2942,7 @@ function renderChangesCard(changeLog) {
     return renderCard("Changes", `<p class="empty-state">No change log available for this snapshot.</p>`);
   }
   const banner = changeLog.is_initial
-    ? `<p class="meta-line initial-banner">Initial snapshot — full inventory shown as additions.</p>`
+    ? `<p class="meta-line initial-banner">Initial snapshot: full inventory shown as additions.</p>`
     : "";
   const headline = timelineCountsHeadline(changeLog.counts || {}, { initial: changeLog.is_initial });
   return renderCard(
