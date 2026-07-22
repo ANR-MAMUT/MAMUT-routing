@@ -238,7 +238,7 @@ class SiteArtifactLinks(BaseModel):
     meta_path: str | None = None
     manifest_path: str | None = None
     atf_json_path: str | None = None
-    # Collection (Mamut2026 v2) geo sidecar (.geo.json.gz, indexed road cache);
+    # Collection (Poryos2026 v2) geo sidecar (.geo.json.gz, indexed road cache);
     # the viewer decodes it client-side where v1 instances fetch meta_path.
     geo_json_path: str | None = None
 
@@ -1102,7 +1102,7 @@ def _build_artifact_links(
             atf_json_path = (
                 ATF_CACHE_RELATIVE / str(instance.benchmark_name.value) / f"{instance.instance_name}.atf.json.gz"
             ).as_posix()
-    # Collection instances (Mamut2026 v2) reference their shared geo sidecar
+    # Collection instances (Poryos2026 v2) reference their shared geo sidecar
     # through metadata.sidecars; the link is repo-relative like every other.
     geo_json_path: str | None = None
     sidecars_ref = _collection_sidecars_ref(instance)
@@ -1133,7 +1133,7 @@ def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> di
 
 
 # ---------------------------------------------------------------------------
-# Family-first collections (Mamut2026 v2): slim instances with plain-dict
+# Family-first collections (Poryos2026 v2): slim instances with plain-dict
 # metadata, shared sha-pinned sidecars, identity-based cross-links.
 # ---------------------------------------------------------------------------
 
@@ -1448,14 +1448,14 @@ def _resolve_instance(
     problem_type = discovered_item.problem_type
     benchmark_name = _normalize_benchmark_name(discovered_item.benchmark_name)
     # The size bucket is path-derived (catalogue facet), not the per-instance
-    # ``num_customers``. For historical/Mamut2026 the two are identical; for
+    # ``num_customers``. For historical/Poryos2026 the two are identical; for
     # Ortec2022 they intentionally diverge (bucket=200, instance=212) so the
     # site groups instances by bucket while the JSON preserves the exact value.
     bucket_n = discovered_item.num_customers if discovered_item.num_customers is not None else instance.num_customers
     size_bucket = f"n={bucket_n}"
     instance_identifier = instance.instance_name
     subset_segment = getattr(discovered_item, "subset", None)
-    # Family-first collections (Mamut2026 v2). TD collection instances have no
+    # Family-first collections (Poryos2026 v2). TD collection instances have no
     # metric path slot on disk (the time dependence is the metric); the site
     # keeps presenting them under the fastest facet, which is the metric their
     # pinned road paths follow, so catalogs and URLs keep the v1 drill-down.
@@ -1922,7 +1922,7 @@ def _license_file_path(output_repo_dir: Path, problem_type: ProblemType, benchma
     family_path = output_repo_dir / "benchmarks" / problem_type.value / benchmark_name.value / "LICENSE"
     if family_path.is_file():
         return family_path
-    # Collection layout (Mamut2026): one LICENSE at benchmarks/<Benchmark>/
+    # Collection layout (Poryos2026): one LICENSE at benchmarks/<Benchmark>/
     # covers every problem-type layer stored as benchmarks/<Benchmark>/<PT>/.
     collection_path = output_repo_dir / "benchmarks" / benchmark_name.value / "LICENSE"
     return collection_path if collection_path.is_file() else family_path
@@ -2103,7 +2103,7 @@ def _build_instance_page_payload(
 _PROBLEM_TYPE_ORDER = {ProblemType.CVRP: 0, ProblemType.VRPTW: 1, ProblemType.TDVRPTW: 2, ProblemType.TDVRP: 3}
 
 # Historical/curated families first, workbench-generated families last
-# (Mamut2026 after Lera2026: newest and least established closes the list).
+# (Poryos2026 after Lera2026: newest and least established closes the list).
 _BENCHMARK_NAME_ORDER = {
     BenchmarkName.SINTEF_2008: 0,
     BenchmarkName.DIMACS_2021: 1,
@@ -2113,7 +2113,7 @@ _BENCHMARK_NAME_ORDER = {
     BenchmarkName.VU_2020: 5,
     BenchmarkName.RIFKI_2020: 6,
     BenchmarkName.LERA_2026: 7,
-    BenchmarkName.MAMUT_2026: 8,
+    BenchmarkName.PORYOS_2026: 8,
 }
 
 
@@ -2233,7 +2233,7 @@ def _build_home_preview_bundle(
     seen_keys: set[tuple[str, str]] = set()
     selected_matches: list[tuple[_ResolvedSiteInstance, BKSPageEntry]] = []
     has_mamut_preview_sizes = any(
-        item.locator.benchmark_name.value == "Mamut2026" and item.instance_summary.num_customers in {25, 50}
+        item.locator.benchmark_name.value == "Poryos2026" and item.instance_summary.num_customers in {25, 50}
         for item in resolved_items
     )
     objective_by_problem = {
@@ -2243,7 +2243,7 @@ def _build_home_preview_bundle(
         "TDVRPTW": "Duration",
     }
     # Each problem type prefers a city no earlier preview used, so the four
-    # Mamut2026 cards show four different urban layouts instead of four views
+    # Poryos2026 cards show four different urban layouts instead of four views
     # of the alphabetically-first city.
     used_places: set[str] = set()
     for problem in ("CVRP", "VRPTW", "TDVRP", "TDVRPTW"):
@@ -2252,7 +2252,7 @@ def _build_home_preview_bundle(
             (item, entry)
             for item in resolved_items
             if item.locator.problem_type.value == problem
-            and item.locator.benchmark_name.value == "Mamut2026"
+            and item.locator.benchmark_name.value == "Poryos2026"
             and item.instance_summary.num_customers in {25, 50}
             for entry in item.bks_entries
             if entry.objective_function.value == objective
@@ -2276,7 +2276,7 @@ def _build_home_preview_bundle(
     if has_mamut_preview_sizes and len(selected_matches) < 4:
         available = sorted({pair[0].locator.problem_type.value for pair in selected_matches})
         raise ValueError(
-            "Home preview invariant failed: expected one n=25/50 Mamut2026 preview for each of "
+            "Home preview invariant failed: expected one n=25/50 Poryos2026 preview for each of "
             f"CVRP, VRPTW, TDVRP and TDVRPTW; available matches: {available}"
         )
     for seed in HOME_PREVIEW_SEEDS:
@@ -2495,7 +2495,7 @@ def _build_objective_related_routes(
         BenchmarkName.SINTEF_2008: 0,
         BenchmarkName.DIMACS_2021: 1,
         BenchmarkName.ORTEC_2022: 2,
-        BenchmarkName.MAMUT_2026: 3,
+        BenchmarkName.PORYOS_2026: 3,
         BenchmarkName.DABIA_2013: 4,
         BenchmarkName.ARI_2018: 5,
         BenchmarkName.VU_2020: 6,
@@ -2549,7 +2549,7 @@ def _build_objectives_page_payload(
             description="Lexicographic VRPTW objective: minimize the number of vehicles first, then minimize total cost.",
             interpretation_notes=[
                 "Compare HVC results as fleet-first solutions rather than pure distance optimizers.",
-                "Historical SINTEF-style references and some VRPTW Mamut2026 BKS entries use this objective.",
+                "Historical SINTEF-style references and some VRPTW Poryos2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.HIERARCHICAL_VEHICLE_COST),
         ),
@@ -2560,7 +2560,7 @@ def _build_objectives_page_payload(
             description="Single-objective cost minimization where total routing cost is optimized directly.",
             interpretation_notes=[
                 "Compare MonoCost results as cost-first solutions even when they use more vehicles than HVC references.",
-                "DIMACS-style references, the Ortec2022 (EURO Meets NeurIPS 2022) family, and all current CVRP Mamut2026 BKS entries use this objective.",
+                "DIMACS-style references, the Ortec2022 (EURO Meets NeurIPS 2022) family, and all current CVRP Poryos2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.MONO_COST),
         ),
@@ -2571,7 +2571,7 @@ def _build_objectives_page_payload(
             description="Time-dependent duration-minimization objective: minimize the sum of route durations, where the depot departure time of each route is a decision variable and travel times vary with departure time (FIFO arrival-time functions).",
             interpretation_notes=[
                 "Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
-                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Mamut2026) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
+                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Poryos2026) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
         ),

@@ -16,7 +16,7 @@ Unless a more specific notice applies, MAMUT-routing source code and MAMUT-autho
 
 `Ortec2022` instances and some related BKS files are redistributed under their original [Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/) (`CC BY-NC 4.0`) terms.
 
-`Mamut2026` instances and related generated artifacts are derived from OpenStreetMap data and are distributed, where applicable, under the [Open Data Commons Open Database License (ODbL) v1.0](https://www.openstreetmap.org/copyright).
+`Poryos2026` instances and related generated artifacts are derived from OpenStreetMap data and are distributed, where applicable, under the [Open Data Commons Open Database License (ODbL) v1.0](https://www.openstreetmap.org/copyright).
 
 For the authoritative repository-level notices, see the root `LICENSE`, `NOTICE`, and the `README.md` / `LICENSE` files present in each benchmark family directory.
 

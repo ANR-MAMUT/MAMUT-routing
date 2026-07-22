@@ -2,7 +2,7 @@
 
 Several related projects are useful context for MAMUT-routing, even when they are not benchmark families shipped directly in the current tree.
 
-MAMUT-routing is, first and foremost, a curated benchmark vendor: a benchmark is not only a set of instance files, it is a contract made of data provenance, objective semantics, numerical conventions, solution format, validation code, and maintenance policy. It also ships its own workbench for generating realistic routing instances from real-world data (the pipeline behind the `Mamut2026` family) as a second, complementary role. The two sections below group related projects accordingly.
+MAMUT-routing is, first and foremost, a curated benchmark vendor: a benchmark is not only a set of instance files, it is a contract made of data provenance, objective semantics, numerical conventions, solution format, validation code, and maintenance policy. It also ships its own workbench for generating realistic routing instances from real-world data (the pipeline behind the `Poryos2026` family) as a second, complementary role. The two sections below group related projects accordingly.
 
 ## Companion software and solvers
 
@@ -42,4 +42,4 @@ Dietmar Wolz's [VRPTW repository](https://github.com/dietmarwo/VRPTW) is a small
 
 [Timefold](https://timefold.ai) ships a vehicle-routing example (`timefold-quickstarts`, `java/vehicle-routing/`) as a demo application for its constraint-solving engine. Historically, `timefold-solver` (through v1.9.0, inherited from its OptaPlanner ancestry) vendored unmodified copies of classical benchmark sets (the full Uchoa et al. CVRPLIB X-set, the Augerat A-set, and a subset of Gehring & Homberger VRPTW instances) as import fixtures for that example app; the whole `examples/` module, vendored data included, was removed in v1.10.0. The current quickstarts example instead ships a small, fully parameterized, seeded synthetic generator (a handful of named city profiles, arbitrary sizes and seeds reachable) for demo purposes: no best-known-solution tracking, no fixed objective contract, no maintenance as a benchmark.
 
-Timefold has therefore never defined a benchmark of its own. What it vendored was always someone else's (already available from CVRPLIB and SINTEF directly), and what it generates today is a demo-data tool. Architecturally, that generator is closer to MAMUT-routing's own workbench (the pipeline behind `Mamut2026`) than to a curated benchmark family, which is why it is listed here rather than among the curated benchmark families.
+Timefold has therefore never defined a benchmark of its own. What it vendored was always someone else's (already available from CVRPLIB and SINTEF directly), and what it generates today is a demo-data tool. Architecturally, that generator is closer to MAMUT-routing's own workbench (the pipeline behind `Poryos2026`) than to a curated benchmark family, which is why it is listed here rather than among the curated benchmark families.

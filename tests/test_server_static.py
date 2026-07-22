@@ -21,14 +21,14 @@ def site_repo(tmp_path: Path) -> Path:
     (dist / "site-payloads").mkdir(parents=True)
     (dist / "webapp").mkdir()
     (dist / "benchmarks" / "cvrp").mkdir(parents=True)
-    (dist / "atf-cache" / "Mamut2026").mkdir(parents=True)
+    (dist / "atf-cache" / "Poryos2026").mkdir(parents=True)
     (dist / "route-geometry-cache" / "ab").mkdir(parents=True)
 
     (dist / "index.html").write_text("<html>home</html>")
     (dist / "benchmarks" / "cvrp" / "index.html").write_text("<html>cvrp</html>")
     (dist / "site-payloads" / "index.json").write_text(json.dumps({"route_path": "/"}))
     (dist / "webapp" / "site.js").write_text("// site\n")
-    (dist / "atf-cache" / "Mamut2026" / "inst.atf.json.gz").write_bytes(
+    (dist / "atf-cache" / "Poryos2026" / "inst.atf.json.gz").write_bytes(
         gzip.compress(b'{"atfs": []}')
     )
     (dist / "route-geometry-cache" / "ab" / "abcdef.route-geometry.json.gz").write_bytes(
@@ -101,13 +101,13 @@ def test_repo_artifact_roots(client: TestClient) -> None:
 
 def test_atf_sidecar_is_opaque_gzip(client: TestClient, site_repo: Path) -> None:
     response = client.get(
-        "/dist/atf-cache/Mamut2026/inst.atf.json.gz",
+        "/dist/atf-cache/Poryos2026/inst.atf.json.gz",
         headers={"Accept-Encoding": "gzip, br"},
     )
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/gzip"
     assert "content-encoding" not in response.headers
-    raw = (site_repo / "dist" / "atf-cache" / "Mamut2026" / "inst.atf.json.gz").read_bytes()
+    raw = (site_repo / "dist" / "atf-cache" / "Poryos2026" / "inst.atf.json.gz").read_bytes()
     # httpx must not have transparently decompressed: the payload is opaque.
     assert response.content == raw
     assert gzip.decompress(response.content) == b'{"atfs": []}'
@@ -144,7 +144,7 @@ def test_precompressed_negotiation(site_repo: Path) -> None:
     assert (site_repo / "dist" / "webapp" / "big.js.gz").is_file()
     assert (site_repo / "dist" / "webapp" / "big.js.br").is_file()
     # Existing .gz content never gains double-compressed sidecars.
-    assert not (site_repo / "dist" / "atf-cache" / "Mamut2026" / "inst.atf.json.gz.gz").exists()
+    assert not (site_repo / "dist" / "atf-cache" / "Poryos2026" / "inst.atf.json.gz.gz").exists()
 
     client = TestClient(create_app(site_repo))
     plain = client.get("/webapp/big.js", headers={"Accept-Encoding": "identity"})
@@ -187,7 +187,7 @@ def test_symlinked_dist_release_layout(site_repo: Path, tmp_path: Path) -> None:
     client = TestClient(create_app(site_repo))
     assert client.get("/").text == "<html>home</html>"
     assert client.get("/site-payloads/index.json").status_code == 200
-    assert client.get("/dist/atf-cache/Mamut2026/inst.atf.json.gz").status_code == 200
+    assert client.get("/dist/atf-cache/Poryos2026/inst.atf.json.gz").status_code == 200
     assert client.get("/LICENSE").status_code == 200
     assert client.get("/secret.txt").status_code == 404
 

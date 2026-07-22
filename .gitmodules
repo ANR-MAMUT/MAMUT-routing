@@ -26,8 +26,8 @@
 	path = benchmarks/TDVRP/Lera2026
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Lera2026.git
 [submodule "benchmarks/Mamut2026"]
-	path = benchmarks/Mamut2026
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-Mamut2026.git
+	path = benchmarks/Poryos2026
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Poryos2026.git
 [submodule "MAMUT-routing-tools"]
 	path = MAMUT-routing-tools
 	url = ../MAMUT-routing-tools.git

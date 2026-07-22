@@ -26,9 +26,9 @@ def _write(path: Path, value: str) -> Path:
 
 
 def test_route_geometry_artifact_is_deterministic_and_bound_to_exact_bks(tmp_path: Path) -> None:
-    instance_path = _write(tmp_path / "benchmarks/Mamut2026/TDVRP/n500/sample.vrp.json", '{"num_customers":500}\n')
-    bks_path = _write(tmp_path / "benchmarks/Mamut2026/TDVRP/n500/sample.bks.Duration.json", '{"routes":[[1,2]]}\n')
-    geo_path = _write(tmp_path / "benchmarks/Mamut2026/sidecars/sample.geo.json.gz", "fixture")
+    instance_path = _write(tmp_path / "benchmarks/Poryos2026/TDVRP/n500/sample.vrp.json", '{"num_customers":500}\n')
+    bks_path = _write(tmp_path / "benchmarks/Poryos2026/TDVRP/n500/sample.bks.Duration.json", '{"routes":[[1,2]]}\n')
+    geo_path = _write(tmp_path / "benchmarks/Poryos2026/sidecars/sample.geo.json.gz", "fixture")
     entry = _PendingBks(
         instance_path=instance_path,
         instance_sha256=hashlib.sha256(instance_path.read_bytes()).hexdigest(),
@@ -68,9 +68,9 @@ def test_route_geometry_artifact_is_deterministic_and_bound_to_exact_bks(tmp_pat
 
 
 def test_route_geometry_cache_dir_overrides_the_active_dist_location(tmp_path: Path) -> None:
-    instance_path = _write(tmp_path / "benchmarks/Mamut2026/CVRP/n10/sample.vrp.json", '{"num_customers":10}\n')
-    bks_path = _write(tmp_path / "benchmarks/Mamut2026/CVRP/n10/sample.bks.MonoCost.json", '{"routes":[[1]]}\n')
-    geo_path = _write(tmp_path / "benchmarks/Mamut2026/sidecars/sample.geo.json.gz", "fixture")
+    instance_path = _write(tmp_path / "benchmarks/Poryos2026/CVRP/n10/sample.vrp.json", '{"num_customers":10}\n')
+    bks_path = _write(tmp_path / "benchmarks/Poryos2026/CVRP/n10/sample.bks.MonoCost.json", '{"routes":[[1]]}\n')
+    geo_path = _write(tmp_path / "benchmarks/Poryos2026/sidecars/sample.geo.json.gz", "fixture")
     entry = _PendingBks(
         instance_path=instance_path,
         instance_sha256=hashlib.sha256(instance_path.read_bytes()).hexdigest(),
@@ -101,8 +101,8 @@ def test_route_geometry_cache_dir_overrides_the_active_dist_location(tmp_path: P
 
 
 def test_city_key_batches_every_group_of_a_city_together() -> None:
-    assert _city_key("benchmarks/Mamut2026/sidecars/hong_kong/n=10/x/x.geo.json.gz") == "hong_kong"
-    assert _city_key("benchmarks/Mamut2026/sidecars/lyon/n=500/y/y.geo.json.gz") == "lyon"
+    assert _city_key("benchmarks/Poryos2026/sidecars/hong_kong/n=10/x/x.geo.json.gz") == "hong_kong"
+    assert _city_key("benchmarks/Poryos2026/sidecars/lyon/n=500/y/y.geo.json.gz") == "lyon"
     assert _city_key("elsewhere/without/marker.geo.json.gz") == "elsewhere/without"
 
 
@@ -119,7 +119,7 @@ def test_resolve_workers_clamps_to_batches_and_validates() -> None:
 
 
 def test_site_materialization_can_skip_groups_whose_gitignored_osm_extract_is_absent(tmp_path: Path) -> None:
-    collection = tmp_path / "benchmarks" / "Mamut2026"
+    collection = tmp_path / "benchmarks" / "Poryos2026"
     instance_path = _write(
         collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
         json.dumps(
@@ -171,7 +171,7 @@ def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
 ) -> None:
     import mamut_routing_tools.osm as osm_module
 
-    collection = tmp_path / "benchmarks" / "Mamut2026"
+    collection = tmp_path / "benchmarks" / "Poryos2026"
     instance_path = _write(
         collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
         json.dumps(

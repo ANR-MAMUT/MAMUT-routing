@@ -1,7 +1,7 @@
 """Build-time ATF sidecar cache for materialized-td-model families.
 
 Covers the compact td models that ship no committed ATF sidecar:
-``igp-profile`` (Lera2026) and ``road-graph`` (Mamut2026 TD). An n=1000
+``igp-profile`` (Lera2026) and ``road-graph`` (Poryos2026 TD). An n=1000
 sidecar weighs tens of MB gzipped; the families would be tens of GB. The site
 still wants real sidecars — the arc-click viewer fetches one per instance,
 and BKS schedule tables need the arrival-time functions — so the publisher
@@ -106,7 +106,7 @@ def materialize_atf_cache(
     over_cap: set[str] = set()
     benchmarks_root = output_repo_dir / "benchmarks"
     # Problem-type-first satellites plus the TD trees of family-first
-    # collections (marker-rooted, e.g. benchmarks/Mamut2026/TDVRPTW).
+    # collections (marker-rooted, e.g. benchmarks/Poryos2026/TDVRPTW).
     scan_roots = [benchmarks_root / problem_type for problem_type in ("TDVRPTW", "TDVRP")]
     if benchmarks_root.is_dir():
         for candidate in sorted(benchmarks_root.iterdir()):

@@ -42,7 +42,7 @@ Component licensing
   MAMUT-routing holds the relevant rights. The base data are the Gehring and
   Homberger (1999) instances as curated in benchmarks/VRPTW/Sintef2008, with
   IGP (Ichoua-Gendreau-Potvin 2003) travel speeds.
-- benchmarks/Mamut2026 (CVRP, VRPTW, TDVRP and TDVRPTW layers): OSM-derived
+- benchmarks/Poryos2026 (CVRP, VRPTW, TDVRP and TDVRPTW layers): OSM-derived
   benchmark instances, sidecars, generated route artifacts, and related
   benchmark data are distributed under ODbL 1.0 where they derive from
   OpenStreetMap data.
