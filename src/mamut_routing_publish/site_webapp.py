@@ -312,7 +312,7 @@ def _render_workbench_shell_html(
         </aside>
 
         <button id="clearBtn" type="button" class="map-clear-btn">Clear map</button>
-        <div class="wb-footer"><span class="wb-footer-dot" aria-hidden="true"></span><p id="benchmarkRenderStatus">Road geometry will be rendered automatically when a benchmark sidecar is available.</p></div>
+        <div class="wb-footer"><span class="wb-footer-dot" aria-hidden="true"></span><p id="benchmarkRenderStatus">Historical benchmark families use straight-line rendering. Poryos2026 uses published road geometry when available.</p></div>
         <div id="toast" class="toast"></div>
     </main>
 

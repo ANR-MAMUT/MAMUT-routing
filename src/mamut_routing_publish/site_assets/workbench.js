@@ -237,6 +237,7 @@ const state = {
     routes: [],
     roadGeojson: null,
     renderSummary: null,
+    routeGeometryLoadFailed: false,
   },
   benchmarkCatalog: {
     options: [],
@@ -1173,7 +1174,7 @@ function updateBenchmarkContextUi() {
     benchmarkStatus.textContent = state.instanceRoute
       ? "Benchmark preload is unavailable for the requested route. Browse the catalog and open another instance."
       : "Select a published family, then choose an instance here or open one from the public catalog.";
-    benchmarkRenderStatus.textContent = "Road geometry will be rendered automatically when a benchmark sidecar is available.";
+    benchmarkRenderStatus.textContent = "Historical benchmark families use straight-line rendering. Poryos2026 uses published road geometry when available.";
     openBenchmarkBtn.href = browseBenchmarksBtn.href;
     return;
   }
@@ -1181,27 +1182,29 @@ function updateBenchmarkContextUi() {
   const payload = state.benchmark.payload;
   const objectiveEntries = Array.isArray(payload.bks_entries) ? payload.bks_entries : [];
   const renderSummary = state.benchmark.renderSummary;
-  const renderFragments = [];
-  if (renderSummary) {
-    renderFragments.push(`Automatic road render: ${renderSummary.render_mode} · ${renderSummary.metric}`);
-    if (renderSummary.straight_fallback_count > 0) {
-      const suffix = renderSummary.straight_fallback_count === 1 ? "segment" : "segments";
-      renderFragments.push(`${renderSummary.straight_fallback_count} straight-line fallback ${suffix}`);
-    }
-    if (renderSummary.cache_persisted) {
-      renderFragments.push("sidecar cache updated");
-    }
+  let renderStatus = null;
+  if (renderSummary?.render_mode === "cached_road") {
+    renderStatus = `Road geometry: published ${renderSummary.metric} paths.`;
+  } else if (renderSummary?.render_mode === "mixed") {
+    const suffix = renderSummary.straight_fallback_count === 1 ? "segment falls" : "segments fall";
+    renderStatus = `Road geometry: published ${renderSummary.metric} paths. ${renderSummary.straight_fallback_count} ${suffix} back to straight lines.`;
+  } else if (renderSummary?.fallback_reason === "historical_default") {
+    renderStatus = "Straight-line rendering is the default for historical benchmark families.";
+  } else if (renderSummary?.fallback_reason === "euclidean_metric") {
+    renderStatus = "Straight-line rendering matches the Euclidean metric for this Poryos2026 instance.";
+  } else if (renderSummary?.fallback_reason === "sidecar_unavailable") {
+    renderStatus = "Published road geometry is unavailable for this Poryos2026 BKS. Showing straight-line routes.";
+  } else if (payload.summary?.benchmark_name === "Poryos2026") {
+    renderStatus = "Published road geometry is missing for this Poryos2026 BKS. Showing straight-line routes.";
+  } else {
+    renderStatus = "Straight-line rendering is the default for historical benchmark families.";
   }
   objectiveField.hidden = objectiveEntries.length === 0;
   benchmarkObjectiveSelect.innerHTML = objectiveEntries
     .map((entry) => `<option value="${escapeHtml(entry.objective_function)}"${entry.objective_function === state.objectiveFunction ? " selected" : ""}>${escapeHtml(entry.objective_function)}</option>`)
     .join("");
   benchmarkStatus.textContent = `${payload.title} · ${payload.summary.problem_type} · ${payload.summary.benchmark_name} · ${payload.summary.num_customers} customers`;
-  benchmarkRenderStatus.textContent = renderFragments.length > 0
-    ? renderFragments.join(" · ")
-    : payload.summary?.road_cache_status === "partial"
-      ? "Road geometry is only partially cached for this benchmark in the published snapshot. Missing segments currently fall back to straight lines."
-      : "Road geometry will be rendered automatically when a benchmark sidecar is available.";
+  benchmarkRenderStatus.textContent = renderStatus;
   openBenchmarkBtn.href = routeHref(payload.route_path);
 }
 
@@ -1210,7 +1213,7 @@ async function autoRenderBenchmarkRoadGeometry(options = {}) {
   benchmark.roadGeojson = null;
   benchmark.renderSummary = null;
 
-  if (!benchmark.meta || !Array.isArray(benchmark.routes) || benchmark.routes.length === 0) {
+  if (!Array.isArray(benchmark.routes) || benchmark.routes.length === 0) {
     return;
   }
 
@@ -1242,6 +1245,13 @@ async function autoRenderBenchmarkRoadGeometry(options = {}) {
       cache_miss_count: 0,
       straight_fallback_count: 0,
       cache_persisted: false,
+      fallback_reason: benchmark.payload?.summary?.benchmark_name !== "Poryos2026"
+        ? "historical_default"
+        : metric === "euclidean"
+          ? "euclidean_metric"
+          : benchmark.routeGeometryLoadFailed || benchmark.objectiveEntry?.route_geometry_path
+            ? "sidecar_unavailable"
+            : "sidecar_missing",
     };
   }
   updateBenchmarkContextUi();
@@ -1263,6 +1273,7 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
       routes: [],
       roadGeojson: null,
       renderSummary: null,
+      routeGeometryLoadFailed: false,
     };
     updateBenchmarkContextUi();
     if (state.sourceKind === "benchmark") {
@@ -1286,24 +1297,28 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
       || objectiveEntries[0]
       || null;
     const bksData = objectiveEntry ? await fetchJson(artifactHref(objectiveEntry.artifact_path)) : { routes: [] };
+    const [geometryResult, routeGeometryResult] = await Promise.allSettled([
+      fetchGeometryMetaMemo(payload.artifact_links),
+      fetchRouteGeometryMetaMemo(objectiveEntry),
+    ]);
+    if (geometryResult.status === "rejected") {
+      console.warn("Unable to load benchmark coordinate sidecar", geometryResult.reason);
+    }
+    if (routeGeometryResult.status === "rejected") {
+      console.warn("Unable to load benchmark route-geometry sidecar", routeGeometryResult.reason);
+    }
+    const geometryMeta = geometryResult.status === "fulfilled" ? geometryResult.value : null;
+    const routeGeometryMeta = routeGeometryResult.status === "fulfilled" ? routeGeometryResult.value : null;
     let meta = null;
-    try {
-      const [geometryMeta, routeGeometryMeta] = await Promise.all([
-        fetchGeometryMetaMemo(payload.artifact_links),
-        fetchRouteGeometryMetaMemo(objectiveEntry),
-      ]);
-      if (geometryMeta || routeGeometryMeta) {
-        meta = {
-          ...(geometryMeta || {}),
-          ...(routeGeometryMeta || {}),
-          road_cache: {
-            ...(geometryMeta?.road_cache || {}),
-            ...(routeGeometryMeta?.road_cache || {}),
-          },
-        };
-      }
-    } catch (error) {
-      console.warn("Unable to load benchmark geometry sidecar", error);
+    if (geometryMeta || routeGeometryMeta) {
+      meta = {
+        ...(geometryMeta || {}),
+        ...(routeGeometryMeta || {}),
+        road_cache: {
+          ...(geometryMeta?.road_cache || {}),
+          ...(routeGeometryMeta?.road_cache || {}),
+        },
+      };
     }
     state.instanceRoute = payload.route_path;
     state.objectiveFunction = objectiveEntry?.objective_function || null;
@@ -1317,6 +1332,7 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
       routes: Array.isArray(bksData?.routes) ? bksData.routes.map((route) => route.map((nodeIndex) => Number(nodeIndex))) : [],
       roadGeojson: null,
       renderSummary: null,
+      routeGeometryLoadFailed: routeGeometryResult.status === "rejected",
     };
     const fitMap = options.fitMap !== undefined
       ? options.fitMap
