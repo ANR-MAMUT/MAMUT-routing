@@ -470,6 +470,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "fonts.googleapis.com" not in workbench_html
     assert 'id="benchmarkInstanceSelect"' in workbench_html
     assert 'id="benchmarkObjectiveSelect"' in workbench_html
+    assert "Historical benchmark families use straight-line rendering" in workbench_html
+    assert "Road geometry will be rendered automatically" not in workbench_html
     assert 'id="pageTitle"' not in workbench_html
     assert 'id="pageIntro"' not in workbench_html
     assert not (site_output / "workbench" / "derive" / "index.html").exists()
@@ -483,6 +485,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments" in site_js
     assert "Open Derive Mode" not in site_js
     assert "deriveBenchmarkBtn" not in workbench_js
+    assert "Promise.allSettled" in workbench_js
+    assert "Straight-line rendering is the default for historical benchmark families." in workbench_js
+    assert "Published road geometry is unavailable for this Poryos2026 BKS." in workbench_js
+    assert "Straight-line rendering matches the Euclidean metric for this Poryos2026 instance." in workbench_js
+    assert "Road geometry will be rendered automatically" not in workbench_js
     assert "projectCoordinates(routeLine.coordinates, width, height, projectionBounds)" in site_js
     assert "supportsWorkbenchInstance(item)" in site_js
     assert "supportsWorkbenchInstance(payload.summary)" in site_js
