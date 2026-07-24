@@ -2438,10 +2438,10 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
           marker: { x: entry.xs[0], y: entry.ys[0], color: "var(--cy)", label: `EAT ${formatScheduleTime(entry.ys[0])}` },
         })}
         ${renderArcFunctionChart("route-dur", "Duration Δ(t) = δ(t) − t", entry.xs, durations, PALETTE[1], {
-          marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", label: `MDT (${formatScheduleTime(entry.departure_time)}, ${formatScheduleTime(entry.duration)})` },
+          marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", label: `MDT ${formatScheduleTime(entry.duration)} (at t* ${formatScheduleTime(entry.departure_time)})` },
         })}
       </div>
-      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, checker fold). EAT = earliest arrival back at the depot; MDT = the checker's optimal dispatch (t* = ${formatScheduleTime(entry.departure_time)}, Δ* = ${formatScheduleTime(entry.duration)}).</div>`;
+      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, checker fold). EAT = earliest arrival back at the depot; MDT = minimum duration time Δ* = ${formatScheduleTime(entry.duration)}, attained at the optimal departure t* = ${formatScheduleTime(entry.departure_time)}.</div>`;
 }
 
 function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex, routeFunctions, routeFunctionsStatus) {
