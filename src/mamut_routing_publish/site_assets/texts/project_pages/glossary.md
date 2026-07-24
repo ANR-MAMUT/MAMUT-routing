@@ -21,7 +21,7 @@ Short, effective definitions for the acronyms and technical terms used across th
 - **FIFO** — *First-In, First-Out* property (no passing). A time-dependent travel model is FIFO when departing later can never lead to arriving earlier. All canonical ATFs are FIFO; some raw sources violate it and are FIFO-restored via the arrival-time lower envelope.
 - **IGP** — *Ichoua–Gendreau–Potvin* (2003) travel-time model. Piecewise-constant speeds per time zone and per arc speed profile, which integrate into FIFO piecewise-linear arrival-time functions. The generator behind the `Dabia2013`, `Ari2018`, and `Vu2020` families; `Lera2026` scales the same model to the Gehring & Homberger instances (200 to 1000 customers) in the five-period day pattern of Dabia et al. (2013). The time-dependent `Poryos2026` layers use a different construction: OSM city road graphs with hourly speed profiles under two synthetic traffic models.
 - **EAT** — *Earliest Arrival Time*. On the per-route ready-time plot, the earliest possible arrival back at the depot for the route.
-- **MDT** — *Minimum-Duration Dispatch*. The checker's optimal depot departure `t*` and the resulting minimum route duration `Δ*` (the point `(t*, Δ*)` marked on the route ready-time function).
+- **MDT** — *Minimum Duration Time*. The route's minimum achievable duration `Δ*` (the y-axis value of the duration function), attained at the optimal depot departure time `t*` (the x-axis value); the point `(t*, Δ*)` is marked on the route duration function.
 
 ## Objectives and solutions
 
