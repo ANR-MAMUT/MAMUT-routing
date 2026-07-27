@@ -31,3 +31,6 @@
 [submodule "MAMUT-routing-tools"]
 	path = MAMUT-routing-tools
 	url = ../MAMUT-routing-tools.git
+[submodule "benchmarks/TDVRPTW/Blauth2024"]
+	path = benchmarks/TDVRPTW/Blauth2024
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Blauth2024.git

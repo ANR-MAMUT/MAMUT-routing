@@ -1378,6 +1378,26 @@ def _route_functions_filename(objective_function: ObjectiveFunction) -> str:
     return f"route-functions.{objective_function.value}.json"
 
 
+# Objectives whose BKS pages carry per-route TD schedules and route functions.
+# The schedule derivation is objective-independent (per-route optimal departure
+# and duration); FleetCostDuration only adds a fixed per-route term on top.
+TD_SCHEDULE_OBJECTIVES = frozenset(
+    {ObjectiveFunction.DURATION, ObjectiveFunction.FLEET_COST_DURATION}
+)
+
+
+def _bks_source_str(value: Any) -> str | None:
+    """BKS metadata `source` as display text (imports may store a dict)."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts = [str(value[key]) for key in ("kind", "file", "upstream_commit") if value.get(key)]
+        text = " ".join(parts) if parts else ", ".join(f"{k}={value[k]}" for k in sorted(value))
+        note = value.get("note")
+        return f"{text} ({note})" if note else text
+    return str(value)
+
+
 def _build_bks_entries(
     output_repo_dir: Path,
     instance_path: Path,
@@ -1410,7 +1430,7 @@ def _build_bks_entries(
             route_geometry_sha256 = hashlib.sha256(geometry_path.read_bytes()).hexdigest()
             route_geometry_bks_sha256 = str(geometry_payload["bks_sha256"])
             route_geometry_metric = str(geometry_payload["metric"])
-        if td_instance is not None and td_atfs is not None and bks.objective_function == ObjectiveFunction.DURATION:
+        if td_instance is not None and td_atfs is not None and bks.objective_function in TD_SCHEDULE_OBJECTIVES:
             try:
                 td_schedules, function_entries = _build_td_schedules(td_instance, td_atfs, bks.routes)
                 if route_path is not None:
@@ -1431,7 +1451,7 @@ def _build_bks_entries(
                 num_routes=bks.num_routes,
                 cost=bks.cost,
                 authors=bks.metadata.get("authors"),
-                source=bks.metadata.get("source"),
+                source=_bks_source_str(bks.metadata.get("source")),
                 method=bks.metadata.get("method"),
                 validated_num_routes=bks.metadata.get("validated_num_routes"),
                 license=license_value,

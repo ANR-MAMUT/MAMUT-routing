@@ -32,6 +32,10 @@ MAMUT-routing is, first and foremost, a curated benchmark vendor: a benchmark is
 
 [VRP-REP](http://www.vrp-rep.org/) was an ambitious attempt to provide a broader repository, checker, and specification platform for multiple VRP variants, including VRPTW. Its goal is close in spirit to MAMUT-routing: make benchmark data more structured and reusable. The project appears inactive today, which is a useful warning that benchmark infrastructure needs not only a schema, but also maintainable tooling, clear ownership, and an update process that survives beyond the initial publication.
 
+### vrptdt-benchmark (Blauth et al., University of Bonn)
+
+The [vrptdt-benchmark](https://gitlab.com/muelleratorunibonnde/vrptdt-benchmark) of [Blauth, Held, Müller, Schlomberg, Traub, Tröbst & Vygen (2024)](https://doi.org/10.1016/j.disopt.2024.100848) is the major modern benchmark for vehicle routing with time-dependent travel times: ten real cities, OpenStreetMap road networks, hourly Uber Movement speeds, exact piecewise-linear arrival-time functions, published together with an exact-rational solution evaluator and BonnTour reference solutions (archived at [bonndata](https://doi.org/10.60507/FK2/X22BKR)). Beyond the data, the paper's algorithmic contributions (notably their balanced route-tree structure for constant-time move evaluation under time-dependent travel times) anchor modern heuristic work on the problem. MAMUT-routing redistributes the delivery-only instances as the `Blauth2024` family (value-exact conversion, CC BY-NC 4.0 with full attribution); the pickup-and-delivery variant remains upstream-only.
+
 ### Dietmar Wolz's VRPTW Repository
 
 Dietmar Wolz's [VRPTW repository](https://github.com/dietmarwo/VRPTW) is a smaller but relevant reproducibility-oriented project. It discusses precisely the ambiguities that motivate MAMUT-routing: cost-only versus hierarchical objectives, rounding policies, validation, and the difficulty of comparing solver results when route files and checkers are not shared consistently.
