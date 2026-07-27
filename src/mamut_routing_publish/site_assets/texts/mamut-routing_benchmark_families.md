@@ -189,7 +189,7 @@ Hosting is hybrid because a single n=1000 arrival-time-function sidecar exceeds 
 
 Licensing note: this family is distributed under [Creative Commons Attribution Non Commercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/) because the underlying Uber Movement speed data is CC BY-NC 3.0. **Non-commercial use only**, with attribution to the original authors (full attribution block in the satellite repository's LICENSE: paper, upstream repository, bonndata DOI, OpenStreetMap ODbL, Uber Movement). This differs from the [MIT License](https://mit-license.org/) used for MAMUT-routing source code; the `Ortec2022` family sets the same precedent.
 
-The family currently contains 40 instances (ten cities at each of the four sizes; the n=10 and n=500 tiers hosted in full, the n=1000/2000 tiers as descriptors with converter-materialized sidecars) and 24 `FleetCostDuration` BKS files.
+The family currently contains 40 instances (ten cities at each of the four sizes; the n=10 and n=500 tiers hosted in full, the n=1000/2000 tiers as descriptors with converter-materialized sidecars) and 40 `FleetCostDuration` BKS files, one per instance: 30 imported BonnTour reference solutions and the 10 first-published n=10 entries.
 
 ### `Lera2026` (TDVRPTW)
 
