@@ -40,6 +40,13 @@ DEFAULT_SITE_PAYLOAD_ROOT_DIR = Path("site-payloads")
 DEFAULT_FAMILY_CONTEXT_REPORT_PATH = Path(__file__).with_name("site_assets") / "texts" / "mamut-routing_benchmark_families.md"
 DEFAULT_PROJECT_PAGES_DIR = Path(__file__).with_name("site_assets") / "texts" / "project_pages"
 
+# Publication state predating the family rename persists this value in both
+# history ledgers and snapshot inventories. Keep the current artifact models
+# strict while accepting the retired name at the history-state boundary.
+_LEGACY_BENCHMARK_NAME_ALIASES = {
+    "Mamut2026": BenchmarkName.PORYOS_2026,
+}
+
 ViewerRenderMode = Literal["straight_line", "cached_road"]
 RoadCacheStatus = Literal["not_applicable", "none", "partial", "complete"]
 
@@ -709,7 +716,10 @@ def _now_utc_iso() -> str:
 
 
 def _normalize_benchmark_name(value: BenchmarkName | str) -> BenchmarkName:
-    return value if isinstance(value, BenchmarkName) else BenchmarkName(value)
+    if isinstance(value, BenchmarkName):
+        return value
+    legacy_alias = _LEGACY_BENCHMARK_NAME_ALIASES.get(value)
+    return legacy_alias if legacy_alias is not None else BenchmarkName(value)
 
 
 def _route_segment(value: str) -> str:
@@ -2682,6 +2692,28 @@ def _load_previous_inventory(
     return None
 
 
+def _canonicalize_inventory_benchmark_identities(inventory: dict) -> dict:
+    """Map retired family and instance identities to their current equivalents."""
+    instances: dict[str, dict] = inventory.get("instances", {})
+    has_legacy_names = any(
+        record.get("benchmark_name") in _LEGACY_BENCHMARK_NAME_ALIASES
+        for record in instances.values()
+    )
+    if not has_legacy_names:
+        return inventory
+    canonical_instances: dict[str, dict] = {}
+    for instance_id, record in instances.items():
+        if record.get("benchmark_name") == "Mamut2026":
+            instance_id = instance_id.replace("mamut2026", "poryos2026").replace("mamut-", "poryos-")
+            record = {
+                **record,
+                "benchmark_name": BenchmarkName.PORYOS_2026.value,
+                "instance_name": record["instance_name"].replace("mamut-", "poryos-"),
+            }
+        canonical_instances[instance_id] = record
+    return {**inventory, "instances": canonical_instances}
+
+
 def _instance_change_payload_from_inventory(
     instance_id: str,
     record: dict,
@@ -2805,8 +2837,10 @@ def _compute_change_log(
     new_inventory: dict,
 ) -> SnapshotChangeLog:
     is_initial = prev_inventory is None
-    prev_instances: dict[str, dict] = (prev_inventory or {}).get("instances", {})
-    new_instances: dict[str, dict] = new_inventory.get("instances", {})
+    canonical_prev_inventory = _canonicalize_inventory_benchmark_identities(prev_inventory or {})
+    canonical_new_inventory = _canonicalize_inventory_benchmark_identities(new_inventory)
+    prev_instances: dict[str, dict] = canonical_prev_inventory.get("instances", {})
+    new_instances: dict[str, dict] = canonical_new_inventory.get("instances", {})
 
     prev_families = {(rec["problem_type"], rec["benchmark_name"]) for rec in prev_instances.values()}
     new_families = {(rec["problem_type"], rec["benchmark_name"]) for rec in new_instances.values()}
@@ -3223,6 +3257,18 @@ class _NullProgressTask:
         return None
 
 
+def _load_site_history_ledger(path: Path) -> SiteHistoryLedger:
+    """Load persisted history while canonicalizing benchmark names retired by renames."""
+    payload = load_json_from_file(path)
+    for entry in payload.get("entries", []):
+        affected_names = entry.get("affected_benchmark_names")
+        if isinstance(affected_names, list):
+            entry["affected_benchmark_names"] = [
+                _normalize_benchmark_name(value).value for value in affected_names
+            ]
+    return SiteHistoryLedger(**payload)
+
+
 def generate_site_payloads(
     output_repo_dir: str | Path,
     *,
@@ -3300,7 +3346,7 @@ def generate_site_payloads(
     current_inventory = _build_inventory(resolved_items)
     ledger_state_path = roots.history_path
     if ledger_state_path.exists():
-        existing_ledger: SiteHistoryLedger | None = SiteHistoryLedger(**load_json_from_file(ledger_state_path))
+        existing_ledger: SiteHistoryLedger | None = _load_site_history_ledger(ledger_state_path)
     else:
         existing_ledger = None
     prev_inventory = _load_previous_inventory(roots.state_dir, existing_ledger, snapshot.snapshot_id)
