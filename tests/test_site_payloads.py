@@ -306,6 +306,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
         "HierarchicalVehicleCost",
         "MonoCost",
         "Duration",
+        "FleetCostDuration",
     ]
 
     project_payload = json.loads((payload_root / "project" / "index.json").read_text(encoding="utf-8"))

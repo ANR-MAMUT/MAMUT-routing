@@ -2694,12 +2694,17 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
     return {"instances": instances}
 
 
-def _save_inventory(state_dir: Path, snapshot_id: str, generated_at: str, inventory: dict) -> Path:
+def _save_inventory(state_dir: Path, snapshot_id: str, generated_at: str, inventory: dict, site_counts: SiteCounts | None = None) -> Path:
     payload = {
         "snapshot_id": snapshot_id,
         "generated_at": generated_at,
         "instances": inventory["instances"],
     }
+    if site_counts is not None:
+        # Persisted so a fresh release directory can rebuild this snapshot's
+        # history-detail page (size_bucket_count is not derivable from the
+        # instances alone).
+        payload["counts"] = site_counts.model_dump(mode="json")
     path = _inventory_path(state_dir, snapshot_id)
     save_json_to_file(payload, path)
     return path
@@ -3041,7 +3046,8 @@ def _refresh_history_entry_scopes(
         inventory_file = _inventory_path(state_dir, entry.snapshot.snapshot_id)
         if not inventory_file.exists():
             continue
-        inventory = {"instances": load_json_from_file(inventory_file).get("instances", {})}
+        inventory_document = load_json_from_file(inventory_file)
+        inventory = {"instances": inventory_document.get("instances", {})}
         prev_inventory: dict | None = None
         for older in entries[index + 1 :]:
             older_file = _inventory_path(state_dir, older.snapshot.snapshot_id)
@@ -3062,6 +3068,30 @@ def _refresh_history_entry_scopes(
             detail_payload["affected_benchmark_names"] = [value.value for value in benchmark_names]
             detail_payload["affected_objective_functions"] = [value.value for value in objective_functions]
             save_json_to_file(detail_payload, detail_path)
+        elif isinstance(inventory_document.get("counts"), dict):
+            # Fresh release directories (mirror builds) start without the
+            # persisted detail payloads of carried-forward entries; rebuild
+            # them from the stored inventory so every ledger entry keeps a
+            # working detail page.
+            payload_root = Path(payload_root_dir)
+            manifest = SiteSnapshotManifest(
+                generated_at=str(inventory_document.get("generated_at") or entry.snapshot.published_at),
+                snapshot=entry.snapshot,
+                schema_version=SITE_PAYLOAD_SCHEMA_VERSION,
+                summary=entry.summary,
+                counts=SiteCounts.model_validate(inventory_document["counts"]),
+                benchmark_index_path=f"/{(payload_root / 'benchmarks' / 'index.json').as_posix()}",
+                history_path="/site/history.json",
+                history_detail_path=f"/{(payload_root / 'history' / entry.snapshot.snapshot_id / 'index.json').as_posix()}",
+            )
+            detail_payload_model = _build_history_detail_payload(
+                manifest,
+                entry,
+                change_log,
+                manifest.generated_at,
+                entry.snapshot,
+            )
+            save_json_to_file(detail_payload_model.model_dump(mode="json"), detail_path)
 
 
 def _build_problem_index(
@@ -3387,7 +3417,7 @@ def generate_site_payloads(
         existing_ledger = None
     prev_inventory = _load_previous_inventory(roots.state_dir, existing_ledger, snapshot.snapshot_id)
     change_log = _compute_change_log(prev_inventory, current_inventory)
-    inventory_path = _save_inventory(roots.state_dir, snapshot.snapshot_id, generated_at, current_inventory)
+    inventory_path = _save_inventory(roots.state_dir, snapshot.snapshot_id, generated_at, current_inventory, site_counts=site_counts)
     written_paths.append(inventory_path)
 
     snapshot_manifest = SiteSnapshotManifest(
