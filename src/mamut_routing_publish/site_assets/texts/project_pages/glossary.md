@@ -28,7 +28,8 @@ Short, effective definitions for the acronyms and technical terms used across th
 - **BKS** — *Best-Known Solution*. The best objective value (and, when available, the route set) known for an instance; provided as a per-instance BKS file.
 - **HVC** — *HierarchicalVehicleCost*. Lexicographic VRPTW objective: minimize the number of vehicles first, then minimize total cost.
 - **MC** — *MonoCost*. Single-objective cost minimization where total routing cost is optimized directly.
-- **DUR** — *Duration*. Time-dependent duration-minimization objective: minimize the sum of route durations, with each route's depot departure time a decision variable and travel times varying with departure time. Used by all TD families.
+- **DUR** — *Duration*. Time-dependent duration-minimization objective: minimize the sum of route durations, with each route's depot departure time a decision variable and travel times varying with departure time. The default objective of the TD families.
+- **FCD** — *FleetCostDuration*. Time-dependent objective extending `Duration` with a fixed cost per used vehicle: minimize the sum of per-route optimal durations plus `fleet_fixed_cost × (number of routes)`, where `fleet_fixed_cost` is carried by the instance in its own time unit. Mono-objective: a fleet reduction is worth exactly what the fixed cost says it is worth. Used by `Blauth2024` (36000000 ms per vehicle, reproducing the upstream $200-per-vehicle-plus-$20-per-hour objective exactly: cost in $ = cost in ms / 180000).
 - **TW** — *Time Window*. The `[earliest, latest]` interval within which a customer must be served; family tables also record a historical **TW type** (structural class of the time-window layout).
 
 ## Benchmarks, sources, and infrastructure
