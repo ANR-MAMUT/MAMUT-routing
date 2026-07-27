@@ -1601,7 +1601,12 @@ def _resolve_instance(
         # generation only needs the functions themselves.
         sidecar_path, is_committed = atf_sidecar
         if is_committed:
-            td_atfs = load_instance_atfs(sidecar_path)
+            # Hybrid-hosted tiers (Blauth2024 n=1000/2000) commit the instance
+            # and BKS but not the oversized sidecar: render without schedule
+            # tables and without the sidecar link, like above-cap materialized
+            # models.
+            if sidecar_path.is_file():
+                td_atfs = load_instance_atfs(sidecar_path)
         elif sidecar_path.is_file():
             # Materialized td models (igp-profile, road-graph): use the
             # build-time cache when materialized (above the size cap the page
@@ -2604,6 +2609,17 @@ def _build_objectives_page_payload(
                 "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Poryos2026) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
+        ),
+        ObjectiveExplainer(
+            objective_function=ObjectiveFunction.FLEET_COST_DURATION,
+            short_label="FCD",
+            title="FleetCostDuration",
+            description="Time-dependent objective extending Duration with a fixed cost per used vehicle: minimize the sum of per-route optimal durations plus fleet_fixed_cost times the number of routes, where fleet_fixed_cost is carried by the instance in its own time unit.",
+            interpretation_notes=[
+                "Mono-objective: a fleet reduction is worth exactly what the fixed cost says it is worth, so compare FCD results on total cost, not on vehicle count or duration alone.",
+                "The Blauth2024 family uses this objective (fleet_fixed_cost = 36000000 ms per vehicle, reproducing the upstream $200-per-vehicle-plus-$20-per-hour objective exactly: cost in $ = cost in ms / 180000).",
+            ],
+            related_routes=_build_objective_related_routes(items, ObjectiveFunction.FLEET_COST_DURATION),
         ),
     ]
     return ObjectivesPagePayload(
