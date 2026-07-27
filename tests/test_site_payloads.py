@@ -634,7 +634,7 @@ OSM-derived artifacts use ODbL.
     assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.PORYOS_2026).spdx_id == "ODbL-1.0"
 
 
-def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
+def test_generate_site_payloads_accepts_legacy_history_and_renamed_benchmark(tmp_path: Path) -> None:
     output_repo_dir = tmp_path / "MAMUT-routing"
     build_fixture_site_inputs(output_repo_dir)
 
@@ -657,12 +657,37 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
                     "summary": "Legacy history entry before change counts.",
                     "detail_route_path": "/history/2026-04-22-legacy/",
                     "affected_problem_types": ["CVRP"],
-                    "affected_benchmark_names": ["Poryos2026"],
+                    "affected_benchmark_names": ["Mamut2026"],
                     "affected_objective_functions": ["MonoCost"],
                 }
             ],
         },
         output_repo_dir / "dist" / "site" / "history.json",
+    )
+    save_json_to_file(
+        {
+            "snapshot_id": legacy_snapshot["snapshot_id"],
+            "generated_at": legacy_snapshot["published_at"],
+            "instances": {
+                "cvrp-mamut2026-fastest-brest-n2-mamut-n2-cafe123": {
+                    "problem_type": "CVRP",
+                    "benchmark_name": "Mamut2026",
+                    "metric_variant": "fastest",
+                    "place_slug": "brest",
+                    "num_customers": 2,
+                    "instance_name": "mamut-n2-cafe123",
+                    "bks": {
+                        "MonoCost": {
+                            "cost": 12,
+                            "num_routes": 1,
+                            "authors": "Florian Rascoussier (0nyr) and Adrien Pichon (Anzury)",
+                            "method": "hgs-v1",
+                        }
+                    },
+                }
+            },
+        },
+        output_repo_dir / "dist" / "site" / "snapshots" / "2026-04-22-legacy.inventory.json",
     )
 
     generate_site_payloads(
@@ -674,13 +699,24 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
 
     ledger = json.loads((output_repo_dir / "dist" / "site" / "history.json").read_text(encoding="utf-8"))
     assert ledger["entries"][0]["snapshot"]["snapshot_id"] == "2026-04-23-abcdef1"
-    assert ledger["entries"][1]["snapshot"]["snapshot_id"] == "2026-04-22-legacy"
-    assert ledger["entries"][1]["change_counts"] == {
-        "families_added": 0,
+    assert ledger["entries"][0]["change_counts"] == {
+        "families_added": 2,
         "families_removed": 0,
-        "instances_added": 0,
+        "instances_added": 2,
         "instances_removed": 0,
-        "bks_added": 0,
+        "bks_added": 3,
+        "bks_removed": 0,
+        "bks_improved": 0,
+        "bks_regressed": 0,
+    }
+    assert ledger["entries"][1]["snapshot"]["snapshot_id"] == "2026-04-22-legacy"
+    assert ledger["entries"][1]["affected_benchmark_names"] == ["Poryos2026"]
+    assert ledger["entries"][1]["change_counts"] == {
+        "families_added": 1,
+        "families_removed": 0,
+        "instances_added": 1,
+        "instances_removed": 0,
+        "bks_added": 1,
         "bks_removed": 0,
         "bks_improved": 0,
         "bks_regressed": 0,
