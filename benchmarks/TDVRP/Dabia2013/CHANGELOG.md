@@ -2,6 +2,10 @@
 
 All notable changes to the curated `Dabia2013` TDVRP best-known solutions (BKS) are recorded here. Objective: **Duration** (duration minimization — the depot departure time of each route is a decision variable). Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer), total summed in that order — so any strict improvement is real.
 
+## 2026-08-06
+
+**All 40 optimality certificates re-derived from scratch and re-stamped** under the four-solve agreement protocol (cold and warm starts crossed with the two labeling modes, an audited exact-pricing phase in every run, zero checker-infeasible priced columns) on Grid'5000, on the repaired kayros 1.5.1 build. The campaign was motivated by the 2026-08-05 withdrawal of one certificate in the Vu2020 TDVRPTW family and the subsequent finding that the certifying builds carried since-repaired pricing defects (documented in the kayros 1.5.1 release notes and CHANGELOG). Every re-issued stamp certifies bit-exactly the previously stored value; no solution data changed, and the stamps' provenance now cites this campaign and build.
+
 ## 2026-07-12
 
 **8 stale optimality stamps retracted** (RC101 to RC108, n=50): the last stamps surviving from the superseded 2026-07-07 campaign carried pre-audit prover metadata, and the pricing-ladder audit voided their trust basis; the audited 2026-07-10/11 campaign and its 2026-07-11/12 weekend top-up leave all eight instances open at their time limits, so the values return to ordinary best-known status. Store-wide, every remaining optimality stamp now comes from the audited four-run protocol. This family carries 40 certified TDVRP BKS (n=25), unchanged.
