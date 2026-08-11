@@ -35,6 +35,10 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 /* ── Stage: full-viewport map with floating panels ───────────────────────── */
 
 .wb-stage {
+  --wb-panel-inset: 20px;
+  --wb-panel-gap: 16px;
+  --wb-left-panel-width: 320px;
+  --wb-right-panel-width: 300px;
   position: relative;
   flex: 1 1 0;
   min-height: 0;
@@ -81,6 +85,22 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   font-family: "Inter", system-ui, sans-serif !important;
 }
 
+/* Keep Leaflet controls beside the floating panels instead of over them. The
+   10px adjustment accounts for Leaflet's own control margin. */
+.wb-stage .leaflet-top.leaflet-left {
+  top: 6px;
+  left: calc(
+    var(--wb-panel-inset) + var(--wb-left-panel-width) + var(--wb-panel-gap) - 10px
+  );
+}
+
+.wb-stage .leaflet-top.leaflet-right {
+  top: 6px;
+  right: calc(
+    var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap) - 10px
+  );
+}
+
 /* ── Floating panels ─────────────────────────────────────────────────────── */
 
 .wb-panel {
@@ -100,15 +120,15 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 }
 
 .wb-panel-left {
-  left: 20px;
+  left: var(--wb-panel-inset);
   bottom: 56px;
-  width: 320px;
+  width: var(--wb-left-panel-width);
 }
 
 .wb-panel-right {
-  right: 20px;
+  right: var(--wb-panel-inset);
   max-height: calc(100% - 32px);
-  width: 300px;
+  width: var(--wb-right-panel-width);
   padding: 16px;
 }
 
@@ -376,7 +396,9 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 
 .map-clear-btn {
   position: absolute;
-  right: 20px;
+  right: calc(
+    var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap)
+  );
   bottom: 18px;
   z-index: 600;
   cursor: pointer;
@@ -460,6 +482,14 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
     display: none;
   }
 
+  .wb-stage .leaflet-top.leaflet-right {
+    right: 0;
+  }
+
+  .map-clear-btn {
+    right: var(--wb-panel-inset);
+  }
+
   .wb-footer {
     max-width: calc(100vw - 200px);
   }
@@ -473,6 +503,15 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
     top: 10px;
     bottom: auto;
     max-height: 55%;
+  }
+
+  .wb-stage .leaflet-top.leaflet-left,
+  .wb-stage .leaflet-top.leaflet-right {
+    top: calc(55% + 10px);
+  }
+
+  .wb-stage .leaflet-top.leaflet-left {
+    left: 0;
   }
 
   .wb-footer {
