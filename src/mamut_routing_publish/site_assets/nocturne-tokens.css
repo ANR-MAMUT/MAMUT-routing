@@ -1,0 +1,102 @@
+/* Nocturne design-system tokens — the single source for both frontends:
+   the published site (site.css) and the local tools GUI (workbench.css).
+
+   Light is the bare :root band and dark is the [data-theme="dark"] override, so a
+   page that never sets data-theme still renders. Both frontends stamp the attribute
+   in a blocking <head> script, so neither relies on that default in practice.
+
+   Kept in step with the Nocturne project on claude.ai/design (theme.json). */
+
+:root {
+  --bg: #f6f5f0;
+  --s: #ffffff;
+  --ink: #201b45;
+  --mut: #6f6f92;
+  --div: rgba(32, 27, 69, 0.14);
+  --acc: #5b43e8;
+  --on-acc: #ffffff;
+  --cy: #0d94ba;
+  --gr: #0f9e68;
+  --am: #c47f00;
+  --cor: #e8503f;
+  --acc-t: rgba(91, 67, 232, 0.11);
+  --cy-t: rgba(13, 148, 186, 0.12);
+  --gr-t: rgba(15, 158, 104, 0.13);
+  --am-t: rgba(196, 127, 0, 0.13);
+  --cor-t: rgba(232, 80, 63, 0.12);
+  --svg: #efede6;
+  --ptc: #3a3f55;
+  --dot: rgba(32, 27, 69, 0.14);
+  --road: rgba(32, 27, 69, 0.13);
+  --panel: rgba(255, 255, 255, 0.94);
+  --edge: rgba(91, 67, 232, 0.22);
+  --shadow: 0 14px 36px rgba(25, 29, 54, 0.14);
+  --route-0: #5a43e8;
+  --route-1: #0d94ba;
+  --route-2: #0f9e68;
+  --route-3: #c47f00;
+  --route-4: #d63d8c;
+  --route-5: #2f6fd6;
+  --route-6: #7a9e0d;
+  --route-7: #9b4fd6;
+  --route-8: #d65f2a;
+  --route-9: #0da893;
+  --route-10: #94940d;
+  --route-11: #d64f4f;
+  --route-12: #1f7fd6;
+  --route-13: #4f9e1f;
+  --route-14: #b8930f;
+  --route-15: #7a4fd6;
+  --route-16: #0d9e94;
+  --route-17: #d66a9b;
+  --route-18: #3d85ad;
+  --route-19: #a87a4f;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #101226;
+  --s: #1b1e3d;
+  --ink: #edeffc;
+  --mut: #8d92b8;
+  --div: rgba(237, 239, 252, 0.13);
+  --acc: #9d8bff;
+  --on-acc: #101226;
+  --cy: #3cd6f5;
+  --gr: #45e8a5;
+  --am: #ffc14d;
+  --cor: #ff7a6e;
+  --acc-t: rgba(157, 139, 255, 0.16);
+  --cy-t: rgba(60, 214, 245, 0.14);
+  --gr-t: rgba(69, 232, 165, 0.16);
+  --am-t: rgba(255, 193, 77, 0.16);
+  --cor-t: rgba(255, 122, 110, 0.16);
+  --svg: #0c0e1f;
+  --ptc: #dfe3f5;
+  --dot: rgba(238, 240, 255, 0.08);
+  --road: rgba(238, 240, 255, 0.1);
+  --panel: rgba(24, 27, 54, 0.92);
+  --edge: rgba(157, 139, 255, 0.28);
+  --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  --route-0: #9d8bff;
+  --route-1: #3cd6f5;
+  --route-2: #45e8a5;
+  --route-3: #ffc14d;
+  --route-4: #ff7ab8;
+  --route-5: #7db1ff;
+  --route-6: #c9ec55;
+  --route-7: #d18cff;
+  --route-8: #ff9866;
+  --route-9: #3fe8cc;
+  --route-10: #e8e055;
+  --route-11: #ff8f8f;
+  --route-12: #66c2ff;
+  --route-13: #9ff06b;
+  --route-14: #f0d066;
+  --route-15: #b78cff;
+  --route-16: #55f0e0;
+  --route-17: #ffa8cc;
+  --route-18: #8fd0f0;
+  --route-19: #e8bb90;
+  color-scheme: dark;
+}

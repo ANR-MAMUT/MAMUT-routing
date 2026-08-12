@@ -19,11 +19,20 @@ SUPPORTED_PAYLOAD_MODES = {"static", "api"}
 # page paints in light defaults and re-paints once site.js applies the stored
 # preference, producing a visible flash on dark-mode reloads.
 THEME_INIT_SCRIPT = (
-    '<script>(function(){try{var t=localStorage.getItem("mamut-routing-theme");'
+    '<script>(function(){try{var t=localStorage.getItem("mamut-theme")'
+    '||localStorage.getItem("mamut-routing-theme");'
     'if(t!=="dark"&&t!=="light"){t=window.matchMedia&&window.matchMedia('
     '"(prefers-color-scheme: dark)").matches?"dark":"light";}'
     'document.documentElement.dataset.theme=t;}catch(e){'
     'document.documentElement.dataset.theme="light";}})();</script>'
+)
+
+# Same reasoning as THEME_INIT_SCRIPT, for the resizable panel widths: applied to
+# <html> before first paint so a stored layout does not visibly snap into place.
+LAYOUT_INIT_SCRIPT = (
+    "<script>(function(){try{window.MamutLayout.applyState("
+    "document.documentElement,window.MamutLayout.readState("
+    'window.MamutLayout.STORAGE_KEY,{leftWidth:320}));}catch(e){}})();</script>'
 )
 
 
@@ -59,7 +68,13 @@ def _route_html_path(output_repo_dir: Path, route_path: str) -> Path:
 
 
 def _relative_path(from_dir: Path, to_path: Path) -> str:
-    return os.path.relpath(to_path, from_dir)
+    """A relative *URL* path, so it must use forward slashes on every platform.
+
+    ``os.path.relpath`` yields backslashes on Windows, which are not path separators
+    in a URL; browsers happen to normalise them, but the emitted HTML is wrong and
+    stricter consumers reject it.
+    """
+    return os.path.relpath(to_path, from_dir).replace(os.sep, "/")
 
 
 def _resolve_site_output_dir(output_repo_dir: Path, site_output_dir: str | Path | None) -> Path:
@@ -182,6 +197,8 @@ def _render_workbench_shell_html(
     route_dir = output_repo_dir if route_path == "/" else _route_directory(output_repo_dir, route_path)
     css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "workbench.css")
     js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "workbench.js")
+    layout_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "layout.js")
+    nocturne_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "nocturne.js")
     font_href = _relative_path(route_dir, output_repo_dir / "webapp" / "fonts" / "InterVariable.woff2")
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
     leaflet_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.css")
@@ -196,6 +213,9 @@ def _render_workbench_shell_html(
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAMUT-routing Workbench</title>
     {THEME_INIT_SCRIPT}
+    <script src="{layout_js_href}"></script>
+    <script src="{nocturne_js_href}"></script>
+    {LAYOUT_INIT_SCRIPT}
     <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
     <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="{leaflet_css_href}" />
@@ -207,10 +227,28 @@ def _render_workbench_shell_html(
     <main class="wb-stage">
         <div id="map"></div>
 
+        <div class="splitter splitter-left" data-splitter="left" role="separator" aria-orientation="vertical"
+             tabindex="0" aria-label="Resize the workbench panel"></div>
+        <div class="splitter splitter-right" data-splitter="right" role="separator" aria-orientation="vertical"
+             tabindex="0" aria-label="Resize the selected-instance panel"></div>
+
         <aside class="wb-panel wb-panel-left">
+            <div class="panel-rail" role="toolbar" aria-label="Expand the workbench panel">
+                <button class="rail-btn" type="button" data-rail-side="left" data-rail-target="visualize" title="Visualize" aria-label="Visualize">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h7"/><circle cx="4.5" cy="6" r="1.1"/><circle cx="4.5" cy="12" r="1.1"/><circle cx="4.5" cy="18" r="1.1"/></svg>
+                </button>
+                <button class="rail-btn" type="button" data-rail-side="left" data-rail-target="generate" title="Generate" aria-label="Generate">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h8M17 7h3M4 17h3M12 17h8"/><circle cx="14.5" cy="7" r="2.2"/><circle cx="9.5" cy="17" r="2.2"/></svg>
+                </button>
+            </div>
+            <div class="wb-panel-head">
             <div class="tabs">
                 <button id="tabVisualize" class="tab-btn tab-active" type="button">Visualize</button>
                 <button id="tabGenerate" class="tab-btn" type="button">Generate</button>
+            </div>
+            <button class="panel-toggle" type="button" data-panel-toggle="left" title="Collapse the panel" aria-label="Collapse the workbench panel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
             </div>
 
             <section id="visualPanel" class="tab-panel tab-panel-active">
@@ -295,7 +333,17 @@ def _render_workbench_shell_html(
         </aside>
 
         <aside class="wb-panel wb-panel-right">
-            <div class="wb-kicker wb-kicker-selected">Selected instance</div>
+            <div class="panel-rail" role="toolbar" aria-label="Expand the selected-instance panel">
+                <button class="rail-btn" type="button" data-rail-side="right" data-rail-target="instance" title="Selected instance" aria-label="Selected instance">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21c4.2-4 7-7.4 7-10.6a7 7 0 1 0-14 0C5 13.6 7.8 17 12 21z"/><circle cx="12" cy="10.2" r="2.4"/></svg>
+                </button>
+            </div>
+            <div class="wb-panel-head">
+                <div class="wb-kicker wb-kicker-selected">Selected instance</div>
+                <button class="panel-toggle" type="button" data-panel-toggle="right" title="Collapse the panel" aria-label="Collapse the selected-instance panel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                </button>
+            </div>
             <dl id="stats" class="wb-stats"></dl>
 
             <section class="wb-section" id="routeSelectorCard" style="display:none;">
@@ -350,6 +398,9 @@ def generate_site_webapp(
         (source_assets_dir / "site.js", site_output / "webapp" / "site.js"),
         (source_assets_dir / "workbench.css", site_output / "webapp" / "workbench.css"),
         (source_assets_dir / "workbench.js", site_output / "webapp" / "workbench.js"),
+        (source_assets_dir / "layout.js", site_output / "webapp" / "layout.js"),
+        (source_assets_dir / "nocturne.js", site_output / "webapp" / "nocturne.js"),
+        (source_assets_dir / "nocturne-tokens.css", site_output / "webapp" / "nocturne-tokens.css"),
     ]
     asset_paths: list[Path] = []
     if reporter is not None:

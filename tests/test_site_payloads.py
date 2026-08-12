@@ -406,8 +406,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    # 4 css/js bundles + 4 icons + 8 logos + 1 font + 9 vendored Leaflet files.
-    assert webapp_summary.asset_files_written == 25
+    # 7 css/js bundles (incl. the shared nocturne tokens/runtime) + 4 icons + 8 logos
+    # + 1 font + 9 vendored Leaflet files.
+    assert webapp_summary.asset_files_written == 28
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
