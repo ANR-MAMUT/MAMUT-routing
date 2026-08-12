@@ -1,28 +1,17 @@
 const body = document.body;
 const runtimeParams = new URLSearchParams(window.location.search);
 const CANONICAL_WORKBENCH_ROUTE = "/workbench/";
-// Nocturne per-theme 20-color route palettes (VIVID_D / VIVID_L from the merged
-// demo). Leaflet's canvas renderer needs concrete color values, so the palette
-// is resolved per draw from the live theme; a theme change triggers a redraw.
-const ROUTE_COLORS_DARK = [
-  "#9d8bff", "#3cd6f5", "#45e8a5", "#ffc14d", "#ff7ab8",
-  "#7db1ff", "#c9ec55", "#d18cff", "#ff9866", "#3fe8cc",
-  "#e8e055", "#ff8f8f", "#66c2ff", "#9ff06b", "#f0d066",
-  "#b78cff", "#55f0e0", "#ffa8cc", "#8fd0f0", "#e8bb90",
-];
-const ROUTE_COLORS_LIGHT = [
-  "#5a43e8", "#0d94ba", "#0f9e68", "#c47f00", "#d63d8c",
-  "#2f6fd6", "#7a9e0d", "#9b4fd6", "#d65f2a", "#0da893",
-  "#94940d", "#d64f4f", "#1f7fd6", "#4f9e1f", "#b8930f",
-  "#7a4fd6", "#0d9e94", "#d66a9b", "#3d85ad", "#a87a4f",
-];
+// Leaflet's canvas renderer needs concrete color values, so the twenty route colors
+// are resolved from the live theme rather than set in CSS; a theme change redraws.
+// They live in nocturne-tokens.css as --route-0…19 and are read through nocturne.js,
+// so this file no longer carries its own copy of the palette.
 
 function isDarkTheme() {
   return document.documentElement.dataset.theme === "dark";
 }
 
 function routeColor(routeIndex) {
-  const palette = isDarkTheme() ? ROUTE_COLORS_DARK : ROUTE_COLORS_LIGHT;
+  const palette = window.MamutNocturne.routeColors();
   return palette[routeIndex % palette.length];
 }
 
@@ -1140,6 +1129,9 @@ function setActiveTab(tab, options = {}) {
   tabGenerate.classList.toggle("tab-active", !visualize);
   visualPanel.classList.toggle("tab-panel-active", visualize);
   generationPanel.classList.toggle("tab-panel-active", !visualize);
+  document.querySelectorAll("[data-rail-target]").forEach((button) => {
+    button.classList.toggle("rail-active", button.dataset.railTarget === tab);
+  });
   if (options.sync !== false) {
     syncWorkbenchUrl();
   }
@@ -1382,6 +1374,33 @@ sourceUploadBtn.addEventListener("click", async () => {
   setActiveTab("visualize");
 });
 window.addEventListener("resize", refreshMapSize);
+
+/* ── Resizable layout (shared with the local tools GUI via layout.js) ── */
+const layout = window.MamutLayout.initLayout({
+  stage: document.documentElement,
+  storageKey: window.MamutLayout.STORAGE_KEY,
+  /* Matches the --wb-left-panel-width in workbench.css: this panel's filter grid
+     needs more room than the local GUI's form. */
+  defaults: { leftWidth: 320 },
+  onResize: refreshMapSize,
+});
+
+document.documentElement.addEventListener("layout:rail-select", (event) => {
+  const target = event.detail.target;
+  if (target === "visualize" || target === "generate") {
+    setActiveTab(target);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest("input, select, textarea, [contenteditable]")) return;
+  if (event.key === "[") layout.toggleCollapsed("left");
+  else if (event.key === "]") layout.toggleCollapsed("right");
+  else return;
+  event.preventDefault();
+});
 map.on("zoomend", () => {
   if (state.activeTab === "generate") {
     return;

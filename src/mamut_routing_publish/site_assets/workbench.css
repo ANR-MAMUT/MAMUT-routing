@@ -34,11 +34,19 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 
 /* ── Stage: full-viewport map with floating panels ───────────────────────── */
 
-.wb-stage {
+/* These live on :root, not .wb-stage, so the blocking bootstrap in <head> can apply a
+   stored layout before .wb-stage exists — a declaration on .wb-stage would beat the
+   inherited value and the panels would jump on first paint. layout.js writes the two
+   widths onto <html> for the same reason. */
+:root {
   --wb-panel-inset: 20px;
   --wb-panel-gap: 16px;
   --wb-left-panel-width: 320px;
   --wb-right-panel-width: 300px;
+  --wb-rail-width: 44px;
+}
+
+.wb-stage {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
@@ -132,6 +140,100 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   padding: 16px;
 }
 
+/* ── Splitters and collapse rails (shared behaviour with the local tools GUI; both
+   are driven by layout.js off the same custom properties) ────────────────────── */
+.splitter {
+  position: absolute;
+  top: 16px;
+  z-index: 505;
+  width: 11px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.splitter:hover::after,
+.splitter[data-dragging="true"]::after { background: var(--edge); }
+.splitter:focus-visible::after { background: var(--acc); }
+.splitter-left {
+  left: calc(var(--wb-panel-inset) + var(--wb-left-panel-width));
+  bottom: 56px;
+}
+.splitter-right {
+  right: calc(var(--wb-panel-inset) + var(--wb-right-panel-width));
+  bottom: 32px;
+}
+[data-left-collapsed="true"] .splitter-left,
+[data-right-collapsed="true"] .splitter-right { display: none; }
+
+.panel-toggle {
+  flex: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mut);
+}
+.panel-toggle:hover { color: var(--acc); background: var(--acc-t); }
+.panel-toggle svg { width: 14px; height: 14px; }
+
+.panel-rail {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.rail-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mut);
+}
+.rail-btn:hover,
+.rail-btn.rail-active { color: var(--acc); background: var(--acc-t); }
+.rail-btn svg { width: 17px; height: 17px; }
+
+[data-left-collapsed="true"] .wb-panel-left,
+[data-right-collapsed="true"] .wb-panel-right {
+  padding: 8px 6px;
+  overflow: hidden;
+  align-items: center;
+}
+[data-left-collapsed="true"] .wb-panel-left > :not(.panel-rail),
+[data-right-collapsed="true"] .wb-panel-right > :not(.panel-rail) { display: none; }
+[data-left-collapsed="true"] .wb-panel-left .panel-rail,
+[data-right-collapsed="true"] .wb-panel-right .panel-rail { display: flex; }
+[data-left-collapsed="true"] .wb-panel-left { bottom: auto; }
+[data-right-collapsed="true"] .wb-panel-right { max-height: none; }
+
+/* The tabs row now shares its line with the collapse chevron. */
+.wb-panel-head { display: flex; align-items: center; gap: 8px; flex: none; }
+.wb-panel-head .tabs { flex: 1; }
+.wb-panel-head .tab-btn { flex: 1; }
+
 .wb-section {
   display: flex;
   flex-direction: column;
@@ -196,8 +298,9 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 }
 
 .tab-btn.tab-active {
-  background: var(--acc);
-  color: var(--on-acc);
+  background: var(--acc-t);
+  color: var(--acc);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 45%, transparent);
 }
 
 .tab-panel {
@@ -482,6 +585,10 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
     display: none;
   }
 
+  /* The right panel is gone here, so its splitter and rail have nothing to act on. */
+  .splitter-right { display: none; }
+  [data-right-collapsed="true"] .wb-panel-right { display: none; }
+
   .wb-stage .leaflet-top.leaflet-right {
     right: 0;
   }
@@ -504,6 +611,18 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
     bottom: auto;
     max-height: 55%;
   }
+
+  /* Top-sheet layout: no side columns to resize, and a collapsed state carried over
+     from a wide window must reveal its content rather than leave a 44px stub. */
+  .splitter,
+  .panel-toggle { display: none; }
+  [data-left-collapsed="true"] .wb-panel-left {
+    padding: 12px;
+    overflow-y: auto;
+    align-items: stretch;
+  }
+  [data-left-collapsed="true"] .wb-panel-left > :not(.panel-rail) { display: revert; }
+  [data-left-collapsed="true"] .wb-panel-left .panel-rail { display: none; }
 
   .wb-stage .leaflet-top.leaflet-left,
   .wb-stage .leaflet-top.leaflet-right {

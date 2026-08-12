@@ -3510,7 +3510,7 @@ function applyTheme(theme) {
   if (switchInput) {
     switchInput.checked = theme === "dark";
   }
-  localStorage.setItem("mamut-routing-theme", theme);
+  localStorage.setItem("mamut-theme", theme);
 }
 
 function setupThemeToggle() {
