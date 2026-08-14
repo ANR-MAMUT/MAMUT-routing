@@ -22,6 +22,33 @@ function themeMarkerColors() {
     ? { depot: "#9d8bff", unassigned: "#8d92b8" }
     : { depot: "#5b43e8", unassigned: "#6f6f92" };
 }
+
+// Five-pointed star polygon, first point up, as an SVG "points" string. Used for
+// the depot marker so it stays distinguishable from the customer dots.
+function starPoints(centerX, centerY, outerRadius, innerRatio = 0.42, spikes = 5) {
+  const innerRadius = outerRadius * innerRatio;
+  const points = [];
+  for (let index = 0; index < spikes * 2; index += 1) {
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+    const angle = -Math.PI / 2 + (index * Math.PI) / spikes;
+    points.push(`${(centerX + radius * Math.cos(angle)).toFixed(2)},${(centerY + radius * Math.sin(angle)).toFixed(2)}`);
+  }
+  return points.join(" ");
+}
+
+// Leaflet has no star marker, so the depot star is a divIcon holding an inline
+// SVG; the outline keeps it readable over dark route lines and road tiles.
+function depotStarIcon(color) {
+  const size = 26;
+  const outline = isDarkTheme() ? "rgba(12, 14, 32, 0.85)" : "rgba(255, 255, 255, 0.9)";
+  return L.divIcon({
+    className: "depot-star-marker",
+    html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><polygon points="${starPoints(12, 12, 11)}" fill="${color}" fill-opacity="0.95" stroke="${outline}" stroke-width="1.4" stroke-linejoin="round" /></svg>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
 const MODE_BY_ROUTE = new Map([
   ["/workbench/", "catalog"],
   ["/workbench/catalog/", "catalog"],
@@ -207,6 +234,7 @@ const state = {
     visibleLimit: 10,
     fadedOpacity: 0.8,
     arrowsEnabled: true,
+    depotStar: false,
     depotLegMode: "full",
     search: "",
     minStops: null,
@@ -573,6 +601,8 @@ function resetRouteViewDefaults(routes) {
   state.routeView.visibleLimit = routeCount >= 100 ? 99 : routeCount;
   state.routeView.fadedOpacity = 0.8;
   state.routeView.arrowsEnabled = routeCount <= 10;
+  // A solution overlay defaults to the star depot; a bare instance keeps the dot.
+  state.routeView.depotStar = routeCount > 0;
   state.routeView.depotLegMode = routeCount <= 10 ? "full" : "faded";
   state.routeView.search = "";
   state.routeView.minStops = null;
@@ -673,6 +703,7 @@ function buildRouteSelector(routes, instanceData) {
       <label class="field"><span>Faded opacity</span><input class="route-view-opacity" type="range" min="0.03" max="0.8" step="0.01" value="${state.routeView.fadedOpacity}" /></label>
       <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="absent">Absent</option></select></label>
       <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
+      <label class="route-view-toggle"><input class="route-view-depot-star" type="checkbox"${state.routeView.depotStar ? " checked" : ""} /> Depot as star</label>
     </div>
     <div class="route-view-grid route-filter-grid">
       <label class="field"><span>Min stops</span><input data-route-filter="minStops" type="number" min="0" value="${state.routeView.minStops ?? ""}" /></label>
@@ -712,6 +743,10 @@ function buildRouteSelector(routes, instanceData) {
   });
   routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
     state.routeView.arrowsEnabled = event.target.checked;
+    rerender();
+  });
+  routeSelectorContainer.querySelector(".route-view-depot-star").addEventListener("change", (event) => {
+    state.routeView.depotStar = event.target.checked;
     rerender();
   });
   routeSelectorContainer.querySelectorAll("[data-route-filter]").forEach((input) => {
@@ -967,13 +1002,15 @@ function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
     const lon = Number(coordinate[0]);
     const isDepot = index === Number(instanceData.depot || 0);
     const color = isDepot ? markerColors.depot : customerToRoute.get(index) || markerColors.unassigned;
-    const marker = L.circleMarker([lat, lon], {
-      radius: isDepot ? 7 : 5,
-      color,
-      fillColor: color,
-      fillOpacity: 0.85,
-      weight: isDepot ? 2 : 1,
-    });
+    const marker = isDepot && state.routeView.depotStar
+      ? L.marker([lat, lon], { icon: depotStarIcon(color), interactive: true, keyboard: false })
+      : L.circleMarker([lat, lon], {
+        radius: isDepot ? 7 : 5,
+        color,
+        fillColor: color,
+        fillOpacity: 0.85,
+        weight: isDepot ? 2 : 1,
+      });
     const demand = Number(instanceData.demands?.[index]) || 0;
     marker.bindPopup(`<strong>${isDepot ? "Depot" : `Node ${index}`}</strong><br/>Demand: ${demand}<br/>Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
     marker.addTo(state.layers.marker);
