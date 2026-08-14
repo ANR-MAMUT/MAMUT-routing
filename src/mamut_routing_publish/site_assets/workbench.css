@@ -433,6 +433,14 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   grid-column: 1 / -1;
 }
 
+/* Depot star marker: a divIcon wrapping an inline SVG, so it must not inherit
+   any box styling from Leaflet's marker defaults. */
+.depot-star-marker {
+  background: none;
+  border: none;
+  line-height: 0;
+}
+
 .btn-row {
   display: flex;
   flex-wrap: wrap;

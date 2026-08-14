@@ -1268,6 +1268,17 @@ tbody tr:hover {
   font-weight: 500;
 }
 
+/* Plain labelled switch of the Display Options card (visible checkbox, unlike
+   the route toggles whose affordance is the dimmed row). */
+.display-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--mut);
+}
+
 .route-toggle .route-toggle-meta {
   margin-left: auto;
   color: var(--mut);

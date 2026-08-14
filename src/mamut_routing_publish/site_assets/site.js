@@ -2054,6 +2054,19 @@ function supportsWorkbenchInstance(value) {
   return placeSlug.length > 0;
 }
 
+// Five-pointed star polygon, first point up, as an SVG "points" string. Used for
+// the depot marker so it stays distinguishable from the customer dots.
+function starPoints(centerX, centerY, outerRadius, innerRatio = 0.42, spikes = 5) {
+  const innerRadius = outerRadius * innerRatio;
+  const points = [];
+  for (let index = 0; index < spikes * 2; index += 1) {
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+    const angle = -Math.PI / 2 + (index * Math.PI) / spikes;
+    points.push(`${(centerX + radius * Math.cos(angle)).toFixed(2)},${(centerY + radius * Math.sin(angle)).toFixed(2)}`);
+  }
+  return points.join(" ");
+}
+
 function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
   const width = 860;
   const height = 520;
@@ -2068,6 +2081,9 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
     depotLegMode: options.displayOptions?.depotLegMode || "full",
     fadedOpacity: options.displayOptions?.fadedOpacity ?? 0.25,
     routeOpacity: options.displayOptions?.routeOpacity ?? 1,
+    // Thumbnails (home previews, catalog inspector) pass no display options and
+    // keep the plain dot; the instance solution view opts into the star.
+    depotStar: options.displayOptions?.depotStar ?? false,
   };
   const polylineFor = (points, color, opacity) => {
     const projected = projectCoordinates(points || [], width, height, projectionBounds).filter(Boolean);
@@ -2117,7 +2133,10 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
         : routeIndex === undefined
           ? `Customer ID ${index} · no route`
           : `Customer ID ${index} · Route ID ${routeIndex + 1}`;
-      return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title><circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" style="fill:${isDepot ? 'var(--cor)' : 'var(--ptc)'}" opacity="${isDepot ? 1 : 0.8}" /></g>`;
+      const shape = isDepot && display.depotStar
+        ? `<polygon points="${starPoints(point.x, point.y, 10)}" style="fill:var(--cor);stroke:var(--svg)" stroke-width="1.4" stroke-linejoin="round" />`
+        : `<circle cx="${point.x}" cy="${point.y}" r="${isDepot ? 6 : 4}" style="fill:${isDepot ? 'var(--cor)' : 'var(--ptc)'}" opacity="${isDepot ? 1 : 0.8}" />`;
+      return `<g class="viewer-node"><title>${escapeHtml(nodeTitle)}</title>${shape}</g>`;
     })
     .join("");
   let arcHitTargets = "";
@@ -2178,7 +2197,8 @@ function renderDisplayOptionsCard(bksData, displayOptions) {
         <option value="hidden"${displayOptions.depotLegMode === "hidden" ? " selected" : ""}>Hidden</option>
       </select></label>
       <label class="field"><span>Legs opacity: <output data-legs-opacity-value>${Math.round(displayOptions.fadedOpacity * 100)}%</output></span><input type="range" min="0" max="1" step="0.05" value="${displayOptions.fadedOpacity}" data-display-legs-opacity${displayOptions.depotLegMode === "faded" ? "" : " disabled"} /></label>
-      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>`,
+      <label class="field"><span>Route opacity: <output data-route-opacity-value>${Math.round(displayOptions.routeOpacity * 100)}%</output></span><input type="range" min="0.1" max="1" step="0.05" value="${displayOptions.routeOpacity}" data-display-route-opacity /></label>
+      <label class="display-toggle"><input type="checkbox" data-display-depot-star${displayOptions.depotStar ? " checked" : ""} /><span>Depot as star</span></label>`,
   );
 }
 
@@ -2515,6 +2535,7 @@ async function renderInstancePage(payload, options = {}) {
     depotLegMode: "faded",
     fadedOpacity: 0.25,
     routeOpacity: 1,
+    depotStar: true,
   };
 
   const renderSelectedState = () => {
@@ -2651,6 +2672,10 @@ async function renderInstancePage(payload, options = {}) {
     });
     state.aside.querySelector("[data-display-depot-legs]")?.addEventListener("change", (event) => {
       displayOptions.depotLegMode = event.target.value;
+      renderSelectedState();
+    });
+    state.aside.querySelector("[data-display-depot-star]")?.addEventListener("change", (event) => {
+      displayOptions.depotStar = event.target.checked;
       renderSelectedState();
     });
     const legsOpacitySlider = state.aside.querySelector("[data-display-legs-opacity]");
