@@ -871,6 +871,7 @@ function renderHomePreviewCard(sample, previewMarkup) {
     : "";
   const metaParts = [
     summary.problem_type,
+    summary.metric_variant,
     summary.num_customers != null ? `n=${summary.num_customers}` : "",
     entry ? `${entry.objective_function} ${formatCost(entry.cost)}` : "",
   ].filter(Boolean);
@@ -965,13 +966,12 @@ function homePreviewSampleKey(sample) {
   ].join("::");
 }
 
-// Mirror of HOME_PREVIEW_SEEDS in src/mamut_routing_publish/site_payloads.py,
-// only used by the seed-walker fallback below.
+// Runtime fallback equivalent of the server-generated Poryos2026 preview mix.
 const HOME_PREVIEW_SEEDS = [
-  { problemType: "CVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
-  { problemType: "VRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "MonoCost" },
-  { problemType: "TDVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
-  { problemType: "TDVRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
+  { problemType: "CVRP", benchmarkName: "Poryos2026", metricVariant: "shortest", placeSlug: "hong_kong", objectiveFunction: "MonoCost" },
+  { problemType: "VRPTW", benchmarkName: "Poryos2026", metricVariant: "euclidean", placeSlug: "lyon", objectiveFunction: "MonoCost" },
+  { problemType: "TDVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "paris", objectiveFunction: "Duration" },
+  { problemType: "TDVRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "san_francisco", objectiveFunction: "Duration" },
 ];
 
 async function loadHomePreviewSample(seed) {
