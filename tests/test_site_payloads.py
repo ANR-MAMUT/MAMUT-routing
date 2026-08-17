@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 from typer.testing import CliRunner
 
-from mamut_routing_lib.enums import ObjectiveFunction
+from mamut_routing_lib.artifacts import discover_benchmark_instances
+from mamut_routing_lib.enums import MetricVariant, ObjectiveFunction
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
 from mamut_routing_publish.cli import app
 from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
 from mamut_routing_publish.site_payloads import (
     _TD_SCHEDULE_DOMAIN_TOL,
+    _deduplicate_discovered_instances,
     _evaluate_on_domain,
+    _home_preview_metric_rank,
     derive_historical_taxonomy,
     generate_site_payloads,
 )
@@ -1481,3 +1485,43 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     assert fastest_objective["cost"] == 491.5
     assert fastest_objective["num_routes"] == 1
     assert fastest_objective["optimality_proven"] is False
+
+
+def test_site_payloads_deduplicate_retired_collection_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_repo_dir = tmp_path / "repo"
+    canonical_collection = build_collection_fixture(output_repo_dir)
+    shutil.copytree(canonical_collection, output_repo_dir / "benchmarks" / "Mamut2026")
+    monkeypatch.chdir(tmp_path)
+
+    discovered = discover_benchmark_instances(Path("repo/benchmarks"))
+    deduplicated = _deduplicate_discovered_instances(discovered, Path("repo/benchmarks"))
+    assert len(deduplicated) == 4
+    assert all("/benchmarks/Poryos2026/" in item.instance_path.as_posix() for item in deduplicated)
+
+    with pytest.warns(UserWarning, match="Ignored 4 duplicate benchmark instance path"):
+        generate_site_payloads(output_repo_dir, source_commit="fixture123")
+
+    payload_root = output_repo_dir / "dist" / "site-payloads"
+    root_index = json.loads((payload_root / "benchmarks" / "index.json").read_text(encoding="utf-8"))
+    assert len(root_index["items"]) == 4
+    assert all(
+        item["artifact_vrp_json_path"].startswith("benchmarks/Poryos2026/")
+        for item in root_index["items"]
+    )
+
+
+def test_home_preview_metric_preferences_include_all_static_metrics() -> None:
+    cvrp_order = sorted(
+        MetricVariant,
+        key=lambda metric: _home_preview_metric_rank("CVRP", metric),
+    )
+    vrptw_order = sorted(
+        MetricVariant,
+        key=lambda metric: _home_preview_metric_rank("VRPTW", metric),
+    )
+
+    assert cvrp_order == [MetricVariant.SHORTEST, MetricVariant.FASTEST, MetricVariant.EUCLIDEAN]
+    assert vrptw_order == [MetricVariant.EUCLIDEAN, MetricVariant.FASTEST, MetricVariant.SHORTEST]

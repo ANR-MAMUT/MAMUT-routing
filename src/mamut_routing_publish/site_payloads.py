@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from mamut_routing_lib.artifacts import (
     AnyBenchmarkInstance,
+    DiscoveredBenchmarkInstance,
     discover_benchmark_instances,
     load_bks,
 )
@@ -78,6 +79,16 @@ HOME_PREVIEW_SEEDS: tuple[tuple[str, str, str | None, str | None, str], ...] = (
     ("TDVRPTW", "Dabia2013", None, None, "Duration"),
     ("TDVRPTW", "Rifki2020", None, None, "Duration"),
 )
+
+# Keep the generated-family samples visually and semantically varied. Static
+# variants can exercise all three metrics; time-dependent variants use the
+# fastest road metric by construction.
+HOME_PREVIEW_METRIC_PREFERENCES: dict[str, tuple[MetricVariant, ...]] = {
+    "CVRP": (MetricVariant.SHORTEST, MetricVariant.FASTEST, MetricVariant.EUCLIDEAN),
+    "VRPTW": (MetricVariant.EUCLIDEAN, MetricVariant.FASTEST, MetricVariant.SHORTEST),
+    "TDVRP": (MetricVariant.FASTEST,),
+    "TDVRPTW": (MetricVariant.FASTEST,),
+}
 
 HOME_PREVIEW_BUNDLE_FILENAME = "home-preview-bundle.json"
 
@@ -720,6 +731,55 @@ def _normalize_benchmark_name(value: BenchmarkName | str) -> BenchmarkName:
         return value
     legacy_alias = _LEGACY_BENCHMARK_NAME_ALIASES.get(value)
     return legacy_alias if legacy_alias is not None else BenchmarkName(value)
+
+
+def _discovered_site_identity(item: DiscoveredBenchmarkInstance) -> tuple[object, ...]:
+    """Canonical identity used to collapse retired/current checkout aliases."""
+    return (
+        item.problem_type,
+        _normalize_benchmark_name(item.benchmark_name),
+        item.metric_variant,
+        item.place_slug,
+        item.num_customers,
+        item.instance_name,
+        item.subset,
+    )
+
+
+def _discovered_instance_preference(
+    item: DiscoveredBenchmarkInstance,
+    benchmarks_root: Path,
+) -> tuple[int, str]:
+    """Prefer a collection directory whose name matches its canonical family."""
+    try:
+        relative_parts = item.instance_path.resolve().relative_to(benchmarks_root.resolve()).parts
+    except ValueError:
+        relative_parts = ()
+    canonical_family = _normalize_benchmark_name(item.benchmark_name).value.casefold()
+    canonical_checkout = bool(relative_parts) and relative_parts[0].casefold() == canonical_family
+    return (0 if canonical_checkout else 1, item.instance_path.as_posix())
+
+
+def _deduplicate_discovered_instances(
+    items: list[DiscoveredBenchmarkInstance],
+    benchmarks_root: Path,
+) -> list[DiscoveredBenchmarkInstance]:
+    """Return one deterministic source for every logical catalog instance.
+
+    A family rename can leave the retired collection checkout next to its
+    replacement (for example ``Mamut2026`` and ``Poryos2026``). Both markers
+    intentionally resolve to the current family name, so recursive discovery
+    sees the same logical instances twice unless the publisher collapses them.
+    """
+    selected: dict[tuple[object, ...], DiscoveredBenchmarkInstance] = {}
+    for item in items:
+        identity = _discovered_site_identity(item)
+        current = selected.get(identity)
+        if current is None or _discovered_instance_preference(
+            item, benchmarks_root
+        ) < _discovered_instance_preference(current, benchmarks_root):
+            selected[identity] = item
+    return sorted(selected.values(), key=lambda item: item.instance_path.as_posix())
 
 
 def _route_segment(value: str) -> str:
@@ -2258,6 +2318,16 @@ def _match_seed_instance(
     return chosen, bks_entry
 
 
+def _home_preview_metric_rank(problem: str, metric_variant: MetricVariant | None) -> int:
+    preferences = HOME_PREVIEW_METRIC_PREFERENCES.get(problem, ())
+    if metric_variant is None:
+        return len(preferences)
+    try:
+        return preferences.index(metric_variant)
+    except ValueError:
+        return len(preferences)
+
+
 def _build_home_preview_bundle(
     resolved_items: list[_ResolvedSiteInstance],
     output_repo_dir: Path,
@@ -2295,7 +2365,7 @@ def _build_home_preview_bundle(
         candidates.sort(
             key=lambda pair: (
                 0 if pair[0].instance_summary.num_customers == 25 else 1,
-                0 if pair[0].locator.metric_variant == MetricVariant.FASTEST else 1,
+                _home_preview_metric_rank(problem, pair[0].locator.metric_variant),
                 pair[0].locator.place_slug or "",
                 pair[0].sampling_method or "",
                 pair[0].route_path,
@@ -3382,7 +3452,18 @@ def generate_site_payloads(
         source_branch=source_branch,
     )
 
-    discovered_instances = discover_benchmark_instances(benchmarks_root=benchmarks_root)
+    discovered_instances_with_aliases = discover_benchmark_instances(benchmarks_root=benchmarks_root)
+    discovered_instances = _deduplicate_discovered_instances(discovered_instances_with_aliases, benchmarks_root)
+    duplicate_count = len(discovered_instances_with_aliases) - len(discovered_instances)
+    if duplicate_count:
+        message = (
+            f"Ignored {duplicate_count} duplicate benchmark instance path(s) from overlapping "
+            "retired/current family checkouts."
+        )
+        if reporter is not None:
+            reporter.phase(message, instances=len(discovered_instances))
+        else:
+            warnings.warn(message, stacklevel=2)
     if reporter is not None:
         reporter.phase("discovered benchmark instances", instances=len(discovered_instances))
     resolved_items = _resolve_instances(
