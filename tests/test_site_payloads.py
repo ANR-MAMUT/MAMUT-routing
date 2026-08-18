@@ -468,6 +468,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert 'id="tabVisualize"' in workbench_html
     assert 'id="tabGenerate"' in workbench_html
     assert 'id="benchmarkCatalogSelect"' in workbench_html
+    assert 'id="benchmarkGeometryFilter"' in workbench_html
+    assert 'id="benchmarkSortDirection"' in workbench_html
     assert 'id="map"' in workbench_html
     # Nocturne reskin: Leaflet and fonts are self-hosted.
     assert "vendor/leaflet/leaflet.js" in workbench_html
@@ -476,6 +478,10 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "fonts.googleapis.com" not in workbench_html
     assert 'id="benchmarkInstanceSelect"' in workbench_html
     assert 'id="benchmarkObjectiveSelect"' in workbench_html
+    assert 'id="routeSelectorCard" hidden' in workbench_html
+    assert 'id="routeSelectorContainer"' in workbench_html
+    assert 'id="routeLegend"' not in workbench_html
+    assert 'id="routeSelectorDetails"' not in workbench_html
     assert "Historical benchmark families use straight-line rendering" in workbench_html
     assert "Road geometry will be rendered automatically" not in workbench_html
     assert 'id="pageTitle"' not in workbench_html
@@ -492,6 +498,17 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "Open Derive Mode" not in site_js
     assert "deriveBenchmarkBtn" not in workbench_js
     assert "Promise.allSettled" in workbench_js
+    assert "compareCatalogItems" in site_js
+    assert "catalogSortOptions" in site_js
+    assert 'publicCatalogSelect("geometry", "Geometry", items)' in site_js
+    assert "data-public-sort-direction" in site_js
+    assert 'direction: normalizeSortDirection(runtimeParams.get("dir"))' in site_js
+    assert "hiddenRoutes: new Set()" in workbench_js
+    assert "focusedRoute: null" in workbench_js
+    assert "data-route-visibility" in workbench_js
+    assert "visibleLimit" not in workbench_js
+    assert "selectedRoutes" not in workbench_js
+    assert "route-pager" not in workbench_js
     assert "Straight-line rendering is the default for historical benchmark families." in workbench_js
     assert "Published road geometry is unavailable for this Poryos2026 BKS." in workbench_js
     assert "Straight-line rendering matches the Euclidean metric for this Poryos2026 instance." in workbench_js

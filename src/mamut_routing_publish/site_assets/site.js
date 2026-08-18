@@ -1,5 +1,23 @@
 const runtimeParams = new URLSearchParams(window.location.search);
 
+const CATALOG_SORT_OPTIONS = Object.freeze([
+  { value: "catalog", label: "Catalog order" },
+  { value: "name", label: "Instance name" },
+  { value: "size", label: "Customers" },
+  { value: "routes", label: "Routes" },
+  { value: "cost", label: "BKS cost", requiresSingleObjective: true },
+]);
+
+function normalizeCatalogSort(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "city-size") return "catalog";
+  return CATALOG_SORT_OPTIONS.some((option) => option.value === normalized) ? normalized : "catalog";
+}
+
+function normalizeSortDirection(value) {
+  return String(value || "").toLowerCase() === "desc" ? "desc" : "asc";
+}
+
 const state = {
   routePath: document.body.dataset.routePath || "/",
   payloadSource: document.body.dataset.payloadSource || "",
@@ -23,8 +41,10 @@ const state = {
     size: runtimeParams.get("size") || "",
     method: runtimeParams.get("method") || "",
     scenario: runtimeParams.get("scenario") || "",
+    geometry: runtimeParams.get("geometry") || "",
     search: runtimeParams.get("q") || "",
-    sort: runtimeParams.get("sort") || "city-size",
+    sort: normalizeCatalogSort(runtimeParams.get("sort")),
+    direction: normalizeSortDirection(runtimeParams.get("dir")),
   },
   collectionFilters: {
     size_bucket: runtimeParams.get("size") || "",
@@ -1324,11 +1344,19 @@ function publicCatalogValue(item, key) {
     if (item.tw_set) return `TW: ${item.tw_set}`;
     if (item.traffic_model || item.traffic_intensity) return `Traffic: ${item.traffic_model || "?"} / ${item.traffic_intensity || "?"}`;
   }
+  if (key === "geometry") return catalogGeometryValue(item);
   return "";
 }
 
-const PUBLIC_CATALOG_FILTER_ORDER = ["problem", "family", "metric", "city", "size", "method", "scenario"];
+function catalogGeometryValue(item) {
+  return item?.viewer_render_mode === "cached_road" || item?.road_cache_status === "complete" ? "road" : "straight";
+}
+
+const PUBLIC_CATALOG_FILTER_ORDER = ["problem", "family", "metric", "city", "size", "method", "scenario", "geometry"];
 const PUBLIC_PROBLEM_ORDER = ["CVRP", "VRPTW", "TDVRPTW", "TDVRP"];
+const PUBLIC_CATALOG_OPTION_LABELS = {
+  geometry: { road: "Road geometry", straight: "Straight-line" },
+};
 
 function publicCatalogOptions(items, key) {
   const keyIndex = PUBLIC_CATALOG_FILTER_ORDER.indexOf(key);
@@ -1354,31 +1382,74 @@ function publicCatalogSelect(key, label, items) {
   }
   const options = publicCatalogOptions(items, key);
   if (!options.some((option) => option.value === state.catalogFilters[key])) state.catalogFilters[key] = "";
-  return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}"><option value="">All</option>${options.map(({ value, count }) => `<option value="${escapeHtml(value)}"${state.catalogFilters[key] === value ? " selected" : ""}>${escapeHtml(value)} (${count})</option>`).join("")}</select></label>`;
+  return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}"><option value="">All</option>${options.map(({ value, count }) => `<option value="${escapeHtml(value)}"${state.catalogFilters[key] === value ? " selected" : ""}>${escapeHtml(PUBLIC_CATALOG_OPTION_LABELS[key]?.[value] || value)} (${count})</option>`).join("")}</select></label>`;
 }
 
-function publicCatalogObjectiveNumber(item, field) {
+function catalogObjectiveNumber(item, field) {
   const values = (item.objective_availability || []).map((entry) => Number(entry?.[field])).filter(Number.isFinite);
-  return values.length > 0 ? Math.min(...values) : Number.POSITIVE_INFINITY;
+  return values.length > 0 ? Math.min(...values) : null;
 }
 
-function comparePublicCatalogItems(left, right) {
-  const sort = state.catalogFilters.sort;
-  if (sort === "size") return left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name);
-  if (sort === "metric") return publicCatalogValue(left, "metric").localeCompare(publicCatalogValue(right, "metric")) || left.num_customers - right.num_customers;
-  if (sort === "cost") return publicCatalogObjectiveNumber(left, "cost") - publicCatalogObjectiveNumber(right, "cost") || left.num_customers - right.num_customers;
-  if (sort === "routes") return publicCatalogObjectiveNumber(left, "num_routes") - publicCatalogObjectiveNumber(right, "num_routes") || left.num_customers - right.num_customers;
-  if (sort === "cache") return String(right.road_cache_status || "").localeCompare(String(left.road_cache_status || "")) || left.num_customers - right.num_customers;
-  if (sort === "name") return left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
-  return publicCatalogValue(left, "city").localeCompare(publicCatalogValue(right, "city")) || left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name);
+function catalogCostSortAvailable(items) {
+  const objectives = new Set(
+    items.flatMap((item) => (item.objective_availability || []).map((entry) => entry.objective_function).filter(Boolean)),
+  );
+  return objectives.size === 1;
+}
+
+function catalogSortOptions(items) {
+  const costAvailable = catalogCostSortAvailable(items);
+  return CATALOG_SORT_OPTIONS.map((option) => ({
+    ...option,
+    disabled: option.requiresSingleObjective === true && !costAvailable,
+    label: option.value === "cost" && !costAvailable ? "BKS cost (filter to one objective)" : option.label,
+  }));
+}
+
+function compareCatalogText(left, right) {
+  return String(left || "").localeCompare(String(right || ""), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function compareCatalogNumber(left, right, direction) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const leftPresent = left !== null && left !== undefined && Number.isFinite(leftNumber);
+  const rightPresent = right !== null && right !== undefined && Number.isFinite(rightNumber);
+  if (leftPresent !== rightPresent) return leftPresent ? -1 : 1;
+  if (!leftPresent) return 0;
+  return (leftNumber - rightNumber) * direction;
+}
+
+function compareCatalogOrder(left, right) {
+  const leftProblem = publicCatalogValue(left, "problem");
+  const rightProblem = publicCatalogValue(right, "problem");
+  const leftProblemIndex = PUBLIC_PROBLEM_ORDER.includes(leftProblem) ? PUBLIC_PROBLEM_ORDER.indexOf(leftProblem) : PUBLIC_PROBLEM_ORDER.length;
+  const rightProblemIndex = PUBLIC_PROBLEM_ORDER.includes(rightProblem) ? PUBLIC_PROBLEM_ORDER.indexOf(rightProblem) : PUBLIC_PROBLEM_ORDER.length;
+  return leftProblemIndex - rightProblemIndex
+    || compareCatalogText(leftProblem, rightProblem)
+    || compareCatalogText(publicCatalogValue(left, "family"), publicCatalogValue(right, "family"))
+    || compareCatalogText(publicCatalogValue(left, "city"), publicCatalogValue(right, "city"))
+    || compareCatalogNumber(left.num_customers, right.num_customers, 1)
+    || compareCatalogText(left.display_name, right.display_name);
+}
+
+function compareCatalogItems(left, right, sortValue = "catalog", directionValue = "asc") {
+  const sort = normalizeCatalogSort(sortValue);
+  const direction = normalizeSortDirection(directionValue) === "desc" ? -1 : 1;
+  if (sort === "name") return compareCatalogText(left.display_name, right.display_name) * direction || compareCatalogOrder(left, right);
+  if (sort === "size") return compareCatalogNumber(left.num_customers, right.num_customers, direction) || compareCatalogOrder(left, right);
+  if (sort === "cost") return compareCatalogNumber(catalogObjectiveNumber(left, "cost"), catalogObjectiveNumber(right, "cost"), direction) || compareCatalogOrder(left, right);
+  if (sort === "routes") return compareCatalogNumber(catalogObjectiveNumber(left, "num_routes"), catalogObjectiveNumber(right, "num_routes"), direction) || compareCatalogOrder(left, right);
+  return compareCatalogOrder(left, right) * direction;
 }
 
 function syncPublicCatalogUrl() {
   const params = new URLSearchParams(window.location.search);
-  const queryKeys = { problem: "problem", family: "family", metric: "metric", city: "city", size: "size", method: "method", scenario: "scenario", search: "q", sort: "sort" };
+  const queryKeys = { problem: "problem", family: "family", metric: "metric", city: "city", size: "size", method: "method", scenario: "scenario", geometry: "geometry", search: "q", sort: "sort", direction: "dir" };
   Object.entries(queryKeys).forEach(([stateKey, queryKey]) => {
     const value = state.catalogFilters[stateKey];
-    if (value && !(stateKey === "sort" && value === "city-size")) params.set(queryKey, value);
+    const isDefault = (stateKey === "sort" && value === "catalog") || (stateKey === "direction" && value === "asc");
+    if (value && !isDefault) params.set(queryKey, value);
     else params.delete(queryKey);
   });
   const query = params.toString();
@@ -1391,16 +1462,45 @@ function renderPublicCatalogExplorer(items) {
     if (!PUBLIC_CATALOG_FILTER_ORDER.every((key) => !state.catalogFilters[key] || publicCatalogValue(item, key) === state.catalogFilters[key])) return false;
     if (search && !`${item.display_name || ""} ${item.base_instance || ""} ${item.instance_id || ""}`.toLowerCase().includes(search)) return false;
     return true;
-  }).sort(comparePublicCatalogItems);
+  });
+  if (state.catalogFilters.sort === "cost" && !catalogCostSortAvailable(filtered)) {
+    state.catalogFilters.sort = "catalog";
+    syncPublicCatalogUrl();
+  }
+  filtered.sort((left, right) => compareCatalogItems(left, right, state.catalogFilters.sort, state.catalogFilters.direction));
   const shown = filtered.slice(0, 100);
-  const controls = `<section class="card catalog-filter-card"><h2>Filter instances</h2><div class="catalog-filter-grid">${publicCatalogSelect("problem", "Problem", items)}${publicCatalogSelect("family", "Family", items)}${publicCatalogSelect("metric", "Metric", items)}${publicCatalogSelect("city", "City", items)}${publicCatalogSelect("size", "Size", items)}${publicCatalogSelect("method", "Method", items)}${publicCatalogSelect("scenario", "TW / traffic", items)}<label class="field"><span>Search</span><input data-public-search type="search" value="${escapeHtml(state.catalogFilters.search)}" placeholder="Instance or base name" /></label><label class="field"><span>Sort</span><select data-public-sort><option value="city-size">City, size</option><option value="size">Numerical size</option><option value="metric">Metric</option><option value="cost">BKS cost</option><option value="routes">Routes</option><option value="cache">Geometry cache</option><option value="name">Name</option></select></label></div><p class="meta-line">${filtered.length} matching instances${filtered.length > shown.length ? ` · showing the first ${shown.length}` : ""}</p></section>`;
+  const sortOptions = catalogSortOptions(filtered)
+    .map((option) => `<option value="${option.value}"${option.value === state.catalogFilters.sort ? " selected" : ""}${option.disabled ? " disabled" : ""}>${escapeHtml(option.label)}</option>`)
+    .join("");
+  const descending = state.catalogFilters.direction === "desc";
+  const directionLabel = descending ? "Descending" : "Ascending";
+  const controls = `<section class="card catalog-filter-card">
+    <h2>Filter instances</h2>
+    <div class="catalog-filter-grid">
+      ${publicCatalogSelect("problem", "Problem", items)}
+      ${publicCatalogSelect("family", "Family", items)}
+      ${publicCatalogSelect("metric", "Metric", items)}
+      ${publicCatalogSelect("city", "City", items)}
+      ${publicCatalogSelect("size", "Size", items)}
+      ${publicCatalogSelect("method", "Method", items)}
+      ${publicCatalogSelect("scenario", "TW / traffic", items)}
+      ${publicCatalogSelect("geometry", "Geometry", items)}
+      <label class="field"><span>Search</span><input data-public-search type="search" value="${escapeHtml(state.catalogFilters.search)}" placeholder="Instance or base name" /></label>
+    </div>
+    <div class="catalog-filter-footer">
+      <p class="meta-line">${filtered.length} matching instances${filtered.length > shown.length ? ` · showing the first ${shown.length}` : ""}</p>
+      <div class="catalog-sort-controls">
+        <label class="field catalog-sort-field"><span>Sort by</span><select data-public-sort>${sortOptions}</select></label>
+        <button type="button" class="sort-direction-button" data-public-sort-direction aria-label="Sort direction: ${directionLabel.toLowerCase()}. Activate for ${descending ? "ascending" : "descending"}." title="${directionLabel}"><span aria-hidden="true">${descending ? "↓" : "↑"}</span></button>
+      </div>
+    </div>
+  </section>`;
   const problemNames = items.length
     ? Array.from(new Set(items.map((item) => publicCatalogValue(item, "problem"))))
       .sort((left, right) => PUBLIC_PROBLEM_ORDER.indexOf(left) - PUBLIC_PROBLEM_ORDER.indexOf(right))
     : [];
   const problemCards = problemNames.map((problem) => ({ problem_type: problem, route_path: `/benchmarks/${problem.toLowerCase()}/`, family_count: new Set(items.filter((item) => publicCatalogValue(item, "problem") === problem).map((item) => publicCatalogValue(item, "family"))).size, instance_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).length, bks_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).reduce((total, item) => total + item.bks_count, 0), supported_objective_functions: [] }));
   state.stage.innerHTML = `${renderProblemCards(problemCards)}${controls}<section class="catalog-results">${renderInstanceRows(shown)}</section>`;
-  state.stage.querySelector("[data-public-sort]").value = state.catalogFilters.sort;
   state.stage.querySelectorAll("[data-public-filter]").forEach((select) => select.addEventListener("change", () => {
     const key = select.dataset.publicFilter;
     state.catalogFilters[key] = select.value;
@@ -1411,6 +1511,12 @@ function renderPublicCatalogExplorer(items) {
   }));
   state.stage.querySelector("[data-public-search]").addEventListener("change", (event) => { state.catalogFilters.search = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
   state.stage.querySelector("[data-public-sort]").addEventListener("change", (event) => { state.catalogFilters.sort = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
+  state.stage.querySelector("[data-public-sort-direction]").addEventListener("click", () => {
+    state.catalogFilters.direction = state.catalogFilters.direction === "asc" ? "desc" : "asc";
+    syncPublicCatalogUrl();
+    renderPublicCatalogExplorer(items);
+  });
+  syncPublicCatalogUrl();
   setStatus(`Loaded ${filtered.length} matching instances`);
 }
 
@@ -3615,12 +3721,18 @@ async function init() {
 
 export {
   artifactHref,
+  catalogCostSortAvailable,
+  catalogGeometryValue,
+  catalogSortOptions,
+  compareCatalogItems,
   escapeHtml,
   fetchJson,
   fetchGeometryMetaMemo,
   fetchRouteGeometryMetaMemo,
   fetchWorkbenchPayloadForRoute,
   normalizeRoute,
+  normalizeCatalogSort,
+  normalizeSortDirection,
   parseUploadedInstanceText,
   parseUploadedMetaText,
   projectEnuInstanceCoordinates,

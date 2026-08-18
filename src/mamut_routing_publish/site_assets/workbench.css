@@ -332,6 +332,20 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   grid-column: 1 / -1;
 }
 
+.wb-sort-controls {
+  width: 100%;
+}
+
+.wb-sort-controls .catalog-sort-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-sort-controls .sort-direction-button {
+  min-height: 30px;
+  width: 34px;
+}
+
 .wb-panel .field input,
 .wb-panel .field select {
   min-height: 30px;
@@ -368,54 +382,51 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   overflow-wrap: anywhere;
 }
 
-.route-legend-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 300px;
-  overflow: auto;
-  font-size: 12px;
-}
-
-.route-legend-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px;
-  border-radius: 6px;
-}
-
-.route-legend-list .swatch {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex: none;
-}
-
-/* Route display options (kept controls, Nocturne dress). */
-#routeSelectorCard details > summary {
-  cursor: pointer;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--mut);
-  user-select: none;
-}
-
 .route-selector {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 8px;
 }
 
 .route-view-summary {
   font-size: 11px;
   color: var(--mut);
   margin: 0;
+}
+
+.route-view-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-view-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.route-view-actions button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--mut);
+  box-shadow: inset 0 0 0 1px var(--div);
+}
+
+.route-view-actions button:hover,
+.route-view-actions button:focus-visible {
+  background: var(--acc-t);
+  color: var(--acc);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.route-search-field {
+  width: 100%;
 }
 
 .route-view-grid {
@@ -433,6 +444,38 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   grid-column: 1 / -1;
 }
 
+.route-opacity-field {
+  grid-column: 1 / -1;
+}
+
+.route-options {
+  border-top: 1px solid var(--div);
+  padding-top: 7px;
+}
+
+.route-options > summary {
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mut);
+  user-select: none;
+}
+
+.route-options[open] > summary {
+  margin-bottom: 8px;
+}
+
+.route-filter-warning {
+  color: var(--warn, #d97706);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.route-filter-grid input[aria-invalid="true"] {
+  border-color: var(--warn, #d97706);
+}
+
 /* Depot star marker: a divIcon wrapping an inline SVG, so it must not inherit
    any box styling from Leaflet's marker defaults. */
 .depot-star-marker {
@@ -441,64 +484,106 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   line-height: 0;
 }
 
-.btn-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.route-view-actions button,
-.route-pager button {
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--mut);
-  box-shadow: inset 0 0 0 1px var(--div);
-}
-
-.route-view-actions button:hover,
-.route-pager button:hover:not(:disabled) {
-  background: var(--acc-t);
-  color: var(--acc);
-  box-shadow: inset 0 0 0 1px var(--edge);
-}
-
-.route-pager button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .route-page-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 220px;
+  max-height: min(38vh, 360px);
   overflow: auto;
+  padding-right: 2px;
 }
 
-.route-checkbox-label {
-  display: flex;
+.route-list-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 3px;
   font-size: 12px;
-  padding: 3px 4px;
   border-radius: 6px;
-  cursor: pointer;
 }
 
-.route-checkbox-label:hover {
+.route-list-row:hover,
+.route-list-row:focus-within,
+.route-list-row.route-focused {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
 }
 
-.route-pager {
-  display: flex;
+.route-list-row.route-focused {
+  box-shadow: inset 2px 0 0 var(--acc);
+}
+
+.route-list-row.route-hidden .route-focus-button {
+  opacity: 0.42;
+}
+
+.route-eye-button,
+.route-focus-button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: transparent;
+}
+
+.route-eye-button {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  padding: 5px;
+  color: var(--mut);
+  border-radius: 5px;
+}
+
+.route-eye-button:hover,
+.route-eye-button:focus-visible {
+  color: var(--acc);
+  background: var(--acc-t);
+}
+
+.route-eye-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route-eye-button[aria-pressed="false"] .eye-slash {
+  stroke-width: 2.4;
+}
+
+.route-focus-button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 9px auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  width: 100%;
+  padding: 5px 4px;
+  text-align: left;
+  border-radius: 5px;
+}
+
+.route-focus-button .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.route-list-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.route-list-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
   color: var(--mut);
   font-variant-numeric: tabular-nums;
 }
