@@ -277,8 +277,12 @@ def _render_workbench_shell_html(
                     <label class="field"><span>Size</span><select id="benchmarkSizeFilter"><option value="">All sizes</option></select></label>
                     <label class="field"><span>Method</span><select id="benchmarkMethodFilter"><option value="">All methods</option></select></label>
                     <label class="field"><span>TW / traffic</span><select id="benchmarkScenarioFilter"><option value="">All scenarios</option></select></label>
+                    <label class="field"><span>Geometry</span><select id="benchmarkGeometryFilter"><option value="">All geometry</option></select></label>
                     <label class="field"><span>Search</span><input id="benchmarkSearchFilter" type="search" placeholder="Instance or base name" /></label>
-                    <label class="field"><span>Sort</span><select id="benchmarkSortSelect"><option value="city-size">City, size</option><option value="size">Numerical size</option><option value="metric">Metric</option><option value="cost">BKS cost</option><option value="routes">Routes</option><option value="cache">Geometry cache</option><option value="name">Name</option></select></label>
+                    </div>
+                    <div class="catalog-sort-controls wb-sort-controls">
+                        <label class="field catalog-sort-field"><span>Sort by</span><select id="benchmarkSortSelect"><option value="catalog">Catalog order</option><option value="name">Instance name</option><option value="size">Customers</option><option value="routes">Routes</option><option value="cost" disabled>BKS cost (filter to one objective)</option></select></label>
+                        <button id="benchmarkSortDirection" class="sort-direction-button" type="button" aria-label="Sort direction: ascending. Activate for descending." title="Ascending"><span aria-hidden="true">↑</span></button>
                     </div>
                     <label class="field">
                         <span>Published variant</span>
@@ -346,16 +350,9 @@ def _render_workbench_shell_html(
             </div>
             <dl id="stats" class="wb-stats"></dl>
 
-            <section class="wb-section" id="routeSelectorCard" style="display:none;">
-                <details id="routeSelectorDetails" open>
-                    <summary>Route display options</summary>
-                    <div id="routeSelectorContainer" class="route-selector"></div>
-                </details>
-            </section>
-
-            <section class="wb-section">
+            <section class="wb-section" id="routeSelectorCard" hidden>
                 <div class="wb-kicker">Routes</div>
-                <ul id="routeLegend" class="route-legend-list"></ul>
+                <div id="routeSelectorContainer" class="route-selector"></div>
             </section>
         </aside>
 

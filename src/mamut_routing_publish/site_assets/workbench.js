@@ -130,12 +130,18 @@ delete window.__PAPER7_SITE_NO_BOOTSTRAP__;
 
 const {
   artifactHref,
+  catalogCostSortAvailable,
+  catalogGeometryValue,
+  catalogSortOptions,
+  compareCatalogItems,
   escapeHtml,
   fetchGeometryMetaMemo,
   fetchJson,
   fetchRouteGeometryMetaMemo,
   fetchWorkbenchPayloadForRoute,
+  normalizeCatalogSort,
   normalizeRoute,
+  normalizeSortDirection,
   parseUploadedInstanceText,
   parseUploadedMetaText,
   parseUploadedSolutionText,
@@ -161,8 +167,10 @@ const benchmarkCityFilter = document.getElementById("benchmarkCityFilter");
 const benchmarkSizeFilter = document.getElementById("benchmarkSizeFilter");
 const benchmarkMethodFilter = document.getElementById("benchmarkMethodFilter");
 const benchmarkScenarioFilter = document.getElementById("benchmarkScenarioFilter");
+const benchmarkGeometryFilter = document.getElementById("benchmarkGeometryFilter");
 const benchmarkSearchFilter = document.getElementById("benchmarkSearchFilter");
 const benchmarkSortSelect = document.getElementById("benchmarkSortSelect");
+const benchmarkSortDirection = document.getElementById("benchmarkSortDirection");
 const benchmarkStatus = document.getElementById("benchmarkStatus");
 const benchmarkRenderStatus = document.getElementById("benchmarkRenderStatus");
 const objectiveField = document.getElementById("objectiveField");
@@ -174,7 +182,6 @@ const solInput = document.getElementById("solInput");
 const metaInput = document.getElementById("metaInput");
 const clearBtn = document.getElementById("clearBtn");
 const statsEl = document.getElementById("stats");
-const routeLegendEl = document.getElementById("routeLegend");
 const toastEl = document.getElementById("toast");
 const routeSelectorCard = document.getElementById("routeSelectorCard");
 const routeSelectorContainer = document.getElementById("routeSelectorContainer");
@@ -229,10 +236,10 @@ const state = {
   sourceKind: initialWorkbenchMode === "upload" ? "upload" : "benchmark",
   instanceRoute: runtimeParams.get("instance"),
   objectiveFunction: runtimeParams.get("objective"),
-  selectedRoutes: new Set(),
+  hiddenRoutes: new Set(),
+  focusedRoute: null,
   routeView: {
-    visibleLimit: 10,
-    fadedOpacity: 0.8,
+    fadedOpacity: 0.2,
     arrowsEnabled: true,
     depotStar: false,
     depotLegMode: "full",
@@ -241,8 +248,8 @@ const state = {
     maxStops: null,
     minLoad: null,
     maxLoad: null,
-    page: 1,
-    pageSize: 40,
+    filtersOpen: false,
+    appearanceOpen: false,
   },
   lastApiError: null,
   benchmark: {
@@ -269,8 +276,10 @@ const state = {
       size: runtimeParams.get("size") || "",
       method: runtimeParams.get("method") || "",
       scenario: runtimeParams.get("scenario") || "",
+      geometry: runtimeParams.get("geometry") || "",
       search: runtimeParams.get("q") || "",
-      sort: runtimeParams.get("sort") || "city-size",
+      sort: normalizeCatalogSort(runtimeParams.get("sort")),
+      direction: normalizeSortDirection(runtimeParams.get("dir")),
     },
   },
   upload: {
@@ -414,31 +423,18 @@ function benchmarkScenarioValue(item) {
   return "";
 }
 
-function populateBenchmarkFilter(select, values, placeholder, currentValue) {
+function populateBenchmarkFilter(select, values, placeholder, currentValue, labels = {}) {
   const counts = new Map();
   values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
   const options = Array.from(counts.keys()).sort((left, right) => String(left).localeCompare(String(right), undefined, { numeric: true }));
-  select.innerHTML = [`<option value="">${escapeHtml(placeholder)}</option>`, ...options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)} (${counts.get(value)})</option>`)].join("");
+  select.innerHTML = [`<option value="">${escapeHtml(placeholder)}</option>`, ...options.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labels[value] || value)} (${counts.get(value)})</option>`)].join("");
   select.value = options.includes(currentValue) ? currentValue : "";
   return select.value;
 }
 
-function benchmarkObjectiveNumber(item, field) {
-  const values = (item.objective_availability || []).map((entry) => Number(entry?.[field])).filter(Number.isFinite);
-  return values.length > 0 ? Math.min(...values) : Number.POSITIVE_INFINITY;
-}
-
 function compareFilteredBenchmarkItems(left, right) {
   const filters = state.benchmarkCatalog.filters;
-  const leftLocator = benchmarkCatalogLocator(left);
-  const rightLocator = benchmarkCatalogLocator(right);
-  if (filters.sort === "size") return benchmarkCatalogCustomerCount(left) - benchmarkCatalogCustomerCount(right) || compareBenchmarkCatalogInstances(left, right);
-  if (filters.sort === "metric") return String(leftLocator.metric_variant || "").localeCompare(String(rightLocator.metric_variant || "")) || compareBenchmarkCatalogInstances(left, right);
-  if (filters.sort === "cost") return benchmarkObjectiveNumber(left, "cost") - benchmarkObjectiveNumber(right, "cost") || compareBenchmarkCatalogInstances(left, right);
-  if (filters.sort === "routes") return benchmarkObjectiveNumber(left, "num_routes") - benchmarkObjectiveNumber(right, "num_routes") || compareBenchmarkCatalogInstances(left, right);
-  if (filters.sort === "cache") return String(right.road_cache_status || "").localeCompare(String(left.road_cache_status || "")) || compareBenchmarkCatalogInstances(left, right);
-  if (filters.sort === "name") return String(left.display_name || "").localeCompare(String(right.display_name || ""), undefined, { numeric: true });
-  return String(leftLocator.place_slug || "").localeCompare(String(rightLocator.place_slug || "")) || compareBenchmarkCatalogInstances(left, right);
+  return compareCatalogItems(left, right, filters.sort, filters.direction) || compareBenchmarkCatalogInstances(left, right);
 }
 
 function renderBenchmarkCatalogOptions() {
@@ -500,8 +496,15 @@ function renderBenchmarkCatalogOptions() {
   filters.method = populateBenchmarkFilter(benchmarkMethodFilter, sizeItems.map((item) => item.sampling_method), "All methods", filters.method);
   const methodItems = sizeItems.filter((item) => !filters.method || item.sampling_method === filters.method);
   filters.scenario = populateBenchmarkFilter(benchmarkScenarioFilter, methodItems.map(benchmarkScenarioValue), "All scenarios", filters.scenario);
+  const scenarioItems = methodItems.filter((item) => !filters.scenario || benchmarkScenarioValue(item) === filters.scenario);
+  filters.geometry = populateBenchmarkFilter(
+    benchmarkGeometryFilter,
+    scenarioItems.map(catalogGeometryValue),
+    "All geometry",
+    filters.geometry,
+    { road: "Road geometry", straight: "Straight-line" },
+  );
   benchmarkSearchFilter.value = filters.search;
-  benchmarkSortSelect.value = filters.sort;
   const search = filters.search.trim().toLowerCase();
   const selectedGroupItems = rawGroupItems.filter((item) => {
     const locator = benchmarkCatalogLocator(item);
@@ -510,9 +513,18 @@ function renderBenchmarkCatalogOptions() {
     if (filters.size && String(benchmarkCatalogCustomerCount(item)) !== filters.size) return false;
     if (filters.method && item.sampling_method !== filters.method) return false;
     if (filters.scenario && benchmarkScenarioValue(item) !== filters.scenario) return false;
+    if (filters.geometry && catalogGeometryValue(item) !== filters.geometry) return false;
     if (search && !`${item.display_name || ""} ${item.base_instance || ""} ${locator.instance_identifier || ""}`.toLowerCase().includes(search)) return false;
     return true;
   });
+  if (filters.sort === "cost" && !catalogCostSortAvailable(selectedGroupItems)) filters.sort = "catalog";
+  benchmarkSortSelect.innerHTML = catalogSortOptions(selectedGroupItems)
+    .map((option) => `<option value="${option.value}"${option.value === filters.sort ? " selected" : ""}${option.disabled ? " disabled" : ""}>${escapeHtml(option.label)}</option>`)
+    .join("");
+  const descending = filters.direction === "desc";
+  benchmarkSortDirection.querySelector("span").textContent = descending ? "↓" : "↑";
+  benchmarkSortDirection.title = descending ? "Descending" : "Ascending";
+  benchmarkSortDirection.setAttribute("aria-label", `Sort direction: ${descending ? "descending" : "ascending"}. Activate for ${descending ? "ascending" : "descending"}.`);
   Array.from(buildBenchmarkCatalogInstanceGroups(selectedGroupItems).values())
     .sort((left, right) => compareFilteredBenchmarkItems(left.head, right.head))
     .forEach((group) => {
@@ -590,16 +602,9 @@ function routeLoad(route, instanceData) {
 
 function resetRouteViewDefaults(routes) {
   const routeCount = Array.isArray(routes) ? routes.length : 0;
-  state.selectedRoutes.clear();
-  if (routeCount <= 10) {
-    for (let index = 0; index < routeCount; index += 1) {
-      state.selectedRoutes.add(index);
-    }
-  } else if (routeCount > 0) {
-    state.selectedRoutes.add(0);
-  }
-  state.routeView.visibleLimit = routeCount >= 100 ? 99 : routeCount;
-  state.routeView.fadedOpacity = 0.8;
+  state.hiddenRoutes.clear();
+  state.focusedRoute = null;
+  state.routeView.fadedOpacity = 0.2;
   state.routeView.arrowsEnabled = routeCount <= 10;
   // A solution overlay defaults to the star depot; a bare instance keeps the dot.
   state.routeView.depotStar = routeCount > 0;
@@ -609,7 +614,8 @@ function resetRouteViewDefaults(routes) {
   state.routeView.maxStops = null;
   state.routeView.minLoad = null;
   state.routeView.maxLoad = null;
-  state.routeView.page = 1;
+  state.routeView.filtersOpen = false;
+  state.routeView.appearanceOpen = false;
 }
 
 function routeMatchesView(route, routeIndex, instanceData) {
@@ -634,11 +640,7 @@ function filteredRouteIndices(routes, instanceData) {
 
 function visibleRouteIndices(routes, instanceData) {
   const filtered = filteredRouteIndices(routes, instanceData);
-  const visible = new Set(filtered.slice(0, Math.max(0, state.routeView.visibleLimit)));
-  state.selectedRoutes.forEach((index) => {
-    if (filtered.includes(index)) visible.add(index);
-  });
-  return visible;
+  return new Set(filtered.filter((index) => !state.hiddenRoutes.has(index)));
 }
 
 function clearMapLayers() {
@@ -671,148 +673,158 @@ function updateVisualModePanels() {
   uploadVisualPanel.hidden = benchmarkActive;
 }
 
-function updateRouteCheckboxStates() {
-  const routeCheckboxes = routeSelectorContainer.querySelectorAll("input.route-checkbox");
-  routeCheckboxes.forEach((checkbox) => {
-    const index = Number.parseInt(checkbox.dataset.routeIndex || "", 10);
-    checkbox.checked = state.selectedRoutes.has(index);
-  });
+let routeFilterRenderTimer = null;
+
+function routeRangeInvalid(minKey, maxKey) {
+  const min = state.routeView[minKey];
+  const max = state.routeView[maxKey];
+  return min !== null && max !== null && min > max;
+}
+
+function scheduleRouteViewRender(focusSelector) {
+  window.clearTimeout(routeFilterRenderTimer);
+  const active = routeSelectorContainer.querySelector(focusSelector);
+  const selectionStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
+  routeFilterRenderTimer = window.setTimeout(() => {
+    renderVisualState({ fitMap: false });
+    window.requestAnimationFrame(() => {
+      const next = routeSelectorContainer.querySelector(focusSelector);
+      next?.focus({ preventScroll: true });
+      if (selectionStart !== null && typeof next?.setSelectionRange === "function") {
+        next.setSelectionRange(selectionStart, selectionStart);
+      }
+    });
+  }, 120);
+}
+
+function routeVisibilityIcon(hidden) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/>${hidden ? '<path class="eye-slash" d="M4 4l16 16"/>' : ""}</svg>`;
 }
 
 function buildRouteSelector(routes, instanceData) {
-  if (!Array.isArray(routes) || routes.length < 2) {
-    routeSelectorCard.style.display = "none";
+  if (!Array.isArray(routes) || routes.length === 0) {
+    routeSelectorCard.hidden = true;
     routeSelectorContainer.innerHTML = "";
     return;
   }
 
-  routeSelectorCard.style.display = "block";
-  routeSelectorContainer.innerHTML = "";
+  routeSelectorCard.hidden = false;
   const filtered = filteredRouteIndices(routes, instanceData);
   const visible = visibleRouteIndices(routes, instanceData);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / state.routeView.pageSize));
-  state.routeView.page = Math.min(Math.max(1, state.routeView.page), totalPages);
-  const pageStart = (state.routeView.page - 1) * state.routeView.pageSize;
-  const pageIndices = filtered.slice(pageStart, pageStart + state.routeView.pageSize);
+  if (state.focusedRoute !== null && !visible.has(state.focusedRoute)) state.focusedRoute = null;
+  const stopsInvalid = routeRangeInvalid("minStops", "maxStops");
+  const loadInvalid = routeRangeInvalid("minLoad", "maxLoad");
+  const filterError = stopsInvalid || loadInvalid;
+  const routeRows = filtered.map((index) => {
+    const route = routes[index];
+    const hidden = state.hiddenRoutes.has(index);
+    const focused = state.focusedRoute === index;
+    const routeNumber = index + 1;
+    return `<div class="route-list-row${hidden ? " route-hidden" : ""}${focused ? " route-focused" : ""}" role="listitem">
+      <button type="button" class="route-eye-button" data-route-visibility="${index}" aria-pressed="${hidden ? "false" : "true"}" aria-label="${hidden ? "Show" : "Hide"} route ${routeNumber}" title="${hidden ? "Show" : "Hide"} route ${routeNumber}">${routeVisibilityIcon(hidden)}</button>
+      <button type="button" class="route-focus-button" data-route-focus="${index}" aria-pressed="${focused ? "true" : "false"}" aria-label="${focused ? "Clear focus from" : "Focus"} route ${routeNumber}">
+        <span class="swatch" style="background:${routeColor(index)}"></span>
+        <span class="route-list-name">Route #${routeNumber}</span>
+        <span class="route-list-meta">${route.length} stops · load ${routeLoad(route, instanceData)}</span>
+      </button>
+    </div>`;
+  }).join("");
 
   routeSelectorContainer.innerHTML = `
-    <p class="route-view-summary">${routes.length} total · ${filtered.length} filtered · ${visible.size} visible · ${state.selectedRoutes.size} full opacity · ${Math.max(0, routes.length - visible.size)} hidden</p>
-    <div class="route-view-grid">
-      <label class="field"><span>Search route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
-      <label class="field"><span>Visible limit</span><input class="route-view-limit" type="number" min="0" max="${routes.length}" value="${state.routeView.visibleLimit}" /></label>
-      <label class="field"><span>Faded opacity</span><input class="route-view-opacity" type="range" min="0.03" max="0.8" step="0.01" value="${state.routeView.fadedOpacity}" /></label>
-      <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="absent">Absent</option></select></label>
-      <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
-      <label class="route-view-toggle"><input class="route-view-depot-star" type="checkbox"${state.routeView.depotStar ? " checked" : ""} /> Depot as star</label>
+    <div class="route-view-header">
+      <p class="route-view-summary" aria-live="polite">${visible.size} visible · ${filtered.length} matching · ${routes.length} total</p>
+      <div class="route-view-actions">
+        <button type="button" data-route-action="show">Show all</button>
+        <button type="button" data-route-action="hide">Hide all</button>
+        <button type="button" data-route-action="reset">Reset routes</button>
+      </div>
     </div>
-    <div class="route-view-grid route-filter-grid">
-      <label class="field"><span>Min stops</span><input data-route-filter="minStops" type="number" min="0" value="${state.routeView.minStops ?? ""}" /></label>
-      <label class="field"><span>Max stops</span><input data-route-filter="maxStops" type="number" min="0" value="${state.routeView.maxStops ?? ""}" /></label>
-      <label class="field"><span>Min load</span><input data-route-filter="minLoad" type="number" min="0" value="${state.routeView.minLoad ?? ""}" /></label>
-      <label class="field"><span>Max load</span><input data-route-filter="maxLoad" type="number" min="0" value="${state.routeView.maxLoad ?? ""}" /></label>
-    </div>
-    <div class="btn-row route-view-actions">
-      <button type="button" data-route-action="all">Show all</button>
-      <button type="button" data-route-action="filtered">Show filtered</button>
-      <button type="button" data-route-action="selected">Show selected</button>
-      <button type="button" data-route-action="none">Show none</button>
-      <button type="button" data-route-action="full-filtered">Full opacity: filtered</button>
-      <button type="button" data-route-action="fade-filtered">Fade: filtered</button>
-    </div>
-    <p class="meta-line">Checked routes use full opacity. Unchecked visible routes use the faded opacity.</p>
-  `;
-  routeSelectorContainer.querySelector(".route-view-depot").value = state.routeView.depotLegMode;
+    <label class="field route-search-field"><span>Find route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
+    <div class="route-page-list" role="list">${routeRows || '<div class="empty-state">No routes match these filters.</div>'}</div>
+    <details class="route-options" data-route-disclosure="filters"${state.routeView.filtersOpen ? " open" : ""}>
+      <summary>Filters${filterError ? ' <span class="route-filter-warning">Check ranges</span>' : ""}</summary>
+      <div class="route-view-grid route-filter-grid">
+        <label class="field"><span>Min stops</span><input data-route-filter="minStops" type="number" min="0" value="${state.routeView.minStops ?? ""}"${stopsInvalid ? ' aria-invalid="true"' : ""} /></label>
+        <label class="field"><span>Max stops</span><input data-route-filter="maxStops" type="number" min="0" value="${state.routeView.maxStops ?? ""}"${stopsInvalid ? ' aria-invalid="true"' : ""} /></label>
+        <label class="field"><span>Min load</span><input data-route-filter="minLoad" type="number" min="0" value="${state.routeView.minLoad ?? ""}"${loadInvalid ? ' aria-invalid="true"' : ""} /></label>
+        <label class="field"><span>Max load</span><input data-route-filter="maxLoad" type="number" min="0" value="${state.routeView.maxLoad ?? ""}"${loadInvalid ? ' aria-invalid="true"' : ""} /></label>
+      </div>
+    </details>
+    <details class="route-options" data-route-disclosure="appearance"${state.routeView.appearanceOpen ? " open" : ""}>
+      <summary>Appearance</summary>
+      <div class="route-view-grid">
+        <label class="field route-opacity-field"><span>Other routes${state.focusedRoute === null ? " (focus a route)" : ""}: <output class="route-view-opacity-value">${Math.round(state.routeView.fadedOpacity * 100)}%</output></span><input class="route-view-opacity" type="range" min="0.05" max="0.8" step="0.05" value="${state.routeView.fadedOpacity}"${state.focusedRoute === null ? " disabled" : ""} /></label>
+        <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="hidden">Hidden</option></select></label>
+        <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
+        <label class="route-view-toggle"><input class="route-view-depot-star" type="checkbox"${state.routeView.depotStar ? " checked" : ""} /> Depot as star</label>
+      </div>
+    </details>`;
 
-  const rerender = () => renderVisualState({ fitMap: false });
-  routeSelectorContainer.querySelector(".route-view-search").addEventListener("change", (event) => {
+  routeSelectorContainer.querySelector(".route-view-depot").value = state.routeView.depotLegMode;
+  routeSelectorContainer.querySelector(".route-view-search").addEventListener("input", (event) => {
     state.routeView.search = event.target.value;
-    state.routeView.page = 1;
-    rerender();
-  });
-  routeSelectorContainer.querySelector(".route-view-limit").addEventListener("change", (event) => {
-    state.routeView.visibleLimit = Math.max(0, Math.min(routes.length, Number(event.target.value) || 0));
-    rerender();
-  });
-  routeSelectorContainer.querySelector(".route-view-opacity").addEventListener("input", (event) => {
-    state.routeView.fadedOpacity = Number(event.target.value);
-    rerender();
-  });
-  routeSelectorContainer.querySelector(".route-view-depot").addEventListener("change", (event) => {
-    state.routeView.depotLegMode = event.target.value;
-    rerender();
-  });
-  routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
-    state.routeView.arrowsEnabled = event.target.checked;
-    rerender();
-  });
-  routeSelectorContainer.querySelector(".route-view-depot-star").addEventListener("change", (event) => {
-    state.routeView.depotStar = event.target.checked;
-    rerender();
+    scheduleRouteViewRender(".route-view-search");
   });
   routeSelectorContainer.querySelectorAll("[data-route-filter]").forEach((input) => {
-    input.addEventListener("change", () => {
+    input.addEventListener("input", () => {
       const raw = input.value.trim();
-      state.routeView[input.dataset.routeFilter] = raw === "" ? null : Number(raw);
-      state.routeView.page = 1;
-      rerender();
+      state.routeView[input.dataset.routeFilter] = raw === "" ? null : Math.max(0, Number(raw));
+      scheduleRouteViewRender(`[data-route-filter="${input.dataset.routeFilter}"]`);
+    });
+  });
+  routeSelectorContainer.querySelectorAll("[data-route-disclosure]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      state.routeView[details.dataset.routeDisclosure === "filters" ? "filtersOpen" : "appearanceOpen"] = details.open;
     });
   });
   routeSelectorContainer.querySelectorAll("[data-route-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      const action = button.dataset.routeAction;
-      if (action === "all") {
+      if (button.dataset.routeAction === "show") filtered.forEach((index) => state.hiddenRoutes.delete(index));
+      if (button.dataset.routeAction === "hide") filtered.forEach((index) => state.hiddenRoutes.add(index));
+      if (button.dataset.routeAction === "reset") {
+        state.hiddenRoutes.clear();
+        state.focusedRoute = null;
         state.routeView.search = "";
         state.routeView.minStops = state.routeView.maxStops = state.routeView.minLoad = state.routeView.maxLoad = null;
-        state.routeView.visibleLimit = routes.length;
-      } else if (action === "filtered") {
-        state.routeView.visibleLimit = filtered.length;
-      } else if (action === "selected") {
-        state.routeView.visibleLimit = 0;
-      } else if (action === "none") {
-        state.routeView.visibleLimit = 0;
-        state.selectedRoutes.clear();
-      } else if (action === "full-filtered") {
-        filtered.forEach((index) => state.selectedRoutes.add(index));
-      } else if (action === "fade-filtered") {
-        filtered.forEach((index) => state.selectedRoutes.delete(index));
       }
-      rerender();
+      if (state.focusedRoute !== null && state.hiddenRoutes.has(state.focusedRoute)) state.focusedRoute = null;
+      renderVisualState({ fitMap: false });
     });
   });
-
-  const routeList = document.createElement("div");
-  routeList.className = "route-page-list";
-  pageIndices.forEach((index) => {
-    const route = routes[index];
-    const label = document.createElement("label");
-    label.className = "route-checkbox-label";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "route-checkbox";
-    checkbox.dataset.routeIndex = String(index);
-    checkbox.checked = state.selectedRoutes.has(index);
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        state.selectedRoutes.add(index);
-      } else {
-        state.selectedRoutes.delete(index);
-      }
-      renderVisualState();
+  routeSelectorContainer.querySelectorAll("[data-route-visibility]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.routeVisibility);
+      if (state.hiddenRoutes.has(index)) state.hiddenRoutes.delete(index);
+      else state.hiddenRoutes.add(index);
+      if (state.focusedRoute === index && state.hiddenRoutes.has(index)) state.focusedRoute = null;
+      renderVisualState({ fitMap: false });
     });
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(`Route #${index + 1} (${route.length} stops, load ${routeLoad(route, instanceData)})`));
-    routeList.appendChild(label);
   });
-  routeSelectorContainer.appendChild(routeList);
-
-  const pager = document.createElement("div");
-  pager.className = "route-pager";
-  pager.innerHTML = `<button type="button" data-page="prev"${state.routeView.page <= 1 ? " disabled" : ""}>Previous</button><span>Page ${state.routeView.page} / ${totalPages}</span><button type="button" data-page="next"${state.routeView.page >= totalPages ? " disabled" : ""}>Next</button>`;
-  pager.querySelector('[data-page="prev"]').addEventListener("click", () => { state.routeView.page -= 1; rerender(); });
-  pager.querySelector('[data-page="next"]').addEventListener("click", () => { state.routeView.page += 1; rerender(); });
-  routeSelectorContainer.appendChild(pager);
-
-  updateRouteCheckboxStates();
+  routeSelectorContainer.querySelectorAll("[data-route-focus]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.routeFocus);
+      state.hiddenRoutes.delete(index);
+      state.focusedRoute = state.focusedRoute === index ? null : index;
+      renderVisualState({ fitMap: false });
+    });
+  });
+  routeSelectorContainer.querySelector(".route-view-opacity").addEventListener("input", (event) => {
+    state.routeView.fadedOpacity = Number(event.target.value);
+    routeSelectorContainer.querySelector(".route-view-opacity-value").textContent = `${Math.round(state.routeView.fadedOpacity * 100)}%`;
+    redrawRoutesOnly();
+  });
+  routeSelectorContainer.querySelector(".route-view-depot").addEventListener("change", (event) => {
+    state.routeView.depotLegMode = event.target.value;
+    redrawRoutesOnly();
+  });
+  routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
+    state.routeView.arrowsEnabled = event.target.checked;
+    redrawRoutesOnly();
+  });
+  routeSelectorContainer.querySelector(".route-view-depot-star").addEventListener("change", (event) => {
+    state.routeView.depotStar = event.target.checked;
+    renderVisualState({ fitMap: false });
+  });
 }
 
 function calculateBearing(from, to) {
@@ -1022,26 +1034,26 @@ function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
 }
 
 function drawRoutes(routeLines, routes, instanceData, routeMode) {
-  routeLegendEl.innerHTML = "";
   const visible = visibleRouteIndices(routes, instanceData);
+  const hasFocus = state.focusedRoute !== null && visible.has(state.focusedRoute);
   routeLines.forEach((routeLine) => {
     const routeIndex = routeLine.routeIndex;
     if (!visible.has(routeIndex)) {
       return;
     }
     const color = routeColor(routeIndex);
-    const fullOpacity = state.selectedRoutes.has(routeIndex);
-    const baseOpacity = fullOpacity ? (routeMode === "straight_line" ? 0.78 : 0.88) : state.routeView.fadedOpacity;
+    const focused = hasFocus && state.focusedRoute === routeIndex;
+    const baseOpacity = hasFocus && !focused ? state.routeView.fadedOpacity : (routeMode === "straight_line" ? 0.78 : 0.88);
     const rawSegments = Array.isArray(routeLine.segments) && routeLine.segments.length > 0
       ? routeLine.segments
       : [routeLine.coordinates];
     rawSegments.forEach((segment, segmentIndex) => {
       const isDepotLeg = segmentIndex === 0 || segmentIndex === rawSegments.length - 1;
-      if (isDepotLeg && state.routeView.depotLegMode === "absent") {
+      if (isDepotLeg && state.routeView.depotLegMode === "hidden") {
         return;
       }
       const opacity = isDepotLeg && state.routeView.depotLegMode === "faded"
-        ? Math.min(baseOpacity, state.routeView.fadedOpacity)
+        ? Math.min(baseOpacity, 0.25)
         : baseOpacity;
       const latlngs = segment
         .filter((point) => Array.isArray(point) && point.length >= 2)
@@ -1052,7 +1064,7 @@ function drawRoutes(routeLines, routes, instanceData, routeMode) {
       const polyline = L.polyline(latlngs, {
         renderer: routeCanvasRenderer,
         color,
-        weight: fullOpacity ? 4 : 3,
+        weight: focused ? 5 : 3,
         opacity,
         lineCap: "round",
         lineJoin: "round",
@@ -1062,12 +1074,16 @@ function drawRoutes(routeLines, routes, instanceData, routeMode) {
         addArrowsToPolyline(polyline, color);
       }
     });
-
-    const legendItem = document.createElement("li");
-    legendItem.style.opacity = fullOpacity ? "1" : String(Math.max(0.35, state.routeView.fadedOpacity));
-    legendItem.innerHTML = `<span class="swatch" style="background:${color}"></span><span>Route #${routeIndex + 1}: ${routes[routeIndex]?.length ?? 0} stops, load ${routeLoad(routes[routeIndex] || [], instanceData)} (${fullOpacity ? "full" : "faded"}, ${escapeHtml(routeMode)})</span>`;
-    routeLegendEl.appendChild(legendItem);
   });
+}
+
+function redrawRoutesOnly() {
+  const visual = currentVisualState();
+  const geometry = buildVisualGeometry();
+  if (!visual.instanceData || !geometry) return;
+  state.layers.route.clearLayers();
+  state.layers.arrow.clearLayers();
+  drawRoutes(geometry.routeLines, visual.routes, visual.instanceData, geometry.routeMode);
 }
 
 function updateStats(routeMode) {
@@ -1104,8 +1120,8 @@ function renderVisualState(options = {}) {
   const visual = currentVisualState();
   if (!visual.instanceData) {
     statsEl.innerHTML = "";
-    routeLegendEl.innerHTML = "";
-    routeSelectorCard.style.display = "none";
+    routeSelectorContainer.innerHTML = "";
+    routeSelectorCard.hidden = true;
     return;
   }
   const geometry = buildVisualGeometry();
@@ -1145,12 +1161,15 @@ function syncWorkbenchUrl() {
     size: "size",
     method: "method",
     scenario: "scenario",
+    geometry: "geometry",
     search: "q",
     sort: "sort",
+    direction: "dir",
   };
   Object.entries(catalogQueryKeys).forEach(([stateKey, queryKey]) => {
     const value = state.benchmarkCatalog.filters[stateKey];
-    if (value && !(stateKey === "sort" && value === "city-size")) nextParams.set(queryKey, value);
+    const isDefault = (stateKey === "sort" && value === "catalog") || (stateKey === "direction" && value === "asc");
+    if (value && !isDefault) nextParams.set(queryKey, value);
     else nextParams.delete(queryKey);
   });
   nextParams.delete("deriveTarget");
@@ -1453,7 +1472,7 @@ benchmarkObjectiveSelect.addEventListener("change", async (event) => {
 benchmarkProblemSelect.addEventListener("change", async (event) => {
   state.benchmarkCatalog.filters.problem = event.target.value || "";
   state.benchmarkCatalog.filters.family = "";
-  ["metric", "city", "size", "method", "scenario"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
+  ["metric", "city", "size", "method", "scenario", "geometry"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
   state.benchmarkCatalog.selectedGroupKey = null;
   await loadBenchmarkInstance(null, null, { quiet: true, fitMap: false });
   renderBenchmarkCatalogOptions();
@@ -1466,6 +1485,7 @@ const benchmarkCascadeControls = [
   [benchmarkSizeFilter, "size"],
   [benchmarkMethodFilter, "method"],
   [benchmarkScenarioFilter, "scenario"],
+  [benchmarkGeometryFilter, "geometry"],
 ];
 benchmarkCascadeControls.forEach(([control, key], controlIndex) => {
   control.addEventListener("change", (event) => {
@@ -1476,7 +1496,13 @@ benchmarkCascadeControls.forEach(([control, key], controlIndex) => {
   });
 });
 benchmarkSortSelect.addEventListener("change", (event) => {
-  state.benchmarkCatalog.filters.sort = event.target.value || "city-size";
+  state.benchmarkCatalog.filters.sort = normalizeCatalogSort(event.target.value);
+  renderBenchmarkCatalogOptions();
+  syncWorkbenchUrl();
+});
+
+benchmarkSortDirection.addEventListener("click", () => {
+  state.benchmarkCatalog.filters.direction = state.benchmarkCatalog.filters.direction === "asc" ? "desc" : "asc";
   renderBenchmarkCatalogOptions();
   syncWorkbenchUrl();
 });
@@ -1491,7 +1517,7 @@ benchmarkCatalogSelect.addEventListener("change", async (event) => {
   state.benchmarkCatalog.selectedGroupKey = event.target.value || null;
   const selectedGroupItem = state.benchmarkCatalog.options.find((item) => benchmarkCatalogGroupKey(item) === state.benchmarkCatalog.selectedGroupKey);
   state.benchmarkCatalog.filters.family = benchmarkCatalogLocator(selectedGroupItem).benchmark_name || "";
-  ["metric", "city", "size", "method", "scenario"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
+  ["metric", "city", "size", "method", "scenario", "geometry"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
   const activeItem = state.instanceRoute
     ? state.benchmarkCatalog.options.find((item) => normalizeRoute(item.route_path) === normalizeRoute(state.instanceRoute))
     : null;
@@ -1589,10 +1615,11 @@ metaInput.addEventListener("change", async (event) => {
 
 clearBtn.addEventListener("click", async () => {
   clearMapLayers();
-  routeLegendEl.innerHTML = "";
+  routeSelectorContainer.innerHTML = "";
   statsEl.innerHTML = "";
-  routeSelectorCard.style.display = "none";
-  state.selectedRoutes.clear();
+  routeSelectorCard.hidden = true;
+  state.hiddenRoutes.clear();
+  state.focusedRoute = null;
   if (state.sourceKind === "upload") {
     resetUploadState();
     vrpInput.value = "";
@@ -1615,4 +1642,5 @@ await loadBenchmarkInstance(state.instanceRoute, state.objectiveFunction, { quie
 await benchmarkCatalogPromise;
 await setSourceKind(state.sourceKind, { sync: false });
 setActiveTab(state.activeTab, { sync: false });
+syncWorkbenchUrl();
 renderVisualState();

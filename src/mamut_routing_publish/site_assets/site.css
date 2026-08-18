@@ -647,6 +647,47 @@ input[type="file"] {
   gap: 10px;
 }
 
+.catalog-filter-footer {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.catalog-sort-controls {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+}
+
+.catalog-sort-field {
+  min-width: 180px;
+}
+
+.sort-direction-button {
+  width: 36px;
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--s);
+  border: 1px solid var(--div);
+  border-radius: 8px;
+}
+
+.sort-direction-button:hover,
+.sort-direction-button:focus-visible {
+  color: var(--acc);
+  border-color: var(--edge);
+  background: var(--acc-t);
+}
+
 .collection-filter-reset {
   align-self: flex-start;
 }
