@@ -506,6 +506,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "hiddenRoutes: new Set()" in workbench_js
     assert "focusedRoute: null" in workbench_js
     assert "data-route-visibility" in workbench_js
+    assert 'usesRoadMetric(summary) ? "full" : "faded"' in workbench_js
+    assert 'usesRoadMetric(payload.summary) ? "full" : "faded"' in site_js
+    assert 'class="route-view-opacity" type="range" min="0" max="0.8"' in workbench_js
+    assert "addArrowsToPolyline(polyline, color, opacity)" in workbench_js
+    assert "const hasSeparableLegs = rawSegments.length > 1;" in workbench_js
     assert "visibleLimit" not in workbench_js
     assert "selectedRoutes" not in workbench_js
     assert "route-pager" not in workbench_js

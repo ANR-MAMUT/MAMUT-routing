@@ -2155,6 +2155,13 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
   };
 }
 
+// Only the road metrics draw depot legs that follow real streets. Euclidean
+// variants -- and the historical families, which carry no metric variant -- draw
+// them as long straight chords across the picture, so those keep them faded.
+function usesRoadMetric(summary) {
+  return ["fastest", "shortest"].includes(String(summary?.metric_variant || "").toLowerCase());
+}
+
 function supportsWorkbenchInstance(value) {
   const placeSlug = String(value?.place_slug || value?.summary?.place_slug || "").trim();
   return placeSlug.length > 0;
@@ -2638,7 +2645,7 @@ async function renderInstancePage(payload, options = {}) {
   const supportsArcFunctions = Boolean(payload.artifact_links.atf_json_path);
   const displayOptions = {
     hiddenRoutes: new Set(),
-    depotLegMode: "faded",
+    depotLegMode: usesRoadMetric(payload.summary) ? "full" : "faded",
     fadedOpacity: 0.25,
     routeOpacity: 1,
     depotStar: true,
@@ -3741,6 +3748,7 @@ export {
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
+  usesRoadMetric,
 };
 
 if (!window.__PAPER7_SITE_NO_BOOTSTRAP__) {
