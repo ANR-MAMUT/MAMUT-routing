@@ -149,6 +149,7 @@ const {
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
+  usesRoadMetric,
 } = siteHelpers;
 
 const tabVisualize = document.getElementById("tabVisualize");
@@ -242,7 +243,7 @@ const state = {
     fadedOpacity: 0.2,
     arrowsEnabled: true,
     depotStar: false,
-    depotLegMode: "full",
+    depotLegMode: "faded",
     search: "",
     minStops: null,
     maxStops: null,
@@ -600,7 +601,7 @@ function routeLoad(route, instanceData) {
   return route.reduce((total, stopIndex) => total + (Number(instanceData?.demands?.[stopIndex]) || 0), 0);
 }
 
-function resetRouteViewDefaults(routes) {
+function resetRouteViewDefaults(routes, summary = null) {
   const routeCount = Array.isArray(routes) ? routes.length : 0;
   state.hiddenRoutes.clear();
   state.focusedRoute = null;
@@ -608,7 +609,9 @@ function resetRouteViewDefaults(routes) {
   state.routeView.arrowsEnabled = routeCount <= 10;
   // A solution overlay defaults to the star depot; a bare instance keeps the dot.
   state.routeView.depotStar = routeCount > 0;
-  state.routeView.depotLegMode = routeCount <= 10 ? "full" : "faded";
+  // Road metrics draw depot legs along real streets, so they belong in the
+  // picture; Euclidean and historical instances draw them as long chords.
+  state.routeView.depotLegMode = usesRoadMetric(summary) ? "full" : "faded";
   state.routeView.search = "";
   state.routeView.minStops = null;
   state.routeView.maxStops = null;
@@ -753,7 +756,7 @@ function buildRouteSelector(routes, instanceData) {
     <details class="route-options" data-route-disclosure="appearance"${state.routeView.appearanceOpen ? " open" : ""}>
       <summary>Appearance</summary>
       <div class="route-view-grid">
-        <label class="field route-opacity-field"><span>Other routes${state.focusedRoute === null ? " (focus a route)" : ""}: <output class="route-view-opacity-value">${Math.round(state.routeView.fadedOpacity * 100)}%</output></span><input class="route-view-opacity" type="range" min="0.05" max="0.8" step="0.05" value="${state.routeView.fadedOpacity}"${state.focusedRoute === null ? " disabled" : ""} /></label>
+        <label class="field route-opacity-field"><span>Other routes${state.focusedRoute === null ? " (focus a route)" : ""}: <output class="route-view-opacity-value">${Math.round(state.routeView.fadedOpacity * 100)}%</output></span><input class="route-view-opacity" type="range" min="0" max="0.8" step="0.05" value="${state.routeView.fadedOpacity}"${state.focusedRoute === null ? " disabled" : ""} /></label>
         <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="hidden">Hidden</option></select></label>
         <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
         <label class="route-view-toggle"><input class="route-view-depot-star" type="checkbox"${state.routeView.depotStar ? " checked" : ""} /> Depot as star</label>
@@ -845,7 +848,7 @@ function getArrowSpacing() {
   return 2500;
 }
 
-function addArrowsToPolyline(polyline, color) {
+function addArrowsToPolyline(polyline, color, opacity = 0.95) {
   const latlngs = polyline.getLatLngs();
   if (latlngs.length < 2) {
     return;
@@ -871,7 +874,7 @@ function addArrowsToPolyline(polyline, color) {
     const bearing = calculateBearing(from, to);
     const midpoint = L.latLng(from.lat + (to.lat - from.lat) * interpolation, from.lng + (to.lng - from.lng) * interpolation);
     const icon = L.divIcon({
-      html: `<div style="transform: rotate(${bearing - 90}deg); transform-origin: 50% 50%; font-size: 10px; line-height: 10px; color: ${color}; font-weight: 700; opacity: 0.95;">▶</div>`,
+      html: `<div style="transform: rotate(${bearing - 90}deg); transform-origin: 50% 50%; font-size: 10px; line-height: 10px; color: ${color}; font-weight: 700; opacity: ${Math.min(0.95, opacity).toFixed(3)};">▶</div>`,
       className: "arrow-marker",
       iconSize: [10, 10],
     });
@@ -983,15 +986,21 @@ function buildVisualGeometry() {
       };
     }
   }
+  const usablePoint = (point) => Array.isArray(point) && point.length >= 2;
   return {
     nodeCoordinates,
-    routeLines: visual.routes.map((route, routeIndex) => ({
-      routeIndex,
-      coordinates: [Number(visual.instanceData.depot || 0), ...route, Number(visual.instanceData.depot || 0)]
-        .map((nodeIndex) => nodeCoordinates[nodeIndex])
-        .filter((point) => Array.isArray(point) && point.length >= 2),
-      source: "straight_line",
-    })),
+    routeLines: visual.routes.map((route, routeIndex) => {
+      const sequence = [Number(visual.instanceData.depot || 0), ...route, Number(visual.instanceData.depot || 0)];
+      const points = sequence.map((nodeIndex) => nodeCoordinates[nodeIndex]);
+      return {
+        routeIndex,
+        coordinates: points.filter(usablePoint),
+        // Per-arc segments so the depot-leg modes can address the first and
+        // last hop, matching what resolvePreviewGeometry builds for benchmarks.
+        segments: sequence.slice(0, -1).map((_, edgeIndex) => [points[edgeIndex], points[edgeIndex + 1]].filter(usablePoint)),
+        source: "straight_line",
+      };
+    }),
     routeMode: "straight_line",
   };
 }
@@ -1044,11 +1053,19 @@ function drawRoutes(routeLines, routes, instanceData, routeMode) {
     const color = routeColor(routeIndex);
     const focused = hasFocus && state.focusedRoute === routeIndex;
     const baseOpacity = hasFocus && !focused ? state.routeView.fadedOpacity : (routeMode === "straight_line" ? 0.78 : 0.88);
+    if (baseOpacity <= 0) {
+      // Faded all the way out: skip the route entirely so it leaves behind
+      // neither arrows nor an invisible canvas hit target.
+      return;
+    }
     const rawSegments = Array.isArray(routeLine.segments) && routeLine.segments.length > 0
       ? routeLine.segments
       : [routeLine.coordinates];
+    // A single merged polyline has no isolable depot legs; only a real per-arc
+    // segment list lets us single out the first and last hop.
+    const hasSeparableLegs = rawSegments.length > 1;
     rawSegments.forEach((segment, segmentIndex) => {
-      const isDepotLeg = segmentIndex === 0 || segmentIndex === rawSegments.length - 1;
+      const isDepotLeg = hasSeparableLegs && (segmentIndex === 0 || segmentIndex === rawSegments.length - 1);
       if (isDepotLeg && state.routeView.depotLegMode === "hidden") {
         return;
       }
@@ -1071,7 +1088,7 @@ function drawRoutes(routeLines, routes, instanceData, routeMode) {
       }).addTo(state.layers.route);
       polyline.bindPopup(`Route #${routeIndex + 1}<br/>Stops: ${routes[routeIndex]?.length ?? "?"}`);
       if (state.routeView.arrowsEnabled) {
-        addArrowsToPolyline(polyline, color);
+        addArrowsToPolyline(polyline, color, opacity);
       }
     });
   });
@@ -1388,7 +1405,7 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
     if (fitMap) {
       requestVisualFit();
     }
-    resetRouteViewDefaults(state.benchmark.routes);
+    resetRouteViewDefaults(state.benchmark.routes, payload.summary);
     updateBenchmarkContextUi();
     syncWorkbenchUrl();
     await autoRenderBenchmarkRoadGeometry({ render: false });
