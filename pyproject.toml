@@ -90,7 +90,16 @@ testpaths = ["tests", "MAMUT-routing-lib/tests"]
 members = ["MAMUT-routing-tools"]
 
 [tool.uv.sources]
-mamut-routing-lib = { path = "MAMUT-routing-lib", editable = true }
+# The lib comes from the checkout MAMUT-routing-tools pins, not from this
+# repository's own MAMUT-routing-lib submodule.
+#
+# The tools declare their own editable source for mamut-routing-lib so that
+# source checkouts build against the exact lib commit they pin. Those sources are
+# honoured whether the tools are a workspace member or a path dependency, so
+# naming a different path here gives uv two editable URLs for one package and
+# resolution fails outright. Both submodules are kept on the same lib commit, so
+# this picks the one uv can actually agree on.
+mamut-routing-lib = { path = "MAMUT-routing-tools/MAMUT-routing-lib", editable = true }
 mamut-routing-tools = { workspace = true }
 cffconvert = { git = "https://github.com/citation-file-format/cffconvert", rev = "b6045d78aac9e02b039703b030588d54d53262ac" }
 

@@ -597,8 +597,8 @@ wheels = [
 
 [[package]]
 name = "mamut-routing-lib"
-version = "0.9.0"
-source = { editable = "MAMUT-routing-lib" }
+version = "0.10.0"
+source = { editable = "MAMUT-routing-tools/MAMUT-routing-lib" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -653,7 +653,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "brotli", specifier = ">=1.1" },
-    { name = "mamut-routing-lib", extras = ["pyvrp"], editable = "MAMUT-routing-lib" },
+    { name = "mamut-routing-lib", extras = ["pyvrp"], editable = "MAMUT-routing-tools/MAMUT-routing-lib" },
     { name = "mamut-routing-tools", editable = "MAMUT-routing-tools" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "starlette", specifier = ">=0.40" },
@@ -701,7 +701,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "kayros", marker = "extra == 'kayros'", specifier = ">=1.1.2" },
-    { name = "mamut-routing-lib", extras = ["pyvrp"], editable = "MAMUT-routing-lib" },
+    { name = "mamut-routing-lib", extras = ["pyvrp"], editable = "MAMUT-routing-tools/MAMUT-routing-lib" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "rustworkx", specifier = ">=0.15" },
