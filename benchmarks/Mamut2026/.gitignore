@@ -1,0 +1,23 @@
+# poi tier: distance matrices ship as sha256 pins, not bytes.
+# Rebuild them with:  python scripts/generate_mamut2026.py materialize
+# (or: uv run mamut-tools generate materialize-distances <instance.vrp.json>)
+sidecars/auckland/n=1500/mamut-auckland-n1500-k12-poi/mamut-auckland-n1500-k12-poi.distances-fastest.json.gz
+sidecars/auckland/n=1500/mamut-auckland-n1500-k12-poi/mamut-auckland-n1500-k12-poi.distances-shortest.json.gz
+sidecars/bogota/n=4000/mamut-bogota-n4000-k508-poi/mamut-bogota-n4000-k508-poi.distances-fastest.json.gz
+sidecars/bogota/n=4000/mamut-bogota-n4000-k508-poi/mamut-bogota-n4000-k508-poi.distances-shortest.json.gz
+sidecars/dakar/n=1500/mamut-dakar-n1500-k364-poi/mamut-dakar-n1500-k364-poi.distances-fastest.json.gz
+sidecars/dakar/n=1500/mamut-dakar-n1500-k364-poi/mamut-dakar-n1500-k364-poi.distances-shortest.json.gz
+sidecars/manila/n=2500/mamut-manila-n2500-k54-poi/mamut-manila-n2500-k54-poi.distances-fastest.json.gz
+sidecars/manila/n=2500/mamut-manila-n2500-k54-poi/mamut-manila-n2500-k54-poi.distances-shortest.json.gz
+sidecars/montreal/n=4000/mamut-montreal-n4000-k378-poi/mamut-montreal-n4000-k378-poi.distances-fastest.json.gz
+sidecars/montreal/n=4000/mamut-montreal-n4000-k378-poi/mamut-montreal-n4000-k378-poi.distances-shortest.json.gz
+sidecars/paris/n=1500/mamut-paris-n1500-k107-poi/mamut-paris-n1500-k107-poi.distances-fastest.json.gz
+sidecars/paris/n=1500/mamut-paris-n1500-k107-poi/mamut-paris-n1500-k107-poi.distances-shortest.json.gz
+sidecars/prague/n=2000/mamut-prague-n2000-k13-poi/mamut-prague-n2000-k13-poi.distances-fastest.json.gz
+sidecars/prague/n=2000/mamut-prague-n2000-k13-poi/mamut-prague-n2000-k13-poi.distances-shortest.json.gz
+sidecars/singapore/n=4000/mamut-singapore-n4000-k498-poi/mamut-singapore-n4000-k498-poi.distances-fastest.json.gz
+sidecars/singapore/n=4000/mamut-singapore-n4000-k498-poi/mamut-singapore-n4000-k498-poi.distances-shortest.json.gz
+sidecars/sofia/n=1500/mamut-sofia-n1500-k114-poi/mamut-sofia-n1500-k114-poi.distances-fastest.json.gz
+sidecars/sofia/n=1500/mamut-sofia-n1500-k114-poi/mamut-sofia-n1500-k114-poi.distances-shortest.json.gz
+sidecars/vienna/n=1200/mamut-vienna-n1200-k130-poi/mamut-vienna-n1200-k130-poi.distances-fastest.json.gz
+sidecars/vienna/n=1200/mamut-vienna-n1200-k130-poi/mamut-vienna-n1200-k130-poi.distances-shortest.json.gz

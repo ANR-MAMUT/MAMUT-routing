@@ -1239,7 +1239,7 @@ function updateBenchmarkContextUi() {
     benchmarkStatus.textContent = state.instanceRoute
       ? "Benchmark preload is unavailable for the requested route. Browse the catalog and open another instance."
       : "Select a published family, then choose an instance here or open one from the public catalog.";
-    benchmarkRenderStatus.textContent = "Historical benchmark families use straight-line rendering. Poryos2026 uses published road geometry when available.";
+    benchmarkRenderStatus.textContent = "Historical benchmark families use straight-line rendering. Generated OSM collections use published road geometry when available.";
     openBenchmarkBtn.href = browseBenchmarksBtn.href;
     return;
   }
@@ -1256,11 +1256,11 @@ function updateBenchmarkContextUi() {
   } else if (renderSummary?.fallback_reason === "historical_default") {
     renderStatus = "Straight-line rendering is the default for historical benchmark families.";
   } else if (renderSummary?.fallback_reason === "euclidean_metric") {
-    renderStatus = "Straight-line rendering matches the Euclidean metric for this Poryos2026 instance.";
+    renderStatus = "Straight-line rendering matches the Euclidean metric for this instance.";
   } else if (renderSummary?.fallback_reason === "sidecar_unavailable") {
-    renderStatus = "Published road geometry is unavailable for this Poryos2026 BKS. Showing straight-line routes.";
-  } else if (payload.summary?.benchmark_name === "Poryos2026") {
-    renderStatus = "Published road geometry is missing for this Poryos2026 BKS. Showing straight-line routes.";
+    renderStatus = "Published road geometry is unavailable for this BKS. Showing straight-line routes.";
+  } else if (payload.summary?.has_geometry_sidecar) {
+    renderStatus = "Published road geometry is missing for this BKS. Showing straight-line routes.";
   } else {
     renderStatus = "Straight-line rendering is the default for historical benchmark families.";
   }
@@ -1310,7 +1310,10 @@ async function autoRenderBenchmarkRoadGeometry(options = {}) {
       cache_miss_count: 0,
       straight_fallback_count: 0,
       cache_persisted: false,
-      fallback_reason: benchmark.payload?.summary?.benchmark_name !== "Poryos2026"
+      // Whether a family can render road-following routes is a property of its
+      // artifacts -- does it ship a geo sidecar -- not of its name. Keying on
+      // "Poryos2026" labelled every other generated OSM collection as historical.
+      fallback_reason: !benchmark.payload?.summary?.has_geometry_sidecar
         ? "historical_default"
         : metric === "euclidean"
           ? "euclidean_metric"

@@ -41,13 +41,6 @@ DEFAULT_SITE_PAYLOAD_ROOT_DIR = Path("site-payloads")
 DEFAULT_FAMILY_CONTEXT_REPORT_PATH = Path(__file__).with_name("site_assets") / "texts" / "mamut-routing_benchmark_families.md"
 DEFAULT_PROJECT_PAGES_DIR = Path(__file__).with_name("site_assets") / "texts" / "project_pages"
 
-# Publication state predating the family rename persists this value in both
-# history ledgers and snapshot inventories. Keep the current artifact models
-# strict while accepting the retired name at the history-state boundary.
-_LEGACY_BENCHMARK_NAME_ALIASES = {
-    "Mamut2026": BenchmarkName.PORYOS_2026,
-}
-
 ViewerRenderMode = Literal["straight_line", "cached_road"]
 RoadCacheStatus = Literal["not_applicable", "none", "partial", "complete"]
 
@@ -727,10 +720,7 @@ def _now_utc_iso() -> str:
 
 
 def _normalize_benchmark_name(value: BenchmarkName | str) -> BenchmarkName:
-    if isinstance(value, BenchmarkName):
-        return value
-    legacy_alias = _LEGACY_BENCHMARK_NAME_ALIASES.get(value)
-    return legacy_alias if legacy_alias is not None else BenchmarkName(value)
+    return value if isinstance(value, BenchmarkName) else BenchmarkName(value)
 
 
 def _discovered_site_identity(item: DiscoveredBenchmarkInstance) -> tuple[object, ...]:
@@ -2209,6 +2199,7 @@ _BENCHMARK_NAME_ORDER = {
     BenchmarkName.RIFKI_2020: 6,
     BenchmarkName.LERA_2026: 7,
     BenchmarkName.PORYOS_2026: 8,
+    BenchmarkName.MAMUT_2026: 9,
 }
 
 
@@ -2601,10 +2592,11 @@ def _build_objective_related_routes(
         BenchmarkName.DIMACS_2021: 1,
         BenchmarkName.ORTEC_2022: 2,
         BenchmarkName.PORYOS_2026: 3,
-        BenchmarkName.DABIA_2013: 4,
-        BenchmarkName.ARI_2018: 5,
-        BenchmarkName.VU_2020: 6,
-        BenchmarkName.RIFKI_2020: 7,
+        BenchmarkName.MAMUT_2026: 4,
+        BenchmarkName.DABIA_2013: 5,
+        BenchmarkName.ARI_2018: 6,
+        BenchmarkName.VU_2020: 7,
+        BenchmarkName.RIFKI_2020: 8,
     }
     entries: list[SubrouteEntry] = []
     for problem_type, benchmark_name in sorted(
@@ -2803,28 +2795,6 @@ def _load_previous_inventory(
     return None
 
 
-def _canonicalize_inventory_benchmark_identities(inventory: dict) -> dict:
-    """Map retired family and instance identities to their current equivalents."""
-    instances: dict[str, dict] = inventory.get("instances", {})
-    has_legacy_names = any(
-        record.get("benchmark_name") in _LEGACY_BENCHMARK_NAME_ALIASES
-        for record in instances.values()
-    )
-    if not has_legacy_names:
-        return inventory
-    canonical_instances: dict[str, dict] = {}
-    for instance_id, record in instances.items():
-        if record.get("benchmark_name") == "Mamut2026":
-            instance_id = instance_id.replace("mamut2026", "poryos2026").replace("mamut-", "poryos-")
-            record = {
-                **record,
-                "benchmark_name": BenchmarkName.PORYOS_2026.value,
-                "instance_name": record["instance_name"].replace("mamut-", "poryos-"),
-            }
-        canonical_instances[instance_id] = record
-    return {**inventory, "instances": canonical_instances}
-
-
 def _instance_change_payload_from_inventory(
     instance_id: str,
     record: dict,
@@ -2948,10 +2918,8 @@ def _compute_change_log(
     new_inventory: dict,
 ) -> SnapshotChangeLog:
     is_initial = prev_inventory is None
-    canonical_prev_inventory = _canonicalize_inventory_benchmark_identities(prev_inventory or {})
-    canonical_new_inventory = _canonicalize_inventory_benchmark_identities(new_inventory)
-    prev_instances: dict[str, dict] = canonical_prev_inventory.get("instances", {})
-    new_instances: dict[str, dict] = canonical_new_inventory.get("instances", {})
+    prev_instances: dict[str, dict] = (prev_inventory or {}).get("instances", {})
+    new_instances: dict[str, dict] = new_inventory.get("instances", {})
 
     prev_families = {(rec["problem_type"], rec["benchmark_name"]) for rec in prev_instances.values()}
     new_families = {(rec["problem_type"], rec["benchmark_name"]) for rec in new_instances.values()}

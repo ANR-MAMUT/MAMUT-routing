@@ -46,6 +46,9 @@ Component licensing
   benchmark instances, sidecars, generated route artifacts, and related
   benchmark data are distributed under ODbL 1.0 where they derive from
   OpenStreetMap data.
+- benchmarks/Mamut2026 (CVRP): OSM-derived benchmark instances, sidecars,
+  generated route artifacts, and related benchmark data are distributed under
+  ODbL 1.0 where they derive from OpenStreetMap data.
 
 Attribution
 -----------

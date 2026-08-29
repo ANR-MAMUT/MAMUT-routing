@@ -515,8 +515,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "selectedRoutes" not in workbench_js
     assert "route-pager" not in workbench_js
     assert "Straight-line rendering is the default for historical benchmark families." in workbench_js
-    assert "Published road geometry is unavailable for this Poryos2026 BKS." in workbench_js
-    assert "Straight-line rendering matches the Euclidean metric for this Poryos2026 instance." in workbench_js
+    # The road-geometry status is keyed on whether the family ships a geo sidecar,
+    # not on its name, so every generated OSM collection gets the same wording.
+    assert "Published road geometry is unavailable for this BKS." in workbench_js
+    assert "Poryos2026 BKS" not in workbench_js
+    assert "Straight-line rendering matches the Euclidean metric for this instance." in workbench_js
     assert "Road geometry will be rendered automatically" not in workbench_js
     assert "projectCoordinates(routeLine.coordinates, width, height, projectionBounds)" in site_js
     assert "supportsWorkbenchInstance(item)" in site_js
@@ -662,7 +665,8 @@ OSM-derived artifacts use ODbL.
     assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.PORYOS_2026).spdx_id == "ODbL-1.0"
 
 
-def test_generate_site_payloads_accepts_legacy_history_and_renamed_benchmark(tmp_path: Path) -> None:
+def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
+    """A pre-``change_counts`` ledger entry is read back and diffed, not rejected."""
     output_repo_dir = tmp_path / "MAMUT-routing"
     build_fixture_site_inputs(output_repo_dir)
 
@@ -685,7 +689,7 @@ def test_generate_site_payloads_accepts_legacy_history_and_renamed_benchmark(tmp
                     "summary": "Legacy history entry before change counts.",
                     "detail_route_path": "/history/2026-04-22-legacy/",
                     "affected_problem_types": ["CVRP"],
-                    "affected_benchmark_names": ["Mamut2026"],
+                    "affected_benchmark_names": ["Poryos2026"],
                     "affected_objective_functions": ["MonoCost"],
                 }
             ],
@@ -697,13 +701,13 @@ def test_generate_site_payloads_accepts_legacy_history_and_renamed_benchmark(tmp
             "snapshot_id": legacy_snapshot["snapshot_id"],
             "generated_at": legacy_snapshot["published_at"],
             "instances": {
-                "cvrp-mamut2026-fastest-brest-n2-mamut-n2-cafe123": {
+                "cvrp-poryos2026-fastest-brest-n2-poryos-n2-cafe123": {
                     "problem_type": "CVRP",
-                    "benchmark_name": "Mamut2026",
+                    "benchmark_name": "Poryos2026",
                     "metric_variant": "fastest",
                     "place_slug": "brest",
                     "num_customers": 2,
-                    "instance_name": "mamut-n2-cafe123",
+                    "instance_name": "poryos-n2-cafe123",
                     "bks": {
                         "MonoCost": {
                             "cost": 12,
@@ -1515,7 +1519,10 @@ def test_site_payloads_deduplicate_retired_collection_checkout(
 ) -> None:
     output_repo_dir = tmp_path / "repo"
     canonical_collection = build_collection_fixture(output_repo_dir)
-    shutil.copytree(canonical_collection, output_repo_dir / "benchmarks" / "Mamut2026")
+    # A stale checkout under a directory that does not match the marker's family.
+    # (This used to be spelled "Mamut2026"; that name is a live family again, so
+    # reusing it here would no longer exercise the mismatch this test is about.)
+    shutil.copytree(canonical_collection, output_repo_dir / "benchmarks" / "Poryos2026-retired")
     monkeypatch.chdir(tmp_path)
 
     discovered = discover_benchmark_instances(Path("repo/benchmarks"))
