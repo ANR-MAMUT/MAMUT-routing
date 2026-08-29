@@ -896,7 +896,13 @@ function uploadedNodeCoordinatesFromMeta(instanceData, meta) {
   if (instanceNodeIds.length === 0) {
     return fallbackCoordinates;
   }
-  const offset = Math.min(...instanceNodeIds) === 0 ? 0 : 1;
+  // Loop rather than Math.min(...ids): the spread form takes an argument list,
+  // which the engine caps, and this array grows with the instance.
+  let smallestNodeId = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < instanceNodeIds.length; index += 1) {
+    if (instanceNodeIds[index] < smallestNodeId) smallestNodeId = instanceNodeIds[index];
+  }
+  const offset = smallestNodeId === 0 ? 0 : 1;
 
   const resolved = new Array(fallbackCoordinates.length);
   let hasGeographical = false;
