@@ -1411,7 +1411,7 @@ function publicCatalogSelect(key, label, items) {
 
 function catalogObjectiveNumber(item, field) {
   const values = (item.objective_availability || []).map((entry) => Number(entry?.[field])).filter(Number.isFinite);
-  return values.length > 0 ? Math.min(...values) : null;
+  return values.length > 0 ? minOf(values) : null;
 }
 
 function catalogCostSortAvailable(items) {
@@ -1836,31 +1836,59 @@ function renderFamilyContext(payload) {
   setStatus(`Loaded context for ${payload.problem_type} / ${payload.benchmark_name}`);
 }
 
-function coordinateBounds(points) {
-  if (!Array.isArray(points) || points.length === 0) {
-    return null;
+// Math.min/Math.max take an *argument list*, so `Math.min(...values)` is bounded
+// by how many arguments the engine will accept -- around 240 000 in V8, after
+// which it throws RangeError: Maximum call stack size exceeded. Every array here
+// grows with the instance, and a solution's road geometry reaches 2.2 million
+// points on the largest published instance, so the spread form is a size limit
+// disguised as a convenience.
+function minOf(values) {
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] < best) best = values[index];
   }
-  const validPoints = points
-    .map((point) => {
+  return Number.isFinite(best) ? best : null;
+}
+
+function maxOf(values) {
+  let best = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] > best) best = values[index];
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+// Accepts either one array of points or several, so a caller with a node list
+// and a per-route geometry list does not have to concatenate millions of points
+// into a throwaway array just to measure them.
+function coordinateBounds(...pointLists) {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let seen = 0;
+  for (const points of pointLists) {
+    if (!Array.isArray(points)) {
+      continue;
+    }
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
       if (!Array.isArray(point) || point.length < 2) {
-        return null;
+        continue;
       }
       const x = Number(point[0]);
       const y = Number(point[1]);
-      return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
-    })
-    .filter(Boolean);
-  if (validPoints.length === 0) {
-    return null;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        continue;
+      }
+      seen += 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
   }
-  const xs = validPoints.map((point) => point[0]);
-  const ys = validPoints.map((point) => point[1]);
-  return {
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-    minY: Math.min(...ys),
-    maxY: Math.max(...ys),
-  };
+  return seen > 0 ? { minX, maxX, minY, maxY } : null;
 }
 
 function projectCoordinates(points, width, height, bounds = null) {
@@ -1928,7 +1956,7 @@ function metaNodeIndexOffset(metaNodes) {
   const nodeIds = Array.isArray(metaNodes)
     ? metaNodes.map((node) => Number(node?.instance_node_id)).filter(Number.isFinite)
     : [];
-  return nodeIds.length > 0 && Math.min(...nodeIds) === 0 ? 0 : 1;
+  return nodeIds.length > 0 && minOf(nodeIds) === 0 ? 0 : 1;
 }
 
 function resolveViewerNodeCoordinates(instanceData, geometryMeta) {
@@ -2204,14 +2232,48 @@ function starPoints(centerX, centerY, outerRadius, innerRatio = 0.42, spikes = 5
   return points.join(" ");
 }
 
+// Drop points the viewer cannot see. Road geometry is stored at full surveyed
+// fidelity -- the largest published solution traverses 2.2 million points -- but
+// this preview is 860x520 px, so anything closer than half a pixel to the last
+// kept point cannot change a rendered stroke. It can very much change whether
+// the page finishes rendering: emitting every point produces a polyline
+// attribute tens of megabytes long, per route.
+//
+// Endpoints are always kept, so a route still starts and ends where it should.
+const PREVIEW_MIN_POINT_SPACING_PX = 0.5;
+
+function thinProjectedPath(projected) {
+  if (projected.length <= 2) {
+    return projected;
+  }
+  const minimumSquared = PREVIEW_MIN_POINT_SPACING_PX * PREVIEW_MIN_POINT_SPACING_PX;
+  const kept = [projected[0]];
+  let last = projected[0];
+  for (let index = 1; index < projected.length - 1; index += 1) {
+    const point = projected[index];
+    const dx = point.x - last.x;
+    const dy = point.y - last.y;
+    if (dx * dx + dy * dy >= minimumSquared) {
+      kept.push(point);
+      last = point;
+    }
+  }
+  kept.push(projected[projected.length - 1]);
+  return kept;
+}
+
 function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
   const width = 860;
   const height = 520;
   const previewGeometry = resolvePreviewGeometry(instanceData, bksData, selectedEntry, options);
-  const projectionBounds = coordinateBounds([
-    ...(previewGeometry.nodeCoordinates || []),
-    ...previewGeometry.routeLines.flatMap((routeLine) => routeLine.coordinates || []),
-  ]);
+  // One list per route rather than one concatenated array: flattening here built
+  // a throwaway array of every geometry point in the solution -- 2.2 million of
+  // them on the largest instance -- purely to take a min and a max. The argument
+  // count is the route count, a few hundred at most.
+  const projectionBounds = coordinateBounds(
+    previewGeometry.nodeCoordinates || [],
+    ...previewGeometry.routeLines.map((routeLine) => routeLine.coordinates || []),
+  );
   const projectedNodes = projectCoordinates(previewGeometry.nodeCoordinates || [], width, height, projectionBounds);
   const display = {
     hiddenRoutes: options.displayOptions?.hiddenRoutes || new Set(),
@@ -2228,7 +2290,7 @@ function renderPreviewSvg(instanceData, bksData, selectedEntry, options = {}) {
       return "";
     }
     const opacityAttr = opacity < 1 ? ` stroke-opacity="${opacity.toFixed(3)}"` : "";
-    return `<polyline fill="none" style="stroke:${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${projected
+    return `<polyline fill="none" style="stroke:${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"${opacityAttr} points="${thinProjectedPath(projected)
       .map((point) => `${point.x},${point.y}`)
       .join(" ")}" />`;
   };
@@ -3397,8 +3459,10 @@ function normalizeUploadedSolutionRoutes(rawRoutes, dimension) {
   }
 
   const customerCount = Math.max(0, dimension - 1);
-  const minId = Math.min(...allStops);
-  const maxId = Math.max(...allStops);
+  // allStops is every customer in the solution; the spread form would cap this
+  // viewer at whatever argument count the engine allows.
+  const minId = minOf(allStops);
+  const maxId = maxOf(allStops);
   let mode = "customer-1based";
   let transform = (value) => value;
 
