@@ -1132,9 +1132,33 @@ function renderInstanceRows(items, options = {}) {
 
 const VARIANT_SORT_ORDER = ["euclidean", "fastest", "shortest"];
 
+// A family whose base instances each appear under several arc-cost metrics is
+// one instance with N variants, not N unrelated rows, and reads far better
+// grouped. Decided from the items themselves rather than from a family name:
+// Poryos2026 was the only such family when this table was written, and
+// hardcoding it meant the next one (Mamut2026) silently fell back to a flat
+// list where the three variants of a base were indistinguishable.
+function hasMetricVariantGroups(items) {
+  const variantsByBase = new Map();
+  for (const item of items || []) {
+    const variant = item.locator?.metric_variant;
+    if (!variant) continue;
+    const key = instanceGroupKey(item);
+    const variants = variantsByBase.get(key) ?? new Set();
+    variants.add(variant);
+    if (variants.size > 1) return true;
+    variantsByBase.set(key, variants);
+  }
+  return false;
+}
+
 function variantSortKey(variant) {
   const idx = VARIANT_SORT_ORDER.indexOf(variant);
   return idx === -1 ? VARIANT_SORT_ORDER.length : idx;
+}
+
+function instanceGroupKey(item) {
+  return [item.place_slug ?? "", item.num_customers, item.display_name].join("␟");
 }
 
 function renderInstanceGroups(items, preserveOrder = false, options = {}) {
@@ -1144,7 +1168,7 @@ function renderInstanceGroups(items, preserveOrder = false, options = {}) {
   }
   const groups = new Map();
   for (const item of items) {
-    const key = [item.place_slug ?? "", item.num_customers, item.display_name].join("␟");
+    const key = instanceGroupKey(item);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
@@ -1749,9 +1773,9 @@ function renderCatalogIndex(payload) {
     renderSubrouteList("Places", payload.place_routes),
     renderSubrouteList("Sizes", payload.size_routes),
   ].join("");
-  const isPoryos2026FamilyPage =
-    payload.payload_kind === "family_index" && payload.benchmark_name === "Poryos2026";
-  const tableHtml = isPoryos2026FamilyPage
+  const groupsByMetricVariant =
+    payload.payload_kind === "family_index" && hasMetricVariantGroups(filteredItems);
+  const tableHtml = groupsByMetricVariant
     ? renderInstanceGroups(filteredItems, true, { inspector: true })
     : renderInstanceRows(filteredItems, { inspector: true });
   const tableHint = filteredItems.length

@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
+
 
 ROUTE_GEOMETRY_FORMAT = "mamut-bks-geometry"
 ROUTE_GEOMETRY_FORMAT_VERSION = 1
@@ -134,12 +136,21 @@ def _discover_pending(
     min_customers: int,
     cache_dir: Path | None = None,
 ) -> tuple[list[_PendingBks], int]:
-    collection_root = output_repo_dir / "benchmarks" / "Poryos2026"
+    # Every collection, not just the first one that needed this. A collection is
+    # marked by its ``mamut-collection.json``; hardcoding one family's directory
+    # here silently left the others rendering straight lines between customers no
+    # matter how many validated solutions they carried.
+    collection_roots = sorted(
+        marker.parent
+        for marker in (output_repo_dir / "benchmarks").glob("*/" + COLLECTION_MARKER_FILENAME)
+    )
     pending: list[_PendingBks] = []
     reused = 0
     geo_file_hashes: dict[Path, str] = {}
     validation_hashes: dict[Path, str] = {}
-    for instance_path in sorted(collection_root.rglob("*.vrp.json")):
+    for collection_root, instance_path in (
+        (root, path) for root in collection_roots for path in sorted(root.rglob("*.vrp.json"))
+    ):
         instance_bytes = instance_path.read_bytes()
         instance = json.loads(instance_bytes)
         if int(instance.get("num_customers", 0)) < min_customers:
@@ -572,9 +583,19 @@ def _save_artifact(
     canonical = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
     target = route_geometry_cache_path(output_repo_dir, entry.bks_path, cache_dir=cache_dir)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
-            compressed.write(canonical)
+    # Written aside and renamed into place: an interrupted build used to leave a
+    # truncated .gz behind, and `load_route_geometry` raises on a corrupt entry
+    # rather than treating it as a miss -- so one killed run poisoned the cache
+    # for every run after it. os.replace is atomic within a filesystem.
+    staging = target.with_name(f"{target.name}.{os.getpid()}.partial")
+    try:
+        with staging.open("wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+                compressed.write(canonical)
+        os.replace(staging, target)
+    except BaseException:
+        staging.unlink(missing_ok=True)
+        raise
     return target
 
 

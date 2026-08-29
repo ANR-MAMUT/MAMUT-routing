@@ -20,7 +20,8 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
 | `benchmarks/Poryos2026/` *(submodule)* | The generated **Poryos2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
-| `osmdata/` | OpenStreetMap-derived data feeding the Poryos2026 generated benchmarks. |
+| `benchmarks/Mamut2026/` | The generated **Mamut2026 CVRP collection**: designed-diversity city instances under three arc-cost metrics — see below. |
+| `osmdata/` | OpenStreetMap-derived data feeding the Poryos2026 and Mamut2026 generated benchmarks. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
@@ -52,6 +53,51 @@ The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW 
 ### The Poryos2026 collection
 
 [MAMUT-routing-Poryos2026](https://github.com/ANR-MAMUT/MAMUT-routing-Poryos2026), mounted at `benchmarks/Poryos2026/`, is the generated city family and the first **family-first collection**: instead of one satellite per problem type, a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Poryos2026 satellites are archived with tombstone READMEs.
+
+### The Mamut2026 collection
+
+`benchmarks/Mamut2026/` is the CVRP-only companion to Poryos2026, built for one
+experiment: **what happens to a state-of-the-art solver when the metric between
+customers changes?** Every base instance is materialized under all three arc-cost
+metrics (`euclidean`, `shortest`, `fastest`) over identical customers, demands
+and capacity, so the metric is the only thing that varies within a triple.
+
+Where Poryos2026 is a cartesian grid over 5 cities, Mamut2026 is a *designed*
+set: 100 base instances over 100 distinct OSM city extracts, one per city, with
+the configurations chosen by a measured max-min criterion over instance
+descriptors (customer clustering, demand variation and spatial autocorrelation,
+depot centrality, realized route size, capacity tightness) under coverage quotas
+on every design axis — including the cities' own road-network distortion, which
+is the experiment's independent variable.
+
+Three things are fixed before any of that is drawn. Size follows a **ladder**,
+not a grid: 100 distinct values of `n` rising geometrically from 100 to 1000, one
+per instance, so size is a covariate rather than an eight-level factor. **Half
+the set is sourced entirely from real map amenities** (50 `poi` / 25 `hybrid` /
+25 `parametric`), drawn from 35 curated categories that are premises a vehicle
+serves — street furniture such as `bench`, `waste_basket` and `parking` is
+excluded, since it is 70 % of a dense city's raw amenity count. Each ladder rung
+is matched to a city whose measured amenity capacity can actually supply it.
+
+And the **capacity regime is assigned per rung, not drawn**. A target route size
+is offered to a rung only when its whole range still leaves at least six
+vehicles, so every published instance is a real fleet problem: the set needs 7
+vehicles at its lightest and 508 at its heaviest. Instance names carry that
+bound the way CVRPLIB's `X-n101-k25` does — `mamut-lyon-n1000-k91-poi` — as a
+*lower* bound on the route count, not a cap; the fleet itself is unconstrained.
+
+It otherwise shares Poryos2026's conventions exactly (3-decimal float arc costs,
+sha256-pinned sidecars), so the two families are directly comparable.
+
+The collection's own [README](benchmarks/Mamut2026/README.md) carries the layout
+and the achieved coverage table.
+
+The generation campaign itself lives **outside this repository**, in
+`MAMUT-routing-generation/` alongside it: the runner
+(`scripts/generate_mamut2026.py`, built on `mamut_routing_tools.campaign`), the
+design record with all of its measurements (`docs/mamut2026-design.md`), and the
+campaign audit trail. This repository keeps only what the website and the
+benchmark contract need — nothing here depends on that workbench being present.
 
 A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
 
@@ -152,6 +198,7 @@ The source code is licensed under the [MIT License](LICENSE).
 
 This repository also contains benchmark data and generated artifacts under
 family-specific terms. In particular, `Ortec2022` material is under
-`CC BY-NC 4.0`, and OSM-derived `Poryos2026` artifacts are under `ODbL 1.0`
+`CC BY-NC 4.0`, and OSM-derived `Poryos2026` and `Mamut2026` artifacts are
+under `ODbL 1.0`
 where applicable. See [NOTICE](NOTICE) and the `README.md`/`LICENSE` files in
 each benchmark family directory.

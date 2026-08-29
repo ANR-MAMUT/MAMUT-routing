@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
 from mamut_routing_publish.route_geometry import (
     _PendingBks,
     _city_key,
@@ -120,6 +121,10 @@ def test_resolve_workers_clamps_to_batches_and_validates() -> None:
 
 def test_site_materialization_can_skip_groups_whose_gitignored_osm_extract_is_absent(tmp_path: Path) -> None:
     collection = tmp_path / "benchmarks" / "Poryos2026"
+    # What makes a directory a collection is its marker file. Discovery walks
+    # ``benchmarks/*/mamut-collection.json`` rather than looking for a hardcoded
+    # family name, so a fixture without one is not a collection at all.
+    _write(collection / COLLECTION_MARKER_FILENAME, '{"family": "Poryos2026"}\n')
     instance_path = _write(
         collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
         json.dumps(
@@ -172,6 +177,10 @@ def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
     import mamut_routing_tools.osm as osm_module
 
     collection = tmp_path / "benchmarks" / "Poryos2026"
+    # What makes a directory a collection is its marker file. Discovery walks
+    # ``benchmarks/*/mamut-collection.json`` rather than looking for a hardcoded
+    # family name, so a fixture without one is not a collection at all.
+    _write(collection / COLLECTION_MARKER_FILENAME, '{"family": "Poryos2026"}\n')
     instance_path = _write(
         collection / "CVRP" / "fastest" / "missing_city" / "n=10" / "sample" / "sample.vrp.json",
         json.dumps(
