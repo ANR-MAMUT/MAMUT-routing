@@ -26,7 +26,8 @@ skipped for those pages.
 from __future__ import annotations
 
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import warnings
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,9 +35,34 @@ from mamut_routing_lib.td import TD_IGP_MODEL, TD_ROAD_MODEL, load_td_instance, 
 
 ATF_CACHE_RELATIVE = Path("dist") / "atf-cache"
 DEFAULT_MAX_CUSTOMERS = 400
+#: Readers for the reuse scan. Purely I/O bound, so threads (not processes):
+#: pickling thousands of instance payloads back would cost more than the read.
+_SCAN_READ_THREADS = 8
 
 #: td models whose ATFs are materialized on load (no committed sidecar).
 MATERIALIZED_TD_MODELS = frozenset({TD_IGP_MODEL, TD_ROAD_MODEL})
+
+
+def resolve_atf_jobs(jobs: int | None = None, task_count: int | None = None) -> int:
+    """Effective materialization workers: cores - 2 unless pinned.
+
+    Each worker holds one full ``InstanceATFs`` at a time (hundreds of MB at
+    the n=400 cap), so this is the phase's memory knob as much as its speed
+    knob -- hence a caller-supplied value is honoured verbatim.
+
+    ``task_count``, when known, clamps the result: an incremental build with a
+    handful of stale entries should not fork a worker per core to run three
+    tasks. Mirrors ``route_geometry._resolve_workers``.
+    """
+    if jobs is None:
+        resolved = max(1, (os.cpu_count() or 4) - 2)
+    elif jobs < 1:
+        raise ValueError(f"jobs must be >= 1, got: {jobs}")
+    else:
+        resolved = jobs
+    if task_count is not None:
+        resolved = min(resolved, max(task_count, 1))
+    return resolved
 
 
 def atf_cache_file(cache_dir: Path, benchmark_name: str, instance_name: str) -> Path:
@@ -50,6 +76,15 @@ def atf_cache_path(output_repo_dir: Path, benchmark_name: str, instance_name: st
 def _is_materialized_instance_payload(td_block) -> bool:
     model = td_block.get("model") if isinstance(td_block, dict) else getattr(td_block, "model", None)
     return model in MATERIALIZED_TD_MODELS
+
+
+def _read_bytes_or_none(path: Path) -> bytes | None:
+    """Scan reader: unreadable files are reported, not raised (as before)."""
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        warnings.warn(f"Skipping unreadable TD instance {path}: {error}", stacklevel=2)
+        return None
 
 
 def _materialize_one(instance_path_str: str, cache_path_str: str) -> str:
@@ -86,8 +121,9 @@ def materialize_atf_cache(
     Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
     one cache entry. Existing cache files are reused (deterministic content).
 
-    ``cache_dir`` overrides the default ``<repo>/dist/atf-cache`` target for
-    staging builds. ``seed_from`` hardlinks an existing cache tree into the
+    ``jobs`` pins the worker count (default: cores - 2). ``cache_dir``
+    overrides the default ``<repo>/dist/atf-cache`` target for staging
+    builds. ``seed_from`` hardlinks an existing cache tree into the
     target first, so a fresh staging dir reuses prior materializations
     instead of regenerating them.
     """
@@ -112,13 +148,30 @@ def materialize_atf_cache(
         for candidate in sorted(benchmarks_root.iterdir()):
             if candidate.is_dir() and (candidate / COLLECTION_MARKER_FILENAME).is_file():
                 scan_roots.extend(candidate / problem_type for problem_type in ("TDVRPTW", "TDVRP"))
+    scan_paths: list[Path] = []
     for root in scan_roots:
         if not root.is_dir():
             continue
-        for instance_path in sorted(root.rglob("*.vrp.json")):
+        scan_paths.extend(sorted(root.rglob("*.vrp.json")))
+
+    # The scan reads every TD instance file to decide what is already cached.
+    # Reading is I/O bound (and slow on a cold checkout), so it runs on a small
+    # thread pool; ``map`` preserves order, so the reduction below still walks
+    # the files in exactly the scan order and picks exactly the same variants.
+    reused_keys: set[str] = set()
+    with ThreadPoolExecutor(max_workers=_SCAN_READ_THREADS) as readers:
+        for instance_path, raw in zip(scan_paths, readers.map(_read_bytes_or_none, scan_paths, chunksize=32)):
+            if raw is None:
+                continue
             try:
-                payload = json.loads(instance_path.read_text())
-            except (OSError, ValueError):
+                # Bytes, not ``read_text()``: json handles the UTF-8 decode itself.
+                # ``read_text()`` without an encoding decodes as the locale codepage
+                # (cp1252 on Windows), and the resulting UnicodeDecodeError -- a
+                # ValueError -- was swallowed below, silently dropping the instance
+                # and its schedule table from the site.
+                payload = json.loads(raw)
+            except ValueError as error:
+                warnings.warn(f"Skipping unparseable TD instance {instance_path}: {error}", stacklevel=2)
                 continue
             td_block = payload.get("td")
             if not isinstance(td_block, dict) or not _is_materialized_instance_payload(td_block):
@@ -131,15 +184,16 @@ def materialize_atf_cache(
                 resolved_cache_dir, str(payload["benchmark_name"]), str(payload["instance_name"])
             )
             key = str(cache_path)
-            if key in tasks or key in summary.reused:
+            if key in tasks or key in reused_keys:
                 continue
             if cache_path.is_file():
+                reused_keys.add(key)
                 summary.reused.append(key)
                 continue
             tasks[key] = str(instance_path)
 
     if tasks:
-        with ProcessPoolExecutor(max_workers=jobs or max(1, (os.cpu_count() or 4) - 2)) as pool:
+        with ProcessPoolExecutor(max_workers=resolve_atf_jobs(jobs, len(tasks))) as pool:
             futures = {
                 pool.submit(_materialize_one, instance_path, cache_path): cache_path
                 for cache_path, instance_path in tasks.items()
