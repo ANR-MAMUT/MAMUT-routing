@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from mamut_routing_lib.artifacts import discover_benchmark_instances
-from mamut_routing_lib.enums import MetricVariant, ObjectiveFunction
+from mamut_routing_lib.enums import MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
 from mamut_routing_publish.cli import app
 from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
 from mamut_routing_publish.site_payloads import (
     _TD_SCHEDULE_DOMAIN_TOL,
+    _atf_group_key,
+    _resolve_instance_group,
+    _schedule_groups,
     _deduplicate_discovered_instances,
     _evaluate_on_domain,
     _home_preview_metric_rank,
@@ -1277,6 +1281,101 @@ def test_site_build_materializes_atf_cache_unless_skipped(tmp_path: Path, monkey
     assert "ATF sidecar cache" not in result.stderr
 
 
+def test_atf_materialization_never_forks_more_workers_than_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as json_module
+    from concurrent.futures import Future
+
+    import mamut_routing_publish.atf_cache as atf_cache_module
+
+    assert atf_cache_module.resolve_atf_jobs(8, 3) == 3
+    assert atf_cache_module.resolve_atf_jobs(2, 30) == 2
+    # An empty task set never reaches the pool, but the floor keeps
+    # max_workers legal if it ever did.
+    assert atf_cache_module.resolve_atf_jobs(8, 0) == 1
+
+    repo_dir = tmp_path / "MAMUT-routing"
+    tree = repo_dir / "benchmarks" / "TDVRPTW" / "Fake" / "n=10"
+    tree.mkdir(parents=True)
+    for index in (1, 2):
+        payload = {
+            "benchmark_name": "Fake",
+            "instance_name": f"fake-{index}",
+            "num_customers": 10,
+            "td": {"model": atf_cache_module.TD_IGP_MODEL},
+        }
+        (tree / f"fake-{index}.vrp.json").write_text(json_module.dumps(payload), encoding="utf-8")
+
+    recorded: list[int] = []
+
+    class RecordingPool:
+        def __init__(self, max_workers=None):
+            recorded.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, _fn, _instance_path, cache_path):
+            future: Future = Future()
+            future.set_result(cache_path)
+            return future
+
+    monkeypatch.setattr(atf_cache_module, "ProcessPoolExecutor", RecordingPool)
+    summary = atf_cache_module.materialize_atf_cache(repo_dir, jobs=16)
+    assert len(summary.materialized) == 2
+    assert recorded == [2]
+
+
+def test_site_build_atf_jobs_pins_the_materialization_worker_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mamut_routing_publish.atf_cache as atf_cache_module
+
+    seen: list[int | None] = []
+
+    def record_materialize(repo_dir, *, max_customers, jobs=None, cache_dir=None, seed_from=None):
+        seen.append(jobs)
+        return atf_cache_module.ATFCacheSummary()
+
+    monkeypatch.setattr(atf_cache_module, "materialize_atf_cache", record_materialize)
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+    common_args = [
+        "site",
+        "build",
+        "--output-repo-dir",
+        str(output_repo_dir),
+        "--source-commit",
+        "abcdef123456",
+        "--published-at",
+        "2026-04-23T12:00:00",
+        "--jobs",
+        "1",
+    ]
+
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-pinned", "--atf-jobs", "3"])
+    assert result.exit_code == 0, result.output
+    assert seen == [3]
+
+    # 'auto' resolves to the phase default rather than being forwarded as None,
+    # so the reported worker count is always the one actually used.
+    seen.clear()
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-auto"])
+    assert result.exit_code == 0, result.output
+    assert seen == [atf_cache_module.resolve_atf_jobs(None)]
+
+    seen.clear()
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-bad", "--atf-jobs", "0"])
+    assert result.exit_code != 0
+    assert seen == []
+    assert "auto" in result.stderr
+
+
 def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path) -> None:
     serial_repo_dir = tmp_path / "serial" / "MAMUT-routing"
     parallel_repo_dir = tmp_path / "parallel" / "MAMUT-routing"
@@ -1554,3 +1653,82 @@ def test_home_preview_metric_preferences_include_all_static_metrics() -> None:
 
     assert cvrp_order == [MetricVariant.SHORTEST, MetricVariant.FASTEST, MetricVariant.EUCLIDEAN]
     assert vrptw_order == [MetricVariant.EUCLIDEAN, MetricVariant.FASTEST, MetricVariant.SHORTEST]
+
+
+def _fake_discovered(problem_type: ProblemType, relative_path: str, **extra):
+    """A discovery item stub carrying just what the scheduler reads."""
+    return SimpleNamespace(
+        problem_type=problem_type,
+        benchmark_name="Dabia2013",
+        instance_path=Path("benchmarks") / relative_path,
+        base_instance_name=extra.get("base_instance_name"),
+        place_slug=extra.get("place_slug"),
+        instance_name=Path(relative_path).name,
+    )
+
+
+def test_schedule_groups_keep_td_twins_together_without_merging_size_buckets() -> None:
+    # C101 exists once per size bucket; only the TDVRPTW/TDVRP pair within one
+    # bucket shares an ATF sidecar.
+    items = [
+        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=50/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRPTW, "TDVRPTW/Dabia2013/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRPTW, "TDVRPTW/Dabia2013/n=50/C101.vrp.json"),
+    ]
+    groups = _schedule_groups(items)
+
+    assert sorted(index for group in groups for index, _ in group) == [0, 1, 2, 3]
+    grouped = {
+        tuple(sorted(item.instance_path.as_posix() for _, item in group)) for group in groups
+    }
+    assert grouped == {
+        ("benchmarks/TDVRP/Dabia2013/n=25/C101.vrp.json", "benchmarks/TDVRPTW/Dabia2013/n=25/C101.vrp.json"),
+        ("benchmarks/TDVRP/Dabia2013/n=50/C101.vrp.json", "benchmarks/TDVRPTW/Dabia2013/n=50/C101.vrp.json"),
+    }
+
+
+def test_schedule_groups_never_split_a_shared_sidecar_at_the_size_cap() -> None:
+    # A collection base with more variants than the cap: it must be split, but
+    # never through a pair that shares an ATF sidecar.
+    items = []
+    for subinstance in ("bpr-heavy", "bpr-light", "bpr-moderate", "wave-heavy", "wave-light"):
+        for problem_type in (ProblemType.TDVRP, ProblemType.TDVRPTW):
+            items.append(
+                _fake_discovered(
+                    problem_type,
+                    f"Poryos2026/{problem_type.value}/lyon/n=10/base/{subinstance}/base-{subinstance}.vrp.json",
+                    base_instance_name="base",
+                    place_slug="lyon",
+                )
+            )
+    groups = _schedule_groups(items)
+
+    assert len(groups) > 1  # 10 variants, cap is 6
+    assert sorted(index for group in groups for index, _ in group) == list(range(len(items)))
+    for group in groups:
+        keys = [_atf_group_key(item) for _, item in group]
+        # Every shared sidecar is a contiguous run inside exactly one group.
+        assert keys == sorted(keys, key=keys.index)
+    placement: dict[str, set[int]] = {}
+    for group_index, group in enumerate(groups):
+        for _, item in group:
+            placement.setdefault(_atf_group_key(item), set()).add(group_index)
+    assert all(len(indices) == 1 for indices in placement.values())
+
+
+def test_resolve_instance_group_isolates_a_failing_instance(monkeypatch) -> None:
+    items = [
+        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C102.vrp.json"),
+    ]
+
+    def fake_resolve(_repo, item, _atf_dir, _geometry_dir):
+        if item.instance_path.name == "C101.vrp.json":
+            raise ValueError("broken instance")
+        return "resolved"
+
+    monkeypatch.setattr("mamut_routing_publish.site_payloads._resolve_instance", fake_resolve)
+    results = _resolve_instance_group(Path("."), list(enumerate(items)))
+
+    assert results == [(0, None, "ValueError: broken instance"), (1, "resolved", None)]

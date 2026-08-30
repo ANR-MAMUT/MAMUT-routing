@@ -19,7 +19,22 @@ from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
 ROUTE_GEOMETRY_FORMAT = "mamut-bks-geometry"
 ROUTE_GEOMETRY_FORMAT_VERSION = 1
 ROUTE_GEOMETRY_CACHE_DIR = Path("dist/route-geometry-cache")
+ROUTE_GEOMETRY_SUFFIX = ".route-geometry.json.gz"
+#: Companion metadata written next to every cache entry: the scalars and arc
+#: keys the validator consults, so a cache hit costs a hash instead of a parse
+#: of the whole polyline payload. Named ``.gz`` so ``precompress`` skips it.
+ROUTE_GEOMETRY_META_SUFFIX = ".route-geometry.meta.json.gz"
 OSM_BOUNDS_TOLERANCE_DEGREES = 1e-5
+
+
+@dataclass(frozen=True)
+class RouteGeometryRef:
+    """A validated cache hit: where it is, and what callers read off it."""
+
+    path: Path
+    bks_sha256: str
+    metric: str
+    payload_sha256: str
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -35,12 +50,24 @@ def route_geometry_cache_path(
     bks_path: str | Path,
     *,
     cache_dir: str | Path | None = None,
+    bks_sha256: str | None = None,
 ) -> Path:
+    """Content-addressed cache path of a BKS's route geometry.
+
+    ``bks_sha256`` lets a caller that has already hashed the BKS skip a second
+    read of the same file; it must be the sha256 of the file's bytes.
+    """
     repo = Path(output_repo_dir)
     bks = Path(bks_path)
-    digest = _file_sha256(bks)
+    digest = bks_sha256 if bks_sha256 is not None else _file_sha256(bks)
     base = Path(cache_dir) if cache_dir is not None else repo / ROUTE_GEOMETRY_CACHE_DIR
-    return base / digest[:2] / f"{digest}.route-geometry.json.gz"
+    return base / digest[:2] / f"{digest}{ROUTE_GEOMETRY_SUFFIX}"
+
+
+def route_geometry_meta_path(payload_path: str | Path) -> Path:
+    """Companion metadata path of a route-geometry cache entry."""
+    target = Path(payload_path)
+    return target.with_name(target.name.removesuffix(ROUTE_GEOMETRY_SUFFIX) + ROUTE_GEOMETRY_META_SUFFIX)
 
 
 def load_route_geometry(path: str | Path) -> dict[str, Any]:
@@ -54,55 +81,186 @@ def load_route_geometry(path: str | Path) -> dict[str, Any]:
     return payload
 
 
-def route_geometry_for_bks(
-    output_repo_dir: str | Path,
-    bks_path: str | Path,
+def _expected_path_keys(bks_bytes: bytes) -> set[str]:
+    """The arc keys a cached geometry must cover for this BKS's routes."""
+    bks_payload = json.loads(bks_bytes)
+    expected_paths: set[str] = set()
+    for route in bks_payload.get("routes") or []:
+        sequence = [0, *[int(stop) for stop in route], 0]
+        expected_paths.update(f"{sequence[index]}-{sequence[index + 1]}" for index in range(len(sequence) - 1))
+    return expected_paths
+
+
+def _geometry_check_view(payload: dict[str, Any]) -> dict[str, Any]:
+    """The subset of a geometry payload that validation and callers consult.
+
+    Everything outside this view -- ``vertex_lonlat`` and the polylines, 99.86 %
+    of the payload bytes -- is parsed today only to be discarded, which is what
+    the companion metadata file exists to avoid.
+    """
+    return {
+        "format": payload.get("format"),
+        "format_version": payload.get("format_version"),
+        "bks_path": payload.get("bks_path"),
+        "bks_sha256": payload.get("bks_sha256"),
+        "instance_path": payload.get("instance_path"),
+        "instance_sha256": payload.get("instance_sha256"),
+        "source_geo_path": payload.get("source_geo_path"),
+        "source_geo_file_sha256": payload.get("source_geo_file_sha256"),
+        "metric": payload.get("metric"),
+        "objective_function": payload.get("objective_function"),
+        "path_keys": sorted(payload.get("paths") or {}),
+    }
+
+
+def _view_accepts_bks(
+    repo: Path,
+    bks: Path,
+    bks_bytes: bytes,
+    digest: str,
+    view: dict[str, Any],
     *,
-    file_hash_cache: dict[Path, str] | None = None,
-    cache_dir: str | Path | None = None,
-) -> tuple[Path, dict[str, Any]] | None:
-    repo = Path(output_repo_dir)
-    bks = Path(bks_path)
-    target = route_geometry_cache_path(repo, bks, cache_dir=cache_dir)
-    if not target.is_file():
-        return None
-    payload = load_route_geometry(target)
-    bks_bytes = bks.read_bytes()
-    digest = _sha256_bytes(bks_bytes)
-    if payload.get("bks_sha256") != digest:
-        return None
-    if payload.get("bks_path") != bks.relative_to(repo).as_posix():
-        return None
-    instance_path = repo / str(payload.get("instance_path") or "")
+    file_hash_cache: dict[Path, str] | None,
+) -> bool:
+    """The cache-hit predicate, over the check view of a cached geometry."""
+    if view.get("bks_sha256") != digest:
+        return False
+    if view.get("bks_path") != bks.relative_to(repo).as_posix():
+        return False
+    instance_path = repo / str(view.get("instance_path") or "")
     if not instance_path.is_file():
-        return None
+        return False
     instance_digest = file_hash_cache.get(instance_path) if file_hash_cache is not None else None
     if instance_digest is None:
         instance_digest = _file_sha256(instance_path)
         if file_hash_cache is not None:
             file_hash_cache[instance_path] = instance_digest
-    if payload.get("instance_sha256") != instance_digest:
-        return None
-    geo_file_sha256 = payload.get("source_geo_file_sha256")
+    if view.get("instance_sha256") != instance_digest:
+        return False
+    geo_file_sha256 = view.get("source_geo_file_sha256")
     if geo_file_sha256:
-        geo_path = repo / str(payload.get("source_geo_path") or "")
+        geo_path = repo / str(view.get("source_geo_path") or "")
         if not geo_path.is_file():
-            return None
+            return False
         geo_digest = file_hash_cache.get(geo_path) if file_hash_cache is not None else None
         if geo_digest is None:
             geo_digest = _file_sha256(geo_path)
             if file_hash_cache is not None:
                 file_hash_cache[geo_path] = geo_digest
         if geo_file_sha256 != geo_digest:
-            return None
-    bks_payload = json.loads(bks_bytes)
-    expected_paths: set[str] = set()
-    for route in bks_payload.get("routes") or []:
-        sequence = [0, *[int(stop) for stop in route], 0]
-        expected_paths.update(f"{sequence[index]}-{sequence[index + 1]}" for index in range(len(sequence) - 1))
-    if expected_paths != set(payload.get("paths") or {}):
+            return False
+    return _expected_path_keys(bks_bytes) == set(view.get("path_keys") or ())
+
+
+def route_geometry_for_bks(
+    output_repo_dir: str | Path,
+    bks_path: str | Path,
+    *,
+    file_hash_cache: dict[Path, str] | None = None,
+    cache_dir: str | Path | None = None,
+    bks_bytes: bytes | None = None,
+) -> tuple[Path, dict[str, Any]] | None:
+    """The cached route geometry of a BKS, or None when nothing valid is cached.
+
+    Returns the full payload. Callers that only need the reference should use
+    ``route_geometry_ref_for_bks``, which reads the companion metadata instead
+    of parsing every polyline.
+
+    ``bks_bytes`` lets a caller that has already read the BKS file hand the
+    bytes over: the file is otherwise read (and hashed) once here and again by
+    ``route_geometry_cache_path``.
+    """
+    repo = Path(output_repo_dir)
+    bks = Path(bks_path)
+    if bks_bytes is None:
+        bks_bytes = bks.read_bytes()
+    digest = _sha256_bytes(bks_bytes)
+    target = route_geometry_cache_path(repo, bks, cache_dir=cache_dir, bks_sha256=digest)
+    if not target.is_file():
+        return None
+    payload = load_route_geometry(target)
+    view = _geometry_check_view(payload)
+    if not _view_accepts_bks(repo, bks, bks_bytes, digest, view, file_hash_cache=file_hash_cache):
         return None
     return target, payload
+
+
+def route_geometry_ref_for_bks(
+    output_repo_dir: str | Path,
+    bks_path: str | Path,
+    *,
+    file_hash_cache: dict[Path, str] | None = None,
+    cache_dir: str | Path | None = None,
+    bks_bytes: bytes | None = None,
+    backfill_meta: bool = False,
+) -> RouteGeometryRef | None:
+    """Validated reference to a BKS's cached geometry, without parsing it.
+
+    Same accept/reject decision as ``route_geometry_for_bks``, reached through
+    the companion metadata when it is present and provably describes the
+    payload on disk; otherwise it falls back to the full parse, so caches
+    written before the companion existed keep working.
+
+    ``backfill_meta`` writes the companion for an entry that had none, so a
+    cache built before this existed upgrades itself on the next run. Only the
+    materialization phase passes it: that phase already owns the cache
+    directory, and it runs before payload generation in ``site build``, so the
+    same build already reads the companions it just backfilled.
+    """
+    repo = Path(output_repo_dir)
+    bks = Path(bks_path)
+    if bks_bytes is None:
+        bks_bytes = bks.read_bytes()
+    digest = _sha256_bytes(bks_bytes)
+    target = route_geometry_cache_path(repo, bks, cache_dir=cache_dir, bks_sha256=digest)
+    if not target.is_file():
+        return None
+    view, payload_sha256 = _load_check_view(target, backfill=backfill_meta)
+    if not _view_accepts_bks(repo, bks, bks_bytes, digest, view, file_hash_cache=file_hash_cache):
+        return None
+    return RouteGeometryRef(
+        path=target,
+        bks_sha256=digest,
+        metric=str(view.get("metric") or ""),
+        payload_sha256=payload_sha256,
+    )
+
+
+def _load_check_view(target: Path, *, backfill: bool = False) -> tuple[dict[str, Any], str]:
+    """Check view of a cached payload, plus the sha256 of the payload file.
+
+    The companion is trusted only when it names the exact payload bytes on
+    disk, so a companion left behind by an earlier write of the same BKS (a
+    partial materialization later completed, say) can never be mistaken for a
+    description of the current payload. Hashing the gzip is ~30x cheaper than
+    parsing it, and ``_build_bks_entries`` publishes that same digest anyway.
+    """
+    payload_bytes = target.read_bytes()
+    payload_sha256 = _sha256_bytes(payload_bytes)
+    meta_path = route_geometry_meta_path(target)
+    if meta_path.is_file():
+        try:
+            meta = json.loads(gzip.decompress(meta_path.read_bytes()))
+        except (OSError, ValueError):
+            meta = None
+        if (
+            isinstance(meta, dict)
+            and meta.get("payload_sha256") == payload_sha256
+            and meta.get("format") == ROUTE_GEOMETRY_FORMAT
+            and meta.get("format_version") == ROUTE_GEOMETRY_FORMAT_VERSION
+        ):
+            return meta, payload_sha256
+    # No usable companion: parse the payload, which also raises on a bad format
+    # marker exactly as before.
+    payload = json.loads(gzip.decompress(payload_bytes))
+    if payload.get("format") != ROUTE_GEOMETRY_FORMAT:
+        raise ValueError(f"Unsupported route-geometry format in {target}")
+    if payload.get("format_version") != ROUTE_GEOMETRY_FORMAT_VERSION:
+        raise ValueError(f"Unsupported route-geometry format version in {target}")
+    view = _geometry_check_view(payload)
+    if backfill:
+        _write_meta_artifact(target, view, payload_sha256)
+    return view, payload_sha256
 
 
 @dataclass(frozen=True)
@@ -171,11 +329,19 @@ def _discover_pending(
             geo_file_hashes[geo_path] = _file_sha256(geo_path)
         geo_file_sha256 = geo_file_hashes[geo_path]
         for bks_path in sorted(instance_path.parent.glob(f"{instance_path.name.removesuffix('.vrp.json')}.bks.*.json")):
-            cached = route_geometry_for_bks(output_repo_dir, bks_path, file_hash_cache=validation_hashes, cache_dir=cache_dir)
+            # Read once for both the reuse check and the pending entry below.
+            bks_bytes = bks_path.read_bytes()
+            cached = route_geometry_ref_for_bks(
+                output_repo_dir,
+                bks_path,
+                file_hash_cache=validation_hashes,
+                cache_dir=cache_dir,
+                bks_bytes=bks_bytes,
+                backfill_meta=True,
+            )
             if cached is not None:
                 reused += 1
                 continue
-            bks_bytes = bks_path.read_bytes()
             bks = json.loads(bks_bytes)
             routes = bks.get("routes")
             if not isinstance(routes, list) or not routes:
@@ -596,7 +762,36 @@ def _save_artifact(
     except BaseException:
         staging.unlink(missing_ok=True)
         raise
+    # Companion second: interrupted between the two, the entry simply has no
+    # companion and validation falls back to parsing the payload. The reverse
+    # order could leave metadata describing bytes that were never written.
+    _write_meta_artifact(target, _geometry_check_view(payload), _file_sha256(target))
     return target
+
+
+def _write_meta_artifact(target: Path, view: dict[str, Any], payload_sha256: str) -> Path | None:
+    """Write the companion metadata describing one cache entry.
+
+    ``view`` is the check view of the payload and ``payload_sha256`` the digest
+    of the payload file it describes, so the two can never disagree. Best
+    effort: the companion is an accelerator, and a failure to write one must
+    not fail a build whose payload is already published.
+    """
+    meta = dict(view)
+    meta["payload_sha256"] = payload_sha256
+    canonical = (json.dumps(meta, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+    meta_target = route_geometry_meta_path(target)
+    staging = meta_target.with_name(f"{meta_target.name}.{os.getpid()}.partial")
+    try:
+        with staging.open("wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+                compressed.write(canonical)
+        os.replace(staging, meta_target)
+    except OSError:
+        staging.unlink(missing_ok=True)
+        meta_target.unlink(missing_ok=True)
+        return None
+    return meta_target
 
 
 def _canonical_cache_relpath(target: Path) -> str:

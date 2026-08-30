@@ -17,6 +17,8 @@ from mamut_routing_publish.route_geometry import (
     materialize_route_geometry,
     route_geometry_cache_path,
     route_geometry_for_bks,
+    route_geometry_meta_path,
+    route_geometry_ref_for_bks,
 )
 
 
@@ -270,3 +272,88 @@ def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
     assert summary["osm"]["valid_existing"] == 0
     assert summary["osm"]["invalid_existing"] == 1
     assert (tmp_path / "osmdata" / "Missing-City.osm").is_file()
+
+
+def _companion_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """A published cache entry plus its companion; returns (bks_path, target)."""
+    instance_path = _write(tmp_path / "benchmarks/Poryos2026/CVRP/fastest/lyon/n10/s/s.vrp.json", '{"num_customers":10}\n')
+    bks_path = _write(tmp_path / "benchmarks/Poryos2026/CVRP/fastest/lyon/n10/s/s.bks.MonoCost.json", '{"routes":[[1,2]]}\n')
+    geo_path = _write(tmp_path / "benchmarks/Poryos2026/sidecars/s.geo.json.gz", "fixture")
+    entry = _PendingBks(
+        instance_path=instance_path,
+        instance_sha256=hashlib.sha256(instance_path.read_bytes()).hexdigest(),
+        bks_path=bks_path,
+        bks_sha256=hashlib.sha256(bks_path.read_bytes()).hexdigest(),
+        geo_path=geo_path,
+        geo_sha256="geo-digest",
+        geo_file_sha256=hashlib.sha256(geo_path.read_bytes()).hexdigest(),
+        metric="fastest",
+        objective_function="MonoCost",
+        routes=[[1, 2]],
+    )
+    edge_cache = {
+        "node:0_1": [[4.0, 45.0], [4.1, 45.1]],
+        "node:1_2": [[4.1, 45.1], [4.2, 45.2]],
+        "node:2_0": [[4.2, 45.2], [4.0, 45.0]],
+    }
+    target = _save_artifact(tmp_path, entry, edge_cache, sorted(edge_cache))
+    assert target is not None
+    return bks_path, target
+
+
+def test_companion_metadata_matches_the_full_payload_verdict(tmp_path: Path) -> None:
+    bks_path, target = _companion_fixture(tmp_path)
+    meta_path = route_geometry_meta_path(target)
+    assert meta_path.is_file()
+
+    meta = json.loads(gzip.decompress(meta_path.read_bytes()))
+    payload = load_route_geometry(target)
+    assert meta["payload_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
+    assert meta["path_keys"] == sorted(payload["paths"])
+    assert meta["bks_sha256"] == payload["bks_sha256"]
+    assert meta["metric"] == payload["metric"]
+
+    ref = route_geometry_ref_for_bks(tmp_path, bks_path)
+    full = route_geometry_for_bks(tmp_path, bks_path)
+    assert ref is not None and full is not None
+    assert (ref.path, ref.bks_sha256, ref.metric) == (full[0], full[1]["bks_sha256"], full[1]["metric"])
+    assert ref.payload_sha256 == hashlib.sha256(target.read_bytes()).hexdigest()
+
+    # Same verdict with the companion removed: the payload is the fallback.
+    meta_path.unlink()
+    fallback = route_geometry_ref_for_bks(tmp_path, bks_path)
+    assert fallback == ref
+
+
+def test_a_companion_that_does_not_describe_the_payload_is_ignored(tmp_path: Path) -> None:
+    bks_path, target = _companion_fixture(tmp_path)
+    meta_path = route_geometry_meta_path(target)
+    stale = json.loads(gzip.decompress(meta_path.read_bytes()))
+    # A partial entry later completed would leave a companion claiming a path
+    # set the payload no longer has; the payload digest is what catches it.
+    stale["path_keys"] = ["0-1"]
+    stale["payload_sha256"] = "0" * 64
+    meta_path.write_bytes(gzip.compress(json.dumps(stale).encode("utf-8"), mtime=0))
+
+    # Falls back to the payload, so the entry is still a valid hit.
+    assert route_geometry_ref_for_bks(tmp_path, bks_path) is not None
+
+    # Pinned to the real payload, that same truncated key set is a rejection.
+    stale["payload_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+    meta_path.write_bytes(gzip.compress(json.dumps(stale).encode("utf-8"), mtime=0))
+    assert route_geometry_ref_for_bks(tmp_path, bks_path) is None
+
+
+def test_backfill_writes_a_companion_for_an_entry_that_has_none(tmp_path: Path) -> None:
+    bks_path, target = _companion_fixture(tmp_path)
+    meta_path = route_geometry_meta_path(target)
+    meta_path.unlink()
+
+    assert route_geometry_ref_for_bks(tmp_path, bks_path) is not None
+    assert not meta_path.exists()  # read paths never write
+
+    assert route_geometry_ref_for_bks(tmp_path, bks_path, backfill_meta=True) is not None
+    assert meta_path.is_file()
+    assert json.loads(gzip.decompress(meta_path.read_bytes()))["path_keys"] == sorted(
+        load_route_geometry(target)["paths"]
+    )
