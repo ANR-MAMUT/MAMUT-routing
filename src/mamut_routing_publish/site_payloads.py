@@ -4,7 +4,6 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
-import hashlib
 import os
 from pathlib import Path
 import re
@@ -32,7 +31,7 @@ from mamut_routing_lib.td.checker import compute_route_ready_time_function
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
-from .route_geometry import ROUTE_GEOMETRY_CACHE_DIR, route_geometry_for_bks
+from .route_geometry import ROUTE_GEOMETRY_CACHE_DIR, route_geometry_ref_for_bks
 
 
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
@@ -898,6 +897,15 @@ def _metric_name_sort_key(value: str) -> tuple[int, str]:
     return (order.get(value, 99), value)
 
 
+#: "argument not supplied" marker, for parameters whose ``None`` is meaningful.
+_UNSET = object()
+
+#: sha256 of the instance and geo files the route-geometry validator re-checks,
+#: per build process. Same "inputs are stable for the duration of a build"
+#: assumption ``_discover_pending`` already makes with its own scan-wide cache.
+_VALIDATION_FILE_SHA256: dict[Path, str] = {}
+
+
 def _expected_bks_route_edges(meta_payload: dict | None, bks_paths: list[Path] | None) -> set[tuple[int, int]] | None:
     if not isinstance(meta_payload, dict) or not bks_paths:
         return None
@@ -952,8 +960,16 @@ def _expected_road_cache_entry_count(
     instance: AnyBenchmarkInstance,
     meta_payload: dict | None,
     bks_paths: list[Path] | None = None,
+    *,
+    route_edges: set[tuple[int, int]] | None | object = _UNSET,
 ) -> int | None:
-    route_edge_count = _expected_bks_route_edge_count(meta_payload, bks_paths)
+    # ``route_edges`` lets a caller that already built the edge set hand it over
+    # instead of paying for a second pass over every BKS file of the instance.
+    # The sentinel keeps "supplied, and it was None" distinct from "not supplied".
+    if route_edges is _UNSET:
+        route_edge_count = _expected_bks_route_edge_count(meta_payload, bks_paths)
+    else:
+        route_edge_count = len(route_edges) if route_edges is not None else None
     if route_edge_count is not None:
         return route_edge_count
 
@@ -1032,7 +1048,9 @@ def _build_geometry_summary(
     metric_cache = road_cache.get(metric_name) if isinstance(road_cache, dict) else None
     entry_count = len(metric_cache) if isinstance(metric_cache, dict) else 0
     expected_route_edges = _expected_bks_route_edges(meta_payload, bks_paths)
-    expected_entry_count = _expected_road_cache_entry_count(instance, meta_payload, bks_paths)
+    expected_entry_count = _expected_road_cache_entry_count(
+        instance, meta_payload, bks_paths, route_edges=expected_route_edges
+    )
     covers_expected_edges = _metric_cache_covers_bks_edges(metric_cache, expected_route_edges)
 
     if covers_expected_edges is True or (
@@ -1127,6 +1145,54 @@ def _resolve_atf_sidecar(
     return atf_cache_path(output_repo_dir, str(instance.benchmark_name.value), instance.instance_name), False
 
 
+#: The one ATF sidecar the current resolution group is working through, keyed
+#: by its ``atf_sha256`` pin. A TDVRPTW instance and its TDVRP twin have
+#: byte-identical arrival-time functions -- the same pin, and for materialized
+#: families literally the same cache file -- so without this each pair parses
+#: tens of MB of gzip twice. One entry only, and it is dropped *before* the next
+#: load, so peak memory stays at a single ``InstanceATFs`` as it is today.
+#: Sharing is safe because the functions are read-only here: ``NDCPWLF`` is
+#: immutable by contract and ``compose`` returns new objects.
+_TD_ATFS_MEMO: dict[str, object] = {}
+
+
+def _instance_atf_sha256(instance: AnyBenchmarkInstance) -> str | None:
+    td_block = getattr(instance, "td", None)
+    if td_block is None:
+        return None
+    value = (
+        td_block.get("atf_sha256")
+        if isinstance(td_block, dict)
+        else getattr(td_block, "atf_sha256", None)
+    )
+    return str(value) if value else None
+
+
+def _load_td_atfs(sidecar_path: Path, atf_sha256: str | None):
+    """``load_instance_atfs``, reusing the current group's sidecar when pinned."""
+    if atf_sha256 is None:
+        return load_instance_atfs(sidecar_path)
+    memoized = _TD_ATFS_MEMO.get(atf_sha256)
+    if memoized is not None:
+        return memoized
+    # Release the previous sidecar before allocating the next one.
+    _TD_ATFS_MEMO.clear()
+    atfs = load_instance_atfs(sidecar_path)
+    _TD_ATFS_MEMO[atf_sha256] = atfs
+    return atfs
+
+
+def _reset_resolution_memos() -> None:
+    """Drop what a pooled worker holds from the group it just finished.
+
+    Mirrors the ``roadgraph_build.clear_caches()`` discipline in the geometry
+    materializer: workers outlive tasks, so the per-group caches have to be
+    released explicitly or a worker accumulates one sidecar per group it sees.
+    """
+    _TD_ATFS_MEMO.clear()
+    _GEO_META_VIEWS.clear()
+
+
 def _build_artifact_links(
     output_repo_dir: Path,
     instance_path: Path,
@@ -1215,6 +1281,15 @@ def _collection_sidecars_ref(instance: AnyBenchmarkInstance) -> dict | None:
     return None
 
 
+#: Geo meta views of the sidecars the current resolution group shares. One geo
+#: sidecar backs every variant of its base (3 in Mamut2026, 18 in Poryos2026),
+#: and the view is a pure function of the file. Two entries: the group's own
+#: sidecar, plus one of slack. Cleared between groups by
+#: ``_reset_resolution_memos``.
+_GEO_META_VIEWS: dict[str, dict | None] = {}
+_GEO_META_VIEW_LIMIT = 2
+
+
 def _collection_geo_meta_view(collection_root: Path, geo_ref: dict) -> dict | None:
     """Load a collection geo sidecar and view it through the v1 meta-payload
     shape used by the geometry summary (node ids + per-metric key presence;
@@ -1223,6 +1298,17 @@ def _collection_geo_meta_view(collection_root: Path, geo_ref: dict) -> dict | No
     if not geo_relpath:
         return None
     geo_path = collection_root / str(geo_relpath)
+    memo_key = str(geo_path)
+    if memo_key in _GEO_META_VIEWS:
+        return _GEO_META_VIEWS[memo_key]
+    view = _read_collection_geo_meta_view(geo_path)
+    if len(_GEO_META_VIEWS) >= _GEO_META_VIEW_LIMIT:
+        _GEO_META_VIEWS.pop(next(iter(_GEO_META_VIEWS)))
+    _GEO_META_VIEWS[memo_key] = view
+    return view
+
+
+def _read_collection_geo_meta_view(geo_path: Path) -> dict | None:
     if not geo_path.is_file():
         return None
     geo = load_instance_geo(geo_path)
@@ -1241,6 +1327,22 @@ def _collection_geo_meta_view(collection_root: Path, geo_ref: dict) -> dict | No
     }
 
 
+#: Existence of the collection cross-link candidates, per build process. Every
+#: variant of a base probes the same ~15 paths (18 of them in Poryos2026), and
+#: the answer is a property of the tree, not of the instance asking.
+_COLLECTION_PATH_EXISTS: dict[str, bool] = {}
+
+
+def _collection_path_exists(collection_root: Path, relative_path: str) -> bool:
+    candidate = collection_root / relative_path
+    key = str(candidate)
+    exists = _COLLECTION_PATH_EXISTS.get(key)
+    if exists is None:
+        exists = candidate.is_file()
+        _COLLECTION_PATH_EXISTS[key] = exists
+    return exists
+
+
 def _collection_route_if_exists(
     collection_root: Path,
     benchmark_name: BenchmarkName,
@@ -1251,7 +1353,7 @@ def _collection_route_if_exists(
     metric_variant: MetricVariant | None,
     place_slug: str,
 ) -> str | None:
-    if not (collection_root / relative_path).is_file():
+    if not _collection_path_exists(collection_root, relative_path):
         return None
     return _instance_route_path(
         problem_type,
@@ -1471,15 +1573,25 @@ def _build_bks_entries(
         route_geometry_sha256 = None
         route_geometry_bks_sha256 = None
         route_geometry_metric = None
-        route_geometry = route_geometry_for_bks(output_repo_dir, bks_path, cache_dir=route_geometry_cache_dir)
+        # Without the hash cache the instance file and the shared geo sidecar are
+        # re-read and re-hashed once per BKS of the instance; the sidecar is up to
+        # 8 MB and is shared by every variant of its base.
+        route_geometry = route_geometry_ref_for_bks(
+            output_repo_dir,
+            bks_path,
+            file_hash_cache=_VALIDATION_FILE_SHA256,
+            cache_dir=route_geometry_cache_dir,
+        )
         if route_geometry is not None:
-            geometry_path, geometry_payload = route_geometry
+            geometry_path = route_geometry.path
             # The served link is always the canonical dist/route-geometry-cache
             # path, even when the existence check ran against a staging cache.
             route_geometry_path = (ROUTE_GEOMETRY_CACHE_DIR / geometry_path.parent.name / geometry_path.name).as_posix()
-            route_geometry_sha256 = hashlib.sha256(geometry_path.read_bytes()).hexdigest()
-            route_geometry_bks_sha256 = str(geometry_payload["bks_sha256"])
-            route_geometry_metric = str(geometry_payload["metric"])
+            # Already computed while validating the entry: the same file, the
+            # same digest, one read instead of two.
+            route_geometry_sha256 = route_geometry.payload_sha256
+            route_geometry_bks_sha256 = route_geometry.bks_sha256
+            route_geometry_metric = route_geometry.metric
         if td_instance is not None and td_atfs is not None and bks.objective_function in TD_SCHEDULE_OBJECTIVES:
             try:
                 td_schedules, function_entries = _build_td_schedules(td_instance, td_atfs, bks.routes)
@@ -1656,12 +1768,12 @@ def _resolve_instance(
             # tables and without the sidecar link, like above-cap materialized
             # models.
             if sidecar_path.is_file():
-                td_atfs = load_instance_atfs(sidecar_path)
+                td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
         elif sidecar_path.is_file():
             # Materialized td models (igp-profile, road-graph): use the
             # build-time cache when materialized (above the size cap the page
             # renders without schedule tables).
-            td_atfs = load_instance_atfs(sidecar_path)
+            td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
         elif int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
             warnings.warn(
                 f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
@@ -3292,6 +3404,116 @@ def _paths_for_summary(site_output: Path, paths: list[Path]) -> list[str]:
     return sorted(values)
 
 
+#: Upper bound on how many instances one pool task resolves. A Poryos2026 base
+#: has 18 variants sharing a geo sidecar; handing all 18 to one worker would
+#: leave a long tail at the end of the run, so groups are capped and split -- but
+#: never across a shared ATF sidecar, which is the expensive thing to share.
+_MAX_SCHEDULE_GROUP = 6
+
+#: Problem types whose instances carry an ATF sidecar shared with a twin.
+_TD_PROBLEM_TYPES = frozenset({ProblemType.TDVRP, ProblemType.TDVRPTW})
+
+
+def _atf_group_key(item: DiscoveredBenchmarkInstance) -> str:
+    """Identity of the ATF sidecar an instance uses, derived from its path.
+
+    A TDVRPTW instance and its TDVRP twin sit at the same path but for the
+    problem-type segment, and their arrival-time functions are byte-identical
+    (verified across this repository: every twin pair shares an ``atf_sha256``).
+    Dropping that one segment is what distinguishes a twin from a same-named
+    instance in another size bucket -- ``C101.vrp.json`` exists once per bucket,
+    and those do *not* share a sidecar.
+    """
+    parts = item.instance_path.as_posix().split("/")
+    problem_segment = item.problem_type.value
+    for position, part in enumerate(parts):
+        if part == problem_segment:
+            del parts[position]
+            break
+    return "/".join(parts)
+
+
+def _schedule_key(item: DiscoveredBenchmarkInstance) -> tuple[object, ...]:
+    """Which instances are worth resolving in the same worker.
+
+    Purely path-derived, and a scheduling hint only: the memos it feeds are
+    keyed on real identities (an ``atf_sha256``, a resolved sidecar path), so a
+    wrong guess costs a cache miss and never a wrong answer.
+    """
+    base = getattr(item, "base_instance_name", None)
+    place = getattr(item, "place_slug", None)
+    if base is not None and place is not None:
+        # Collection: every variant of a base shares one geo sidecar.
+        return ("base", str(item.benchmark_name), str(place), str(base))
+    if item.problem_type in _TD_PROBLEM_TYPES:
+        return ("td", _atf_group_key(item))
+    return ("solo", item.instance_path.as_posix())
+
+
+def _schedule_groups(
+    discovered_instances: list[DiscoveredBenchmarkInstance],
+) -> list[list[tuple[int, DiscoveredBenchmarkInstance]]]:
+    """Partition instances into pool tasks that share their sidecars.
+
+    Indices are carried through so results land back in discovery order however
+    the groups complete.
+    """
+    ordered = sorted(
+        enumerate(discovered_instances),
+        key=lambda pair: (
+            _schedule_key(pair[1]),
+            _atf_group_key(pair[1]),
+            pair[1].instance_path.as_posix(),
+        ),
+    )
+    groups: list[list[tuple[int, DiscoveredBenchmarkInstance]]] = []
+    current: list[tuple[int, DiscoveredBenchmarkInstance]] = []
+    current_key: tuple[object, ...] | None = None
+    for index, item in ordered:
+        key = _schedule_key(item)
+        if current and key != current_key:
+            groups.append(current)
+            current = []
+        elif (
+            len(current) >= _MAX_SCHEDULE_GROUP
+            and _atf_group_key(item) != _atf_group_key(current[-1][1])
+        ):
+            # At the cap, but only break where no ATF sidecar spans the seam.
+            groups.append(current)
+            current = []
+        current.append((index, item))
+        current_key = key
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _resolve_instance_group(
+    output_repo_dir: Path,
+    group: list[tuple[int, DiscoveredBenchmarkInstance]],
+    atf_cache_dir: Path | None = None,
+    route_geometry_cache_dir: Path | None = None,
+) -> list[tuple[int, _ResolvedSiteInstance | None, str | None]]:
+    """Resolve one scheduling group, isolating per-instance failures.
+
+    A failing instance is reported as a preformatted message rather than raised,
+    so one bad instance never costs the rest of its group -- the same
+    skip-and-warn contract the per-instance dispatch had.
+    """
+    _reset_resolution_memos()
+    try:
+        results: list[tuple[int, _ResolvedSiteInstance | None, str | None]] = []
+        for index, item in group:
+            try:
+                results.append((index, _resolve_instance(output_repo_dir, item, atf_cache_dir, route_geometry_cache_dir), None))
+            except Exception as exc:  # noqa: BLE001 - reported per instance by the caller
+                results.append((index, None, f"{type(exc).__name__}: {exc}"))
+        return results
+    finally:
+        # Pooled workers outlive tasks; hold nothing between groups.
+        _reset_resolution_memos()
+
+
 def _resolve_instances(
     output_repo: Path,
     discovered_instances,
@@ -3312,40 +3534,50 @@ def _resolve_instances(
         return []
 
     resolved_items: list[_ResolvedSiteInstance | None] = [None] * len(discovered_instances)
-    failures: list[tuple[str, Exception]] = []
+    failures: list[tuple[str, str]] = []
 
-    def record_failure(item, exc: Exception) -> None:
+    def record_failure(item, error: str) -> None:
         identifier = getattr(item, "instance_id", None) or getattr(item, "instance_name", None) or str(getattr(item, "instance_path", item))
-        failures.append((str(identifier), exc))
+        failures.append((str(identifier), error))
 
+    groups = _schedule_groups(discovered_instances)
     with (reporter.task("resolve instances", len(discovered_instances)) if reporter else _NullProgressTask()) as task:
+        def absorb(group, results: list[tuple[int, _ResolvedSiteInstance | None, str | None]]) -> None:
+            by_index = {index: item for index, item in group}
+            for index, resolved, error in results:
+                if error is None:
+                    resolved_items[index] = resolved
+                else:
+                    record_failure(by_index[index], error)
+                task.update(detail=getattr(by_index[index], "instance_name", None))
+
         if resolved_jobs == 1:
-            for index, item in enumerate(discovered_instances):
-                try:
-                    resolved_items[index] = _resolve_instance(output_repo, item, atf_cache_dir, route_geometry_cache_dir)
-                except Exception as exc:
-                    record_failure(item, exc)
-                task.update(detail=getattr(item, "instance_name", None))
+            for group in groups:
+                absorb(group, _resolve_instance_group(output_repo, group, atf_cache_dir, route_geometry_cache_dir))
         else:
             with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
                 futures = {
-                    executor.submit(_resolve_instance, output_repo, item, atf_cache_dir, route_geometry_cache_dir): (index, item)
-                    for index, item in enumerate(discovered_instances)
+                    executor.submit(_resolve_instance_group, output_repo, group, atf_cache_dir, route_geometry_cache_dir): group
+                    for group in groups
                 }
                 for future in as_completed(futures):
-                    index, item = futures[future]
+                    group = futures[future]
                     try:
-                        resolved_items[index] = future.result()
+                        results = future.result()
                     except Exception as exc:
-                        record_failure(item, exc)
-                    task.update(detail=getattr(item, "instance_name", None))
+                        # The task itself died (a broken pool, an unpicklable
+                        # result): report every instance it carried, as the
+                        # per-instance dispatch did.
+                        error = f"{type(exc).__name__}: {exc}"
+                        results = [(index, None, error) for index, _ in group]
+                    absorb(group, results)
     if failures:
         if reporter is not None:
-            for identifier, exc in failures:
-                reporter.phase("instance resolution failed (skipped)", instance=identifier, error=f"{type(exc).__name__}: {exc}")
+            for identifier, error in failures:
+                reporter.phase("instance resolution failed (skipped)", instance=identifier, error=error)
             reporter.phase("instances skipped due to resolution errors", skipped=len(failures), resolved=len(discovered_instances) - len(failures))
         else:
-            details = "; ".join(f"{identifier}: {type(exc).__name__}: {exc}" for identifier, exc in failures[:5])
+            details = "; ".join(f"{identifier}: {error}" for identifier, error in failures[:5])
             warnings.warn(f"Skipped {len(failures)} instance(s) that failed to resolve: {details}", stacklevel=2)
     return [item for item in resolved_items if item is not None]
 
