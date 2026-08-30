@@ -160,6 +160,12 @@ def _parse_worker_jobs(jobs: str) -> int | str:
     return parsed
 
 
+def _parse_optional_jobs(jobs: str) -> int | None:
+    """Parse an 'auto'-or-integer worker option; 'auto' becomes None (phase default)."""
+    parsed = _parse_worker_jobs(jobs)
+    return None if parsed == "auto" else int(parsed)
+
+
 def _ru_maxrss_to_gib(ru_maxrss: int) -> float:
     # Linux reports KiB; macOS reports bytes.
     bytes_value = ru_maxrss if sys.platform == "darwin" else ru_maxrss * 1024
@@ -277,6 +283,9 @@ def site_materialize_atf_cmd(
     """
     from mamut_routing_publish.atf_cache import materialize_atf_cache
 
+    if jobs is not None and jobs < 1:
+        typer.echo(f"--jobs must be an integer >= 1, got: {jobs}", err=True)
+        raise typer.Exit(code=1)
     repo_dir = _resolve_repo_dir(output_repo_dir)
     summary = materialize_atf_cache(repo_dir, max_customers=max_n, jobs=jobs)
     typer.echo(json.dumps(summary.as_dict(), indent=1))
@@ -524,6 +533,13 @@ def site_build_cmd(
             help="Materialize ATF sidecars for materialized-td-model instances with at most this many customers before generating payloads (see `site materialize-atf`).",
         ),
     ] = 400,
+    atf_jobs: Annotated[
+        str,
+        typer.Option(
+            "--atf-jobs",
+            help="Parallel ATF sidecar materialization workers: 'auto' (cores - 2) or an integer >= 1. Each worker holds one full ATF set at a time, so this caps the phase's memory as well as its speed.",
+        ),
+    ] = "auto",
     skip_atf_cache: Annotated[
         bool,
         typer.Option(
@@ -621,6 +637,9 @@ def site_build_cmd(
         raise typer.Exit(code=1)
     _validate_progress_format(progress_format)
     _validate_jobs(jobs)
+    # Parsed up front so a bad value fails before any work, even when the
+    # phase it belongs to is skipped.
+    atf_jobs_requested = _parse_optional_jobs(atf_jobs)
     build_started_at = time.perf_counter()
     reporter = make_progress_reporter(progress_format=progress_format, quiet=quiet)
     repo_dir = _resolve_repo_dir(output_repo_dir)
@@ -639,14 +658,21 @@ def site_build_cmd(
         # road-graph) ship no committed ATF sidecar; without this phase a fresh
         # checkout silently builds their instance pages without schedule tables
         # or the arc-click viewer. Incremental: existing cache files are reused.
-        from mamut_routing_publish.atf_cache import materialize_atf_cache
+        from mamut_routing_publish.atf_cache import materialize_atf_cache, resolve_atf_jobs
         from mamut_routing_publish.publish_roots import PublishRoots
 
         roots = PublishRoots.resolve(repo_dir, site_output_dir, state_dir)
-        reporter.phase("materializing ATF sidecar cache", max_n=atf_max_n, cache_dir=roots.atf_cache_dir)
+        resolved_atf_jobs = resolve_atf_jobs(atf_jobs_requested)
+        reporter.phase(
+            "materializing ATF sidecar cache",
+            max_n=atf_max_n,
+            jobs=resolved_atf_jobs,
+            cache_dir=roots.atf_cache_dir,
+        )
         atf_summary = materialize_atf_cache(
             repo_dir,
             max_customers=atf_max_n,
+            jobs=resolved_atf_jobs,
             cache_dir=roots.atf_cache_dir,
             seed_from=(roots.active_dist / "atf-cache") if not roots.in_place else None,
         )
