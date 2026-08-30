@@ -43,6 +43,28 @@ _SCAN_READ_THREADS = 8
 MATERIALIZED_TD_MODELS = frozenset({TD_IGP_MODEL, TD_ROAD_MODEL})
 
 
+def resolve_atf_jobs(jobs: int | None = None, task_count: int | None = None) -> int:
+    """Effective materialization workers: cores - 2 unless pinned.
+
+    Each worker holds one full ``InstanceATFs`` at a time (hundreds of MB at
+    the n=400 cap), so this is the phase's memory knob as much as its speed
+    knob -- hence a caller-supplied value is honoured verbatim.
+
+    ``task_count``, when known, clamps the result: an incremental build with a
+    handful of stale entries should not fork a worker per core to run three
+    tasks. Mirrors ``route_geometry._resolve_workers``.
+    """
+    if jobs is None:
+        resolved = max(1, (os.cpu_count() or 4) - 2)
+    elif jobs < 1:
+        raise ValueError(f"jobs must be >= 1, got: {jobs}")
+    else:
+        resolved = jobs
+    if task_count is not None:
+        resolved = min(resolved, max(task_count, 1))
+    return resolved
+
+
 def atf_cache_file(cache_dir: Path, benchmark_name: str, instance_name: str) -> Path:
     return cache_dir / benchmark_name / f"{instance_name}.atf.json.gz"
 
@@ -99,8 +121,9 @@ def materialize_atf_cache(
     Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
     one cache entry. Existing cache files are reused (deterministic content).
 
-    ``cache_dir`` overrides the default ``<repo>/dist/atf-cache`` target for
-    staging builds. ``seed_from`` hardlinks an existing cache tree into the
+    ``jobs`` pins the worker count (default: cores - 2). ``cache_dir``
+    overrides the default ``<repo>/dist/atf-cache`` target for staging
+    builds. ``seed_from`` hardlinks an existing cache tree into the
     target first, so a fresh staging dir reuses prior materializations
     instead of regenerating them.
     """
@@ -170,7 +193,7 @@ def materialize_atf_cache(
             tasks[key] = str(instance_path)
 
     if tasks:
-        with ProcessPoolExecutor(max_workers=jobs or max(1, (os.cpu_count() or 4) - 2)) as pool:
+        with ProcessPoolExecutor(max_workers=resolve_atf_jobs(jobs, len(tasks))) as pool:
             futures = {
                 pool.submit(_materialize_one, instance_path, cache_path): cache_path
                 for cache_path, instance_path in tasks.items()

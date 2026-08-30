@@ -1281,6 +1281,101 @@ def test_site_build_materializes_atf_cache_unless_skipped(tmp_path: Path, monkey
     assert "ATF sidecar cache" not in result.stderr
 
 
+def test_atf_materialization_never_forks_more_workers_than_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as json_module
+    from concurrent.futures import Future
+
+    import mamut_routing_publish.atf_cache as atf_cache_module
+
+    assert atf_cache_module.resolve_atf_jobs(8, 3) == 3
+    assert atf_cache_module.resolve_atf_jobs(2, 30) == 2
+    # An empty task set never reaches the pool, but the floor keeps
+    # max_workers legal if it ever did.
+    assert atf_cache_module.resolve_atf_jobs(8, 0) == 1
+
+    repo_dir = tmp_path / "MAMUT-routing"
+    tree = repo_dir / "benchmarks" / "TDVRPTW" / "Fake" / "n=10"
+    tree.mkdir(parents=True)
+    for index in (1, 2):
+        payload = {
+            "benchmark_name": "Fake",
+            "instance_name": f"fake-{index}",
+            "num_customers": 10,
+            "td": {"model": atf_cache_module.TD_IGP_MODEL},
+        }
+        (tree / f"fake-{index}.vrp.json").write_text(json_module.dumps(payload), encoding="utf-8")
+
+    recorded: list[int] = []
+
+    class RecordingPool:
+        def __init__(self, max_workers=None):
+            recorded.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, _fn, _instance_path, cache_path):
+            future: Future = Future()
+            future.set_result(cache_path)
+            return future
+
+    monkeypatch.setattr(atf_cache_module, "ProcessPoolExecutor", RecordingPool)
+    summary = atf_cache_module.materialize_atf_cache(repo_dir, jobs=16)
+    assert len(summary.materialized) == 2
+    assert recorded == [2]
+
+
+def test_site_build_atf_jobs_pins_the_materialization_worker_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mamut_routing_publish.atf_cache as atf_cache_module
+
+    seen: list[int | None] = []
+
+    def record_materialize(repo_dir, *, max_customers, jobs=None, cache_dir=None, seed_from=None):
+        seen.append(jobs)
+        return atf_cache_module.ATFCacheSummary()
+
+    monkeypatch.setattr(atf_cache_module, "materialize_atf_cache", record_materialize)
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    runner = CliRunner()
+    common_args = [
+        "site",
+        "build",
+        "--output-repo-dir",
+        str(output_repo_dir),
+        "--source-commit",
+        "abcdef123456",
+        "--published-at",
+        "2026-04-23T12:00:00",
+        "--jobs",
+        "1",
+    ]
+
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-pinned", "--atf-jobs", "3"])
+    assert result.exit_code == 0, result.output
+    assert seen == [3]
+
+    # 'auto' resolves to the phase default rather than being forwarded as None,
+    # so the reported worker count is always the one actually used.
+    seen.clear()
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-auto"])
+    assert result.exit_code == 0, result.output
+    assert seen == [atf_cache_module.resolve_atf_jobs(None)]
+
+    seen.clear()
+    result = runner.invoke(app, [*common_args, "--snapshot-id", "fixture-atf-bad", "--atf-jobs", "0"])
+    assert result.exit_code != 0
+    assert seen == []
+    assert "auto" in result.stderr
+
+
 def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path) -> None:
     serial_repo_dir = tmp_path / "serial" / "MAMUT-routing"
     parallel_repo_dir = tmp_path / "parallel" / "MAMUT-routing"
