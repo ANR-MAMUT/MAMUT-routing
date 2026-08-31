@@ -241,6 +241,7 @@ const state = {
   focusedRoute: null,
   routeView: {
     fadedOpacity: 0.2,
+    customersFollowRoutes: false,
     arrowsEnabled: true,
     depotStar: false,
     depotLegMode: "faded",
@@ -606,6 +607,7 @@ function resetRouteViewDefaults(routes, summary = null) {
   state.hiddenRoutes.clear();
   state.focusedRoute = null;
   state.routeView.fadedOpacity = 0.2;
+  state.routeView.customersFollowRoutes = false;
   state.routeView.arrowsEnabled = routeCount <= 10;
   // A solution overlay defaults to the star depot; a bare instance keeps the dot.
   state.routeView.depotStar = routeCount > 0;
@@ -758,6 +760,7 @@ function buildRouteSelector(routes, instanceData) {
       <div class="route-view-grid">
         <label class="field route-opacity-field"><span>Other routes${state.focusedRoute === null ? " (focus a route)" : ""}: <output class="route-view-opacity-value">${Math.round(state.routeView.fadedOpacity * 100)}%</output></span><input class="route-view-opacity" type="range" min="0" max="0.8" step="0.05" value="${state.routeView.fadedOpacity}"${state.focusedRoute === null ? " disabled" : ""} /></label>
         <label class="field"><span>Depot legs</span><select class="route-view-depot"><option value="full">Full</option><option value="faded">Faded</option><option value="hidden">Hidden</option></select></label>
+        <label class="route-view-toggle"><input class="route-view-customers" type="checkbox"${state.routeView.customersFollowRoutes ? " checked" : ""} /> Fade/hide customers with routes</label>
         <label class="route-view-toggle"><input class="route-view-arrows" type="checkbox"${state.routeView.arrowsEnabled ? " checked" : ""} /> Direction arrows</label>
         <label class="route-view-toggle"><input class="route-view-depot-star" type="checkbox"${state.routeView.depotStar ? " checked" : ""} /> Depot as star</label>
       </div>
@@ -815,10 +818,15 @@ function buildRouteSelector(routes, instanceData) {
     state.routeView.fadedOpacity = Number(event.target.value);
     routeSelectorContainer.querySelector(".route-view-opacity-value").textContent = `${Math.round(state.routeView.fadedOpacity * 100)}%`;
     redrawRoutesOnly();
+    if (state.routeView.customersFollowRoutes) redrawCustomersOnly();
   });
   routeSelectorContainer.querySelector(".route-view-depot").addEventListener("change", (event) => {
     state.routeView.depotLegMode = event.target.value;
     redrawRoutesOnly();
+  });
+  routeSelectorContainer.querySelector(".route-view-customers").addEventListener("change", (event) => {
+    state.routeView.customersFollowRoutes = event.target.checked;
+    renderVisualState({ fitMap: false });
   });
   routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
     state.routeView.arrowsEnabled = event.target.checked;
@@ -1011,16 +1019,25 @@ function buildVisualGeometry() {
   };
 }
 
+function customerMarkerOpacity(routeIndex, visibleRoutes, focusedRoute, fadedOpacity, followsRoutes) {
+  if (!followsRoutes || !Number.isInteger(routeIndex)) return 1;
+  if (!visibleRoutes.has(routeIndex)) return 0;
+  if (Number.isInteger(focusedRoute) && visibleRoutes.has(focusedRoute) && focusedRoute !== routeIndex) {
+    return Math.max(0, Math.min(1, Number(fadedOpacity) || 0));
+  }
+  return 1;
+}
+
 function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
   const bounds = [];
   const markerColors = themeMarkerColors();
   const customerToRoute = new Map();
   routes.forEach((route, routeIndex) => {
-    const color = routeColor(routeIndex);
     route.forEach((stopIndex) => {
-      customerToRoute.set(Number(stopIndex), color);
+      customerToRoute.set(Number(stopIndex), routeIndex);
     });
   });
+  const visibleRoutes = visibleRouteIndices(routes, instanceData);
   nodeCoordinates.forEach((coordinate, index) => {
     if (!Array.isArray(coordinate) || coordinate.length < 2) {
       return;
@@ -1028,18 +1045,36 @@ function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
     const lat = Number(coordinate[1]);
     const lon = Number(coordinate[0]);
     const isDepot = index === Number(instanceData.depot || 0);
-    const color = isDepot ? markerColors.depot : customerToRoute.get(index) || markerColors.unassigned;
+    const routeIndex = customerToRoute.get(index);
+    const markerOpacity = isDepot
+      ? 1
+      : customerMarkerOpacity(
+        routeIndex,
+        visibleRoutes,
+        state.focusedRoute,
+        state.routeView.fadedOpacity,
+        state.routeView.customersFollowRoutes,
+      );
+    if (markerOpacity <= 0) return;
+    const color = isDepot
+      ? markerColors.depot
+      : Number.isInteger(routeIndex)
+        ? routeColor(routeIndex)
+        : markerColors.unassigned;
     const marker = isDepot && state.routeView.depotStar
       ? L.marker([lat, lon], { icon: depotStarIcon(color), interactive: true, keyboard: false })
       : L.circleMarker([lat, lon], {
         radius: isDepot ? 7 : 5,
         color,
         fillColor: color,
-        fillOpacity: 0.85,
+        opacity: markerOpacity,
+        fillOpacity: 0.85 * markerOpacity,
         weight: isDepot ? 2 : 1,
       });
     const demand = Number(instanceData.demands?.[index]) || 0;
-    marker.bindPopup(`<strong>${isDepot ? "Depot" : `Node ${index}`}</strong><br/>Demand: ${demand}<br/>Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    const routeLabel = Number.isInteger(routeIndex) ? `#${routeIndex + 1}` : "Unassigned";
+    const routeDetail = isDepot ? "" : `<br/>Route: ${routeLabel}`;
+    marker.bindPopup(`<strong>${isDepot ? "Depot" : `Node ${index}`}</strong><br/>Demand: ${demand}${routeDetail}<br/>Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
     marker.addTo(state.layers.marker);
     bounds.push([lat, lon]);
   });
@@ -1107,6 +1142,14 @@ function redrawRoutesOnly() {
   state.layers.route.clearLayers();
   state.layers.arrow.clearLayers();
   drawRoutes(geometry.routeLines, visual.routes, visual.instanceData, geometry.routeMode);
+}
+
+function redrawCustomersOnly() {
+  const visual = currentVisualState();
+  const geometry = buildVisualGeometry();
+  if (!visual.instanceData || !geometry) return;
+  state.layers.marker.clearLayers();
+  drawCustomers(geometry.nodeCoordinates, visual.routes, visual.instanceData);
 }
 
 function updateStats(routeMode) {
