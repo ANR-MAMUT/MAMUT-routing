@@ -394,6 +394,13 @@ def _group_plan(output_repo_dir: Path, pending: list[_PendingBks]) -> tuple[list
 def _load_group_meta(output_repo_dir: Path, geo_relpath: str) -> dict[str, Any]:
     with gzip.open(output_repo_dir / geo_relpath, "rt", encoding="utf-8") as handle:
         meta = json.load(handle)
+    # Generated sidecars can carry the Windows spelling ``osmdata\City.osm``.
+    # Treat benchmark paths as portable POSIX paths so Linux/macOS builds read
+    # and download them under ``osmdata/`` instead of creating a repository-root
+    # filename containing a literal backslash.
+    source_osm_file = meta.get("source_osm_file")
+    if isinstance(source_osm_file, str):
+        meta["source_osm_file"] = source_osm_file.replace("\\", "/")
     meta["depot_instance_node_id"] = 0
     return meta
 
