@@ -149,7 +149,10 @@ def test_site_materialization_can_skip_groups_whose_gitignored_osm_extract_is_ab
     with gzip.open(geo_path, "wt", encoding="utf-8") as handle:
         json.dump(
             {
-                "source_osm_file": "osmdata/Missing-City.osm",
+                # Mamut2026 sidecars were generated on Windows. The publisher
+                # must resolve this portable benchmark path under osmdata/ on
+                # POSIX too, never as a root filename containing a backslash.
+                "source_osm_file": r"osmdata\Missing-City.osm",
                 "nodes": [
                     {"instance_node_id": 0, "poi_lon": 4.0, "poi_lat": 45.0},
                     {"instance_node_id": 1, "poi_lon": 4.1, "poi_lat": 45.1},
@@ -207,7 +210,7 @@ def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
         json.dump(
             {
                 "city": "Missing City",
-                "source_osm_file": "osmdata/Missing-City.osm",
+                "source_osm_file": r"osmdata\Missing-City.osm",
                 "map_options": {"only_intersections": True, "trim_to_connected_graph": True},
                 "nodes": [
                     {"instance_node_id": 0, "poi_lon": 4.0, "poi_lat": 45.0},
@@ -272,6 +275,7 @@ def test_site_materialization_fetches_missing_osm_from_committed_sidecar_bounds(
     assert summary["osm"]["valid_existing"] == 0
     assert summary["osm"]["invalid_existing"] == 1
     assert (tmp_path / "osmdata" / "Missing-City.osm").is_file()
+    assert not (tmp_path / r"osmdata\Missing-City.osm").exists()
 
 
 def _companion_fixture(tmp_path: Path) -> tuple[Path, Path]:
