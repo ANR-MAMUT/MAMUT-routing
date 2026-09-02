@@ -518,6 +518,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "GitHub_Invertocat_Black.svg" in site_js
     assert "breadcrumb-github-link" in site_js
     assert 'FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"])' in site_js
+    assert 'data-vrp-export="${entry.kind}"' in site_js
+    assert "button.download-chip" in (site_output / "webapp" / "site.css").read_text(encoding="utf-8")
     assert "pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments" in site_js
     assert "Open Derive Mode" not in site_js
     assert "deriveBenchmarkBtn" not in workbench_js
@@ -1651,6 +1653,14 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     links = cvrp_page["artifact_links"]
     assert links["geo_json_path"] == f"benchmarks/Poryos2026/sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.geo.json.gz"
     assert links["meta_path"] is None
+    # The client-side CVRPLIB export fetches the pinned distances sidecar of
+    # shortest/fastest collection instances; euclidean ones recompute the matrix.
+    from mamut_routing_lib.distances import compute_distances_sha256, load_instance_distances
+
+    distances_rel = f"benchmarks/Poryos2026/sidecars/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/{_COLLECTION_BASE}.distances-fastest.json.gz"
+    assert links["distances_path"] == distances_rel
+    assert links["distances_sha256"] == compute_distances_sha256(load_instance_distances(output_repo_dir / distances_rel))
+    assert links["vrp_path"] is None
     assert cvrp_page["sibling_variant_routes"] == {
         "CVRP (euclidean)": f"/benchmarks/cvrp/poryos2026/euclidean/{_COLLECTION_CITY}/n=2/{_COLLECTION_BASE}/",
     }

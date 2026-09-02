@@ -20,6 +20,7 @@ from mamut_routing_lib.artifacts import (
 )
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.geo import load_instance_geo
+from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import find_collection_root
 from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
@@ -226,6 +227,8 @@ class InstanceListItem(BaseModel):
     num_customers: int
     route_path: str
     artifact_vrp_json_path: str
+    artifact_distances_path: str | None = None
+    artifact_distances_sha256: str | None = None
     place_slug: str | None = None
     sampling_method: str | None = None
     tw_set: str | None = None
@@ -248,6 +251,11 @@ class SiteArtifactLinks(BaseModel):
     meta_path: str | None = None
     manifest_path: str | None = None
     atf_json_path: str | None = None
+    # Collection distances sidecar (.distances-<metric>.json.gz) of a slim
+    # instance whose matrix is not embedded: the client-side CVRPLIB .vrp
+    # export fetches it (and checks the pinned sha256) to write the matrix.
+    distances_path: str | None = None
+    distances_sha256: str | None = None
     # Collection (Poryos2026 v2) geo sidecar (.geo.json.gz, indexed road cache);
     # the viewer decodes it client-side where v1 instances fetch meta_path.
     geo_json_path: str | None = None
@@ -1203,7 +1211,8 @@ def _build_artifact_links(
         artifact_paths = instance.metadata.artifact_paths
         return SiteArtifactLinks(
             vrp_json_path=artifact_paths.vrp_json,
-            vrp_path=artifact_paths.vrp,
+            # The committed .vrp is optional (CVRP, n <= 200): only link it when it exists.
+            vrp_path=artifact_paths.vrp if (output_repo_dir / artifact_paths.vrp).is_file() else None,
             meta_path=artifact_paths.meta,
             manifest_path=artifact_paths.manifest,
         )
@@ -1241,12 +1250,33 @@ def _build_artifact_links(
                 candidate = collection_root / str(geo_relpath)
                 if candidate.is_file():
                     geo_json_path = candidate.relative_to(output_repo_dir).as_posix()
+    distances_path, distances_sha256 = _distances_sidecar_link(output_repo_dir, instance_path, instance)
     return SiteArtifactLinks(
         vrp_json_path=instance_path.relative_to(output_repo_dir).as_posix(),
         vrp_path=relative_raw_path,
         atf_json_path=atf_json_path,
         geo_json_path=geo_json_path,
+        distances_path=distances_path,
+        distances_sha256=distances_sha256,
     )
+
+
+def _distances_sidecar_link(
+    output_repo_dir: Path, instance_path: Path, instance: AnyBenchmarkInstance
+) -> tuple[str | None, str | None]:
+    """Repo-relative path (and pinned sha256) of the distances sidecar a slim
+    collection instance references; ``(None, None)`` for embedded matrices,
+    euclidean sources, TD instances, or a missing file."""
+    source = getattr(instance, "arc_costs_source", None)
+    if not isinstance(source, ArcCostsDistancesRef):
+        return None, None
+    collection_root = find_collection_root(instance_path)
+    if collection_root is None:
+        return None, None
+    candidate = collection_root / source.distances.path
+    if not candidate.is_file():
+        return None, None
+    return candidate.relative_to(output_repo_dir).as_posix(), source.distances.sha256
 
 
 def _build_related_routes(output_repo_dir: Path, path_map: dict[str, str]) -> dict[str, str]:
@@ -1883,6 +1913,8 @@ def _build_instance_list_item(resolved: _ResolvedSiteInstance) -> InstanceListIt
         num_customers=resolved.instance_summary.num_customers,
         route_path=resolved.route_path,
         artifact_vrp_json_path=resolved.artifact_links.vrp_json_path,
+        artifact_distances_path=resolved.artifact_links.distances_path,
+        artifact_distances_sha256=resolved.artifact_links.distances_sha256,
         place_slug=resolved.locator.place_slug,
         sampling_method=resolved.sampling_method,
         tw_set=resolved.tw_set,
