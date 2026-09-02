@@ -382,6 +382,40 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   overflow-wrap: anywhere;
 }
 
+.selection-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-bottom: 2px;
+}
+
+.selection-name {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.selection-cost-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.selection-cost-label {
+  color: var(--mut);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.selection-cost {
+  font-size: 24px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .route-selector {
   display: flex;
   flex-direction: column;
@@ -444,6 +478,8 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   grid-column: 1 / -1;
 }
 
+.route-render-field,
+.route-depot-opacity-field,
 .route-opacity-field {
   grid-column: 1 / -1;
 }
@@ -464,16 +500,6 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 
 .route-options[open] > summary {
   margin-bottom: 8px;
-}
-
-.route-filter-warning {
-  color: var(--warn, #d97706);
-  letter-spacing: normal;
-  text-transform: none;
-}
-
-.route-filter-grid input[aria-invalid="true"] {
-  border-color: var(--warn, #d97706);
 }
 
 /* Depot star marker: a divIcon wrapping an inline SVG, so it must not inherit
