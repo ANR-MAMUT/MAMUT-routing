@@ -372,6 +372,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "does not require cookies" in legal_payload["markdown"]
     assert "self-hosted" in legal_payload["markdown"]
     assert "tile.openstreetmap.org" in legal_payload["markdown"]
+    assert "CARTO" in legal_payload["markdown"]
+    assert "carto.com/attributions" in legal_payload["markdown"]
     assert "Google Fonts" not in legal_payload["markdown"]
     assert "unpkg.com" not in legal_payload["markdown"]
 
@@ -415,8 +417,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
 
     webapp_summary = generate_site_webapp(output_repo_dir)
     # 7 css/js bundles (incl. the shared nocturne tokens/runtime) + 4 icons + 8 logos
-    # + 1 font + 9 vendored Leaflet files.
-    assert webapp_summary.asset_files_written == 28
+    # + 1 font + 14 vendored files (Leaflet 9, MapLibre GL 3, maplibre-gl-leaflet 2)
+    # + the vendor README.
+    assert webapp_summary.asset_files_written == 34
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -446,6 +449,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "fonts" / "InterVariable.woff2").exists()
     assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.js").exists()
     assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.css").exists()
+    assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js").exists()
+    assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css").exists()
+    assert (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js").exists()
 
     root_html = (site_output / "index.html").read_text(encoding="utf-8")
     assert 'data-payload-mode="static"' in root_html
@@ -478,6 +484,18 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     # Nocturne reskin: Leaflet and fonts are self-hosted.
     assert "vendor/leaflet/leaflet.js" in workbench_html
     assert "vendor/leaflet/leaflet.css" in workbench_html
+    assert "vendor/maplibre-gl/maplibre-gl.js" in workbench_html
+    assert "vendor/maplibre-gl/maplibre-gl.css" in workbench_html
+    assert "vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js" in workbench_html
+    # Script order matters: Leaflet, then MapLibre GL, then the bridge, then the app.
+    assert (
+        workbench_html.index("vendor/leaflet/leaflet.js")
+        < workbench_html.index("vendor/maplibre-gl/maplibre-gl.js")
+        < workbench_html.index("vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js")
+        < workbench_html.index("webapp/workbench.js")
+    )
+    # No basemap key was given: the page must not carry the attribute at all.
+    assert "data-basemap-api-key" not in workbench_html
     assert "unpkg.com" not in workbench_html
     assert "fonts.googleapis.com" not in workbench_html
     assert 'id="benchmarkInstanceSelect"' in workbench_html
@@ -538,6 +556,24 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert 'data-payload-mode="api"' in root_html_api
     assert 'data-payload-api-prefix="/api/site-payload"' in root_html_api
     assert 'data-payload-static-root="/site-payloads"' in root_html_api
+
+    # The CARTO basemaps key lands on the workbench shells only, HTML-escaped,
+    # and a key outside the URL-safe alphabet is refused before anything is written.
+    keyed_webapp_summary = generate_site_webapp(output_repo_dir, basemap_api_key="cb1_test-KEY_01")
+    assert keyed_webapp_summary.html_files_written == webapp_summary.html_files_written
+    for workbench_route in ("workbench", "workbench/catalog", "workbench/upload", "workbench/generate"):
+        keyed_html = (site_output / workbench_route / "index.html").read_text(encoding="utf-8")
+        assert 'data-basemap-api-key="cb1_test-KEY_01"' in keyed_html
+    assert "data-basemap-api-key" not in (site_output / "index.html").read_text(encoding="utf-8")
+    assert "data-basemap-api-key" not in (site_output / "benchmarks" / "index.html").read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="Basemap API key"):
+        generate_site_webapp(output_repo_dir, basemap_api_key='bad"key')
+    assert 'data-basemap-api-key="cb1_test-KEY_01"' in (site_output / "workbench" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    # An empty key behaves like no key.
+    generate_site_webapp(output_repo_dir, basemap_api_key="")
+    assert "data-basemap-api-key" not in (site_output / "workbench" / "index.html").read_text(encoding="utf-8")
 
 
 def test_generate_site_payloads_writes_family_context_pages_from_report(tmp_path: Path) -> None:
@@ -1166,6 +1202,53 @@ def test_site_build_reports_progress_on_stderr_and_keeps_stdout_json(tmp_path: P
     assert "[site build]" in result.stderr
     assert "resolving instances" in result.stderr
     assert "build summary" in result.stderr
+
+
+def test_site_build_reads_the_basemap_api_key_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    monkeypatch.setenv("MAMUT_BASEMAP_API_KEY", "env-key_42")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "site",
+            "build",
+            "--output-repo-dir",
+            str(output_repo_dir),
+            "--source-commit",
+            "abcdef123456",
+            "--published-at",
+            "2026-04-23T12:00:00",
+            "--snapshot-id",
+            "fixture-basemap-key",
+            "--jobs",
+            "1",
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    site_output = output_repo_dir / "dist"
+    workbench_html = (site_output / "workbench" / "index.html").read_text(encoding="utf-8")
+    assert 'data-basemap-api-key="env-key_42"' in workbench_html
+    assert "data-basemap-api-key" not in (site_output / "index.html").read_text(encoding="utf-8")
+
+    # The explicit flag wins over the environment, and an invalid key fails the build.
+    result = runner.invoke(
+        app,
+        ["site", "webapp", "--output-repo-dir", str(output_repo_dir), "--basemap-api-key", "flag-key"],
+    )
+    assert result.exit_code == 0, result.output
+    assert 'data-basemap-api-key="flag-key"' in (site_output / "workbench" / "index.html").read_text(encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["site", "webapp", "--output-repo-dir", str(output_repo_dir), "--basemap-api-key", "not a key"],
+    )
+    assert result.exit_code != 0
 
 
 def test_site_build_quiet_suppresses_progress(tmp_path: Path) -> None:

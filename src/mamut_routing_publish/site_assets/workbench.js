@@ -186,45 +186,100 @@ const statsEl = document.getElementById("stats");
 const toastEl = document.getElementById("toast");
 const routeSelectorCard = document.getElementById("routeSelectorCard");
 const routeSelectorContainer = document.getElementById("routeSelectorContainer");
-const map = L.map("map", { zoomControl: true }).setView([48.8566, 2.3522], 11);
+const map = L.map("map", { zoomControl: true, maxZoom: 20 }).setView([48.8566, 2.3522], 11);
 const routeCanvasRenderer = L.canvas({ padding: 0.35, tolerance: 5 });
-const osmBaseLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 20,
-  attribution: "&copy; OpenStreetMap contributors",
+
+// Basemaps. OpenStreetMap raster tiles are always available and need no key.
+// The CARTO Positron / Dark Matter basemaps are vector styles rendered by
+// MapLibre GL inside Leaflet (maplibre-gl-leaflet plugin, vendored). They need
+// the CARTO basemaps API key that `site build --basemap-api-key` (or the
+// MAMUT_BASEMAP_API_KEY environment variable) writes into this page as the
+// data-basemap-api-key attribute, plus WebGL. Without either, the map runs on
+// OpenStreetMap only. CARTO's free tier requires both CARTO and OpenStreetMap
+// to stay credited on the map (https://carto.com/attributions).
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
+const basemapApiKey = body.dataset.basemapApiKey || "";
+
+function cartoStyleUrl(styleName, key) {
+  return `https://basemaps.cartocdn.com/gl/${styleName}/style.json?key=${encodeURIComponent(key)}`;
+}
+
+function withBasemapKey(url, key) {
+  // MapLibre transformRequest: every request to a CARTO basemap host carries
+  // the key (sprite, glyphs, tiles.json, tiles), not only the style document.
+  if (!key) return { url };
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { url };
+  }
+  const host = parsed.hostname;
+  const isCarto = host === "basemaps.cartocdn.com" || host.endsWith(".basemaps.cartocdn.com");
+  if (!isCarto || parsed.searchParams.has("key")) return { url };
+  parsed.searchParams.set("key", key);
+  return { url: parsed.toString() };
+}
+
+function webglAvailable() {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(window.WebGLRenderingContext && (canvas.getContext("webgl2") || canvas.getContext("webgl")));
+  } catch {
+    return false;
+  }
+}
+
+function cartoVectorLayer(styleName, key) {
+  return L.maplibreGL({
+    style: cartoStyleUrl(styleName, key),
+    transformRequest: (url) => withBasemapKey(url, key),
+    interactive: false,
+    maxZoom: 20,
+    attributionControl: { customAttribution: CARTO_ATTRIBUTION },
+  });
+}
+
+const osmBaseLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: OSM_ATTRIBUTION,
 });
-const positronBaseLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-  maxZoom: 20,
-  subdomains: "abcd",
-  attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-});
-const darkMatterBaseLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  maxZoom: 20,
-  subdomains: "abcd",
-  attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-});
-// The theme picks the matching Carto base by default; OpenStreetMap stays
+const cartoBasemapsEnabled = Boolean(basemapApiKey) && typeof L.maplibreGL === "function" && webglAvailable();
+if (!cartoBasemapsEnabled) {
+  console.info(
+    basemapApiKey
+      ? "CARTO basemaps disabled: WebGL is unavailable, using OpenStreetMap tiles."
+      : "CARTO basemaps disabled: no basemap API key was configured at build time, using OpenStreetMap tiles.",
+  );
+}
+const positronBaseLayer = cartoBasemapsEnabled ? cartoVectorLayer("positron-gl-style", basemapApiKey) : null;
+const darkMatterBaseLayer = cartoBasemapsEnabled ? cartoVectorLayer("dark-matter-gl-style", basemapApiKey) : null;
+
+function themedDefaultBaseLayer() {
+  return (isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer) || osmBaseLayer;
+}
+
+// The theme picks the matching CARTO base by default; OpenStreetMap stays
 // available in the layer control. A manual pick is respected until the user
 // toggles the theme again.
-let activeBaseLayer = isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer;
+let activeBaseLayer = themedDefaultBaseLayer();
 activeBaseLayer.addTo(map);
 map.on("baselayerchange", (event) => {
   activeBaseLayer = event.layer;
 });
-L.control.layers(
-  {
-    OpenStreetMap: osmBaseLayer,
-    Positron: positronBaseLayer,
-    "Dark Matter": darkMatterBaseLayer,
-  },
-  null,
-  { position: "topright", collapsed: true },
-).addTo(map);
+const baseLayers = { OpenStreetMap: osmBaseLayer };
+if (cartoBasemapsEnabled) {
+  baseLayers.Positron = positronBaseLayer;
+  baseLayers["Dark Matter"] = darkMatterBaseLayer;
+}
+L.control.layers(baseLayers, null, { position: "topright", collapsed: true }).addTo(map);
 
 // Redraw markers/routes (canvas colors are resolved per theme) and swap the
 // theme-default base layer when the Nocturne theme toggles.
 new MutationObserver(() => {
-  const themedDefault = isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer;
-  if (activeBaseLayer !== themedDefault && (activeBaseLayer === darkMatterBaseLayer || activeBaseLayer === positronBaseLayer)) {
+  const themedDefault = themedDefaultBaseLayer();
+  if (cartoBasemapsEnabled && activeBaseLayer !== themedDefault && activeBaseLayer !== osmBaseLayer) {
     map.removeLayer(activeBaseLayer);
     themedDefault.addTo(map);
     activeBaseLayer = themedDefault;

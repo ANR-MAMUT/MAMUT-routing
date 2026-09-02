@@ -160,6 +160,8 @@ uv run mamut-routing-publish site webapp
 uv run mamut-routing-publish release build
 ```
 
+The workbench map offers the CARTO Positron and Dark Matter vector basemaps (MapLibre GL inside Leaflet) on top of OpenStreetMap tiles. CARTO basemaps need an API key, free within the CARTO fair-use tier (request one at https://carto.com/basemaps/apikey). Pass it with `site build --basemap-api-key <key>` or through the `MAMUT_BASEMAP_API_KEY` environment variable: the key is written into the workbench page only (it is visible to browsers by design, so never commit it to the repository). Without a key the workbench map falls back to OpenStreetMap tiles only. CARTO's free tier requires the CARTO and OpenStreetMap attribution to stay visible on the map, which the workbench does.
+
 By default, the CLI resolves the MAMUT-routing repo root from the current working directory, or from the `MAMUT_ROUTING_ROOT` environment variable (shared with `mamut-routing-lib`). Override via `--output-repo-dir` / `--source-repo-dir`. `site build` reports progress and a final human-readable duration/file/memory summary to stderr by default, then keeps the machine-readable JSON summary on stdout. Instance payload resolution runs in parallel by default with `--jobs auto`, defined as `max(1, os.cpu_count() - 2)` and capped by the number of discovered instances. Use `--jobs 1` for serial resolution.
 
 ### Tests

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import html
+import re
+
 import os
 import shutil
 from pathlib import Path
@@ -12,6 +15,18 @@ from mamut_routing_publish.site_payloads import DEFAULT_SITE_OUTPUT_DIR, DEFAULT
 
 
 SUPPORTED_PAYLOAD_MODES = {"static", "api"}
+# The CARTO basemaps API key is interpolated into an HTML attribute and into
+# tile URLs, so the accepted alphabet is deliberately narrow.
+BASEMAP_API_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def validate_basemap_api_key(basemap_api_key: str | None) -> str | None:
+    """Return the key unchanged when it is usable, ``None`` when empty, else raise."""
+    if basemap_api_key is None or basemap_api_key == "":
+        return None
+    if not BASEMAP_API_KEY_PATTERN.fullmatch(basemap_api_key):
+        raise ValueError("Basemap API key may only contain ASCII letters, digits, '_' and '-'")
+    return basemap_api_key
 
 
 # Synchronous theme bootstrap. Must run before the stylesheet link so the very
@@ -193,6 +208,7 @@ def _render_workbench_shell_html(
     payload_api_prefix: str,
     payload_static_root: str,
     workbench_mode: str,
+    basemap_api_key: str | None = None,
 ) -> str:
     route_dir = output_repo_dir if route_path == "/" else _route_directory(output_repo_dir, route_path)
     css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "workbench.css")
@@ -203,6 +219,15 @@ def _render_workbench_shell_html(
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
     leaflet_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.css")
     leaflet_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.js")
+    maplibre_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css")
+    maplibre_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js")
+    maplibre_leaflet_js_href = _relative_path(
+        route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js"
+    )
+    # Only the workbench shell carries the key: it is the one page with a map.
+    basemap_attr = (
+        f' data-basemap-api-key="{html.escape(basemap_api_key, quote=True)}"' if basemap_api_key else ""
+    )
     active_nav = _active_nav(route_path)
     benchmarks_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/benchmarks/"))
     faq_href = _relative_path(route_dir, _route_html_path(output_repo_dir, "/project/faq/"))
@@ -219,9 +244,10 @@ def _render_workbench_shell_html(
     <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
     <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="{leaflet_css_href}" />
+    <link rel="stylesheet" href="{maplibre_css_href}" />
     <link rel="stylesheet" href="{css_href}" />
 </head>
-<body data-route-path="{route_path}" data-page-kind="workbench-app" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}" data-workbench-mode="{workbench_mode}">
+<body data-route-path="{route_path}" data-page-kind="workbench-app" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}" data-workbench-mode="{workbench_mode}"{basemap_attr}>
     {_render_header_html(output_repo_dir, route_dir, active_nav)}
 
     <main class="wb-stage">
@@ -362,6 +388,8 @@ def _render_workbench_shell_html(
     </main>
 
     <script src="{leaflet_js_href}"></script>
+    <script src="{maplibre_js_href}"></script>
+    <script src="{maplibre_leaflet_js_href}"></script>
     <script type="module" src="{js_href}"></script>
 </body>
 </html>
@@ -377,8 +405,10 @@ def generate_site_webapp(
     site_output_dir: str | Path | None = None,
     reporter: ProgressReporter | None = None,
     list_files: bool = False,
+    basemap_api_key: str | None = None,
 ) -> SiteWebappGenerationSummary:
     output_repo = Path(output_repo_dir)
+    basemap_api_key = validate_basemap_api_key(basemap_api_key)
     site_output = _resolve_site_output_dir(output_repo, site_output_dir)
     payload_root = Path(payload_root_dir)
     if payload_root.is_absolute():
@@ -486,6 +516,7 @@ def generate_site_webapp(
                 payload_api_prefix=payload_api_prefix,
                 payload_static_root=payload_static_root,
                 workbench_mode=workbench_mode,
+                basemap_api_key=basemap_api_key,
             ),
             encoding="utf-8",
         )
