@@ -374,6 +374,13 @@ def _render_workbench_shell_html(
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
                 </button>
             </div>
+            <div id="selectionHeadline" class="selection-headline" hidden>
+                <div id="selectionName" class="selection-name"></div>
+                <div id="selectionCostBlock" class="selection-cost-block" hidden>
+                    <span id="selectionCostLabel" class="selection-cost-label">BKS cost</span>
+                    <strong id="selectionCost" class="selection-cost"></strong>
+                </div>
+            </div>
             <dl id="stats" class="wb-stats"></dl>
 
             <section class="wb-section" id="routeSelectorCard" hidden>

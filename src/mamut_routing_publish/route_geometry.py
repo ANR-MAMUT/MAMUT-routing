@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 import gzip
 import hashlib
@@ -25,6 +26,11 @@ ROUTE_GEOMETRY_SUFFIX = ".route-geometry.json.gz"
 #: of the whole polyline payload. Named ``.gz`` so ``precompress`` skips it.
 ROUTE_GEOMETRY_META_SUFFIX = ".route-geometry.meta.json.gz"
 OSM_BOUNDS_TOLERANCE_DEGREES = 1e-5
+#: A road-geometry worker holds one parsed OSM extract and multiple graph
+#: representations. Large cities can peak above 15 GiB per process, so even
+#: two concurrent workers can exhaust a 32 GiB workstation. Callers can still
+#: request a larger pool explicitly on hosts with enough memory.
+AUTO_MAX_WORKERS = 1
 
 
 @dataclass(frozen=True)
@@ -700,7 +706,7 @@ def _resolve_workers(workers: int | str | None, batch_count: int) -> int:
             raise ValueError(f"workers must be 'auto' or a positive integer, got: {workers!r}")
         workers = None
     if workers is None:
-        workers = max(1, (os.cpu_count() or 2) - 1)
+        workers = min(AUTO_MAX_WORKERS, max(1, (os.cpu_count() or 2) - 1))
     workers = int(workers)
     if workers < 1:
         raise ValueError(f"workers must be >= 1, got: {workers}")
@@ -888,10 +894,17 @@ def materialize_route_geometry(
             for batch in batch_list:
                 _publish_batch(_materialize_batch(str(output_repo), batch))
         else:
-            with ProcessPoolExecutor(max_workers=effective_workers) as executor:
-                futures = [executor.submit(_materialize_batch, str(output_repo), batch) for batch in batch_list]
-                for future in as_completed(futures):
-                    _publish_batch(future.result())
+            try:
+                with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+                    futures = [executor.submit(_materialize_batch, str(output_repo), batch) for batch in batch_list]
+                    for future in as_completed(futures):
+                        _publish_batch(future.result())
+            except BrokenProcessPool as error:
+                raise RuntimeError(
+                    "A route-geometry worker exited abruptly. This is commonly caused by memory exhaustion because "
+                    "each worker holds a multi-gigabyte city road graph. Retry `site build` with "
+                    "`--route-geometry-jobs 1`, or the standalone command with `--jobs 1`."
+                ) from error
     if failures:
         details = "; ".join(failures)
         raise RuntimeError(

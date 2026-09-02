@@ -109,12 +109,16 @@ def test_city_key_batches_every_group_of_a_city_together() -> None:
     assert _city_key("elsewhere/without/marker.geo.json.gz") == "elsewhere/without"
 
 
-def test_resolve_workers_clamps_to_batches_and_validates() -> None:
+def test_resolve_workers_clamps_to_batches_and_validates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mamut_routing_publish.route_geometry.os.cpu_count", lambda: 12)
     assert _resolve_workers(8, 3) == 3
     assert _resolve_workers(2, 5) == 2
     assert _resolve_workers("auto", 1) == 1
     assert _resolve_workers(None, 0) == 1
-    assert _resolve_workers("auto", 100) >= 1
+    assert _resolve_workers("auto", 100) == 1
+    # Explicit values are not memory-capped; operators of larger hosts retain
+    # control over the speed/memory tradeoff.
+    assert _resolve_workers(8, 100) == 8
     with pytest.raises(ValueError):
         _resolve_workers(0, 3)
     with pytest.raises(ValueError):

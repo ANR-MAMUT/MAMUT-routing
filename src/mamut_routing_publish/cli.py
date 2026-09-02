@@ -338,7 +338,10 @@ def site_materialize_route_geometry_cmd(
     ] = 1,
     jobs: Annotated[
         str,
-        typer.Option("--jobs", help="Parallel per-city materialization workers: 'auto' or an integer >= 1."),
+        typer.Option(
+            "--jobs",
+            help="Parallel per-city materialization workers: 'auto' (1, memory-safe) or an integer >= 1.",
+        ),
     ] = "auto",
     fetch_missing_osm: Annotated[
         bool,
@@ -583,7 +586,7 @@ def site_build_cmd(
         str,
         typer.Option(
             "--route-geometry-jobs",
-            help="Parallel per-city route-geometry workers: 'auto' or an integer >= 1. Each worker holds one city road graph at a time.",
+            help="Parallel per-city route-geometry workers: 'auto' (1, memory-safe) or an integer >= 1. Each worker can hold a 15+ GiB city road graph.",
         ),
     ] = "auto",
     schema_version: Annotated[

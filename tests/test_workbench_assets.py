@@ -111,3 +111,14 @@ def test_basemaps_are_keyed_vector_carto_with_osm_fallback_and_linked_attributio
     assert 'href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' in source
     assert 'href="https://carto.com/attributions">CARTO</a>' in source
     assert "const baseLayers = { OpenStreetMap: osmBaseLayer };" in source
+
+
+def test_route_rendering_controls_replace_unused_filters() -> None:
+    source = WORKBENCH_JS.read_text(encoding="utf-8")
+    assert 'class="route-view-render"' in source
+    assert '<option value="straight_line">Straight lines</option>' in source
+    assert '<option value="cached_road"' in source
+    assert 'class="route-view-depot-opacity" type="range"' in source
+    assert 'state.routeView.renderMode = event.target.value' in source
+    assert '<summary>Filters' not in source
+    assert 'data-route-filter=' not in source
