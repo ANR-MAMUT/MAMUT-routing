@@ -597,7 +597,7 @@ wheels = [
 
 [[package]]
 name = "mamut-routing-lib"
-version = "0.10.0"
+version = "0.11.0"
 source = { editable = "MAMUT-routing-tools/MAMUT-routing-lib" }
 dependencies = [
     { name = "pydantic" },
@@ -671,7 +671,7 @@ dev = [
 
 [[package]]
 name = "mamut-routing-tools"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "MAMUT-routing-tools" }
 dependencies = [
     { name = "fastapi" },

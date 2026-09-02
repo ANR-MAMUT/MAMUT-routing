@@ -1617,7 +1617,7 @@ function renderInspectorPaneShell(item) {
     </div>`;
 }
 
-function renderInspectorDetails(item, payload, preview) {
+function renderInspectorDetails(item, payload, preview, rawInstance = null) {
   const summary = payload.summary || {};
   const entries = payload.bks_entries || [];
   const entry = preview?.selectedEntry || null;
@@ -1647,6 +1647,11 @@ function renderInspectorDetails(item, payload, preview) {
     : "";
   const downloads = [
     `<a class="download-chip" href="${artifactHref(item.artifact_vrp_json_path)}" target="_blank" rel="noopener">.vrp.json ↓</a>`,
+    renderVrpExportChips(rawInstance, {
+      vrpJsonPath: item.artifact_vrp_json_path,
+      distancesPath: item.artifact_distances_path,
+      distancesSha256: item.artifact_distances_sha256,
+    }),
     entry?.artifact_path ? `<a class="download-chip" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener">.bks.${escapeHtml(entry.objective_function)}.json ↓</a>` : "",
   ].join("");
   return `${objectiveChips}<div class="inspector-stats">${statCells}</div>${provenanceGrid}<div class="inline-actions">${downloads}</div>`;
@@ -1677,9 +1682,15 @@ async function hydrateInspectorPane(item, preferredObjective = null) {
         roadCacheStatus: routeGeometryMeta ? "complete" : payload.summary?.road_cache_status,
       });
     }
+    // The raw (ENU) instance JSON is already memoized by the preview; the
+    // export chips need it to know the metric and whether a matrix exists.
+    const rawInstance = await fetchJsonMemo(artifactHref(item.artifact_vrp_json_path)).catch(() => null);
+    if (token !== inspectorLoadToken || inspectorRoute !== item.route_path) {
+      return;
+    }
     const details = pane.querySelector("[data-inspector-details]");
     if (details) {
-      details.innerHTML = renderInspectorDetails(item, payload, preview);
+      details.innerHTML = renderInspectorDetails(item, payload, preview, rawInstance);
       details.querySelectorAll("[data-inspector-objective]").forEach((button) => {
         button.addEventListener("click", () => hydrateInspectorPane(item, button.dataset.inspectorObjective));
       });
@@ -2706,9 +2717,8 @@ async function renderInstancePage(payload, options = {}) {
     : payload.breadcrumbs;
   setPage(pageTitle, pageIntro, breadcrumbs, "explorer");
   setStatus(`Loading ${payload.title}…`);
-  const instanceData = projectEnuInstanceCoordinates(
-    await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path)),
-  );
+  const rawInstance = await fetchJsonMemo(artifactHref(payload.artifact_links.vrp_json_path));
+  const instanceData = projectEnuInstanceCoordinates(rawInstance);
   let geometryMeta = null;
   const hasRouteGeometryEntries = (payload.bks_entries || []).some((entry) => entry?.route_geometry_path);
   const wantsSidecarGeometry =
@@ -2766,7 +2776,7 @@ async function renderInstancePage(payload, options = {}) {
         "Artifacts",
         `<ul class="artifact-list">
           <li><a href="${artifactHref(payload.artifact_links.vrp_json_path)}">vrp.json</a></li>
-          ${payload.artifact_links.vrp_path ? `<li><a href="${artifactHref(payload.artifact_links.vrp_path)}">vrp</a></li>` : ""}
+          ${renderVrpExportChips(rawInstance, { vrpJsonPath: payload.artifact_links.vrp_json_path, distancesPath: payload.artifact_links.distances_path, distancesSha256: payload.artifact_links.distances_sha256 }, { asListItems: true })}
           ${payload.artifact_links.meta_path ? `<li><a href="${artifactHref(payload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
           ${payload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(payload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
@@ -3814,8 +3824,389 @@ async function init() {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Classic CVRPLIB .vrp export: a client-side mirror of mamut_routing_lib.cvrplib.
+// The bytes must equal the Python writer's (docs/reports/2026-09-02-cvrplib-vrp-
+// export-contract.md); tests/test_site_assets_vrp_export.py checks it under node.
+// The site is fully static, so the file is assembled in the browser from the
+// published .vrp.json and, for shortest/fastest collection instances, from the
+// sha256-pinned distances sidecar.
+// ---------------------------------------------------------------------------
+
+const VRP_DEFAULT_COST_DECIMALS = 3;
+const VRP_COORDINATE_DECIMALS = 6;
+const VRP_FAMILIES_WITH_FLEET_IN_COMMENT = new Set(["Mamut2026"]);
+
+function vrpIsIntegral(value) {
+  return Number.isFinite(value) && Number.isInteger(value);
+}
+
+function vrpFormatFloat(value) {
+  return Number.isInteger(value) ? value.toFixed(1) : String(value);
+}
+
+function vrpVectorFormatter(values, decimals) {
+  if (decimals !== null && decimals !== undefined) {
+    return (value) => Number(value).toFixed(decimals);
+  }
+  if (values.every((value) => vrpIsIntegral(Number(value)))) {
+    return (value) => String(Math.trunc(Number(value)));
+  }
+  return (value) => vrpFormatFloat(Number(value));
+}
+
+function vrpCoordinateFormatter(coordinates) {
+  const flat = [];
+  for (const point of coordinates) {
+    flat.push(Number(point[0]), Number(point[1]));
+  }
+  if (flat.every((value) => vrpIsIntegral(value))) {
+    return (value) => String(Math.trunc(Number(value)));
+  }
+  return (value) => Number(value).toFixed(VRP_COORDINATE_DECIMALS);
+}
+
+function vrpEuclideanArcCosts(coordinates, decimals) {
+  const points = coordinates.map((point) => [Number(point[0]), Number(point[1])]);
+  return points.map(([ax, ay], i) =>
+    points.map(([bx, by], j) => (i === j ? 0 : Number(Math.hypot(bx - ax, by - ay).toFixed(decimals)))),
+  );
+}
+
+function vrpMetadataValue(instance, key) {
+  const metadata = instance?.metadata;
+  return metadata && typeof metadata === "object" ? metadata[key] : undefined;
+}
+
+function vrpIsCollection(instance) {
+  return Boolean(instance?.arc_costs_source);
+}
+
+function vrpIsVrptw(instance) {
+  return Array.isArray(instance?.time_windows);
+}
+
+function vrpMetricVariant(instance) {
+  const value = instance?.metric_variant ?? vrpMetadataValue(instance, "metric_variant");
+  return value === "fastest" || value === "shortest" || value === "euclidean" ? value : null;
+}
+
+function vrpCollectionDecimals(instance) {
+  if (!vrpIsCollection(instance)) {
+    return null;
+  }
+  const source = instance.arc_costs_source;
+  if (source.model === "euclidean") {
+    return Number.isInteger(source.decimals) ? source.decimals : VRP_DEFAULT_COST_DECIMALS;
+  }
+  return VRP_DEFAULT_COST_DECIMALS;
+}
+
+function vrpComment(instance, edgeWeightType) {
+  const benchmark = String(instance.benchmark_name);
+  let comment;
+  if (vrpIsCollection(instance)) {
+    const city = vrpMetadataValue(instance, "city") || vrpMetadataValue(instance, "place_slug") || "unknown";
+    const head = `${benchmark} ${instance.metric_variant} metric; city ${city}; `;
+    let fleet = "";
+    const fleetLb = vrpMetadataValue(instance, "num_vehicles_lb");
+    if (VRP_FAMILIES_WITH_FLEET_IN_COMMENT.has(benchmark) && fleetLb !== null && fleetLb !== undefined) {
+      fleet = `No of trucks: ${Math.trunc(Number(fleetLb))} (lower bound, fleet not fixed); `;
+    }
+    comment = `${head}${fleet}3-decimal seconds/meters; ENU ref in ${instance.instance_name}.vrp.json`;
+    const twSet = vrpMetadataValue(instance, "tw_set");
+    const twName = twSet && typeof twSet === "object" ? twSet.name : null;
+    if (twName) {
+      comment = `${comment}; time windows set ${twName}`;
+    }
+  } else {
+    const authors = vrpMetadataValue(instance, "authors");
+    const parts = [`${benchmark} ${instance.instance_name}`];
+    if (authors) {
+      parts.push(`authors: ${authors}`);
+    }
+    parts.push("converted from MAMUT-routing .vrp.json");
+    comment = parts.join("; ");
+  }
+  if (edgeWeightType === "EUC_2D") {
+    comment = `${comment}; EUC_2D: costs are TSPLIB nint distances, not the published 3-decimal costs`;
+  }
+  return comment;
+}
+
+function instanceToVrpText(instance, arcCosts, options = {}) {
+  const edgeWeightType = options.edgeWeightType || "EXPLICIT";
+  const decimals = options.decimals ?? null;
+  const explicit = edgeWeightType === "EXPLICIT";
+  const coordinates = instance.coordinates;
+  const dimension = coordinates.length;
+  const vrptw = vrpIsVrptw(instance);
+  if (explicit && !Array.isArray(arcCosts)) {
+    throw new Error("EXPLICIT edge weights need the arc-cost matrix.");
+  }
+  const lines = [`NAME : ${instance.instance_name}`];
+  const comment = options.comment ?? vrpComment(instance, edgeWeightType);
+  if (comment) {
+    lines.push(`COMMENT : ${comment}`);
+  }
+  lines.push(`TYPE : ${vrptw ? "CVRPTW" : "CVRP"}`, `DIMENSION : ${dimension}`);
+  if (instance.num_vehicles !== null && instance.num_vehicles !== undefined) {
+    lines.push(`VEHICLES : ${Math.trunc(Number(instance.num_vehicles))}`);
+  }
+  lines.push(`EDGE_WEIGHT_TYPE : ${edgeWeightType}`);
+  if (explicit) {
+    lines.push("EDGE_WEIGHT_FORMAT : FULL_MATRIX");
+  }
+  lines.push(`CAPACITY : ${Math.trunc(Number(instance.vehicle_capacity))}`);
+  if (explicit) {
+    const flat = [];
+    for (const row of arcCosts) {
+      for (const value of row) {
+        flat.push(value);
+      }
+    }
+    const formatCost = vrpVectorFormatter(flat, decimals);
+    lines.push("EDGE_WEIGHT_SECTION");
+    for (const row of arcCosts) {
+      lines.push(row.map(formatCost).join(" "));
+    }
+  }
+  const formatCoord = vrpCoordinateFormatter(coordinates);
+  lines.push("NODE_COORD_SECTION");
+  coordinates.forEach((point, index) => {
+    lines.push(`${index + 1} ${formatCoord(point[0])} ${formatCoord(point[1])}`);
+  });
+  const formatDemand = vrpVectorFormatter(instance.demands);
+  lines.push("DEMAND_SECTION");
+  instance.demands.forEach((demand, index) => {
+    lines.push(`${index + 1} ${formatDemand(demand)}`);
+  });
+  if (vrptw) {
+    const bounds = [];
+    for (const window of instance.time_windows) {
+      bounds.push(window[0], window[1]);
+    }
+    const formatTw = vrpVectorFormatter(bounds);
+    lines.push("TIME_WINDOW_SECTION");
+    instance.time_windows.forEach((window, index) => {
+      lines.push(`${index + 1} ${formatTw(window[0])} ${formatTw(window[1])}`);
+    });
+    const formatService = vrpVectorFormatter(instance.service_times);
+    lines.push("SERVICE_TIME_SECTION");
+    instance.service_times.forEach((service, index) => {
+      lines.push(`${index + 1} ${formatService(service)}`);
+    });
+  }
+  lines.push("DEPOT_SECTION", String(Math.trunc(Number(instance.depot ?? 0)) + 1), "-1", "EOF", "");
+  return lines.join("\n");
+}
+
+function instanceToSolomonText(instance) {
+  const coordinates = instance.coordinates;
+  const dimension = coordinates.length;
+  if (Math.trunc(Number(instance.depot ?? 0)) !== 0) {
+    throw new Error("The Solomon format expects the depot at index 0.");
+  }
+  const fleet = instance.num_vehicles !== null && instance.num_vehicles !== undefined
+    ? Math.trunc(Number(instance.num_vehicles))
+    : dimension - 1;
+  const formatCoord = vrpCoordinateFormatter(coordinates);
+  const formatDemand = vrpVectorFormatter(instance.demands);
+  const bounds = [];
+  for (const window of instance.time_windows) {
+    bounds.push(window[0], window[1]);
+  }
+  const formatTw = vrpVectorFormatter(bounds);
+  const formatService = vrpVectorFormatter(instance.service_times);
+  const lines = [
+    instance.instance_name,
+    "",
+    "VEHICLE",
+    "NUMBER     CAPACITY",
+    `${String(fleet).padStart(6)}       ${Math.trunc(Number(instance.vehicle_capacity))}`,
+    "",
+    "CUSTOMER",
+    "CUST NO.  XCOORD.   YCOORD.    DEMAND   READY TIME  DUE DATE   SERVICE   TIME",
+    "",
+  ];
+  for (let index = 0; index < dimension; index += 1) {
+    const point = coordinates[index];
+    const window = instance.time_windows[index];
+    lines.push(
+      `${String(index).padStart(5)} ${formatCoord(point[0]).padStart(10)} ${formatCoord(point[1]).padStart(10)} `
+        + `${formatDemand(instance.demands[index]).padStart(10)} ${formatTw(window[0]).padStart(10)} `
+        + `${formatTw(window[1]).padStart(10)} ${formatService(instance.service_times[index]).padStart(10)}`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function vrpExportKinds(instance) {
+  if (!instance || instance.td) {
+    return [];
+  }
+  const kinds = [
+    { kind: "explicit", label: ".vrp ↓", title: "Classic CVRPLIB .vrp with the explicit full matrix (the published costs)" },
+  ];
+  if (vrpMetricVariant(instance) === "euclidean") {
+    kinds.push({
+      kind: "euc2d",
+      label: ".vrp EUC_2D ↓",
+      title: "Coordinates only: TSPLIB readers use nint(euclidean) distances, not the published 3-decimal costs",
+    });
+    if (vrpIsVrptw(instance)) {
+      kinds.push({ kind: "solomon", label: "Solomon .txt ↓", title: "Solomon / Gehring-Homberger layout (coordinates only)" });
+    }
+  }
+  return kinds;
+}
+
+function vrpExportFilename(vrpJsonPath, kind) {
+  const stem = String(vrpJsonPath || "instance").split("/").pop().replace(/\.vrp\.json$/i, "").replace(/\.json$/i, "");
+  return `${stem}${kind === "solomon" ? ".txt" : ".vrp"}`;
+}
+
+function renderVrpExportChips(instance, links, options = {}) {
+  const kinds = vrpExportKinds(instance);
+  if (!kinds.length) {
+    return "";
+  }
+  const attrs = [
+    `data-vrp-json="${escapeHtml(links.vrpJsonPath || "")}"`,
+    `data-vrp-distances="${escapeHtml(links.distancesPath || "")}"`,
+    `data-vrp-sha256="${escapeHtml(links.distancesSha256 || "")}"`,
+  ].join(" ");
+  const chips = kinds.map(
+    (entry) => `<button type="button" class="download-chip" data-vrp-export="${entry.kind}" ${attrs} title="${escapeHtml(entry.title)}">${escapeHtml(entry.label)}</button>`,
+  );
+  return options.asListItems ? chips.map((chip) => `<li>${chip}</li>`).join("") : chips.join("");
+}
+
+async function fetchDistancesSidecar(href, expectedSha256, instance) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("This browser cannot decompress the gzipped distances sidecar (DecompressionStream unavailable).");
+  }
+  const response = await fetch(href);
+  if (!response.ok) {
+    throw new Error(`Cannot fetch the distances sidecar (${response.status}).`);
+  }
+  const bytes = new Uint8Array(
+    await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(),
+  );
+  if (expectedSha256 && globalThis.crypto?.subtle) {
+    const digest = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes)))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    if (digest !== expectedSha256) {
+      throw new Error("The distances sidecar does not match the sha256 pinned by the instance.");
+    }
+  }
+  const sidecar = JSON.parse(new TextDecoder().decode(bytes));
+  if (sidecar.format !== "mamut-distances") {
+    throw new Error("Unexpected distances sidecar format.");
+  }
+  if (Number(sidecar.num_customers) !== Number(instance.num_customers) || sidecar.metric !== instance.metric_variant) {
+    throw new Error("The distances sidecar does not describe this instance.");
+  }
+  return sidecar.values;
+}
+
+async function buildInstanceVrpExport(links, kind) {
+  const instance = await fetchJsonMemo(links.vrpJsonHref);
+  if (!instance || instance.td) {
+    throw new Error("Time-dependent instances have no static matrix; there is no classic .vrp for them.");
+  }
+  const filename = vrpExportFilename(links.vrpJsonPath, kind);
+  const metric = vrpMetricVariant(instance);
+  if (kind === "solomon") {
+    if (!vrpIsVrptw(instance)) {
+      throw new Error("The Solomon format is VRPTW-only.");
+    }
+    if (metric !== "euclidean") {
+      throw new Error("The Solomon format (coordinates only) needs the euclidean metric.");
+    }
+    return { filename, text: instanceToSolomonText(instance) };
+  }
+  const edgeWeightType = kind === "euc2d" ? "EUC_2D" : "EXPLICIT";
+  let arcCosts = null;
+  let decimals = null;
+  if (edgeWeightType === "EUC_2D") {
+    if (metric !== "euclidean") {
+      throw new Error("EUC_2D (coordinates only) needs the euclidean metric.");
+    }
+  } else if (vrpIsCollection(instance)) {
+    decimals = vrpCollectionDecimals(instance);
+    if (instance.arc_costs_source.model === "euclidean") {
+      arcCosts = vrpEuclideanArcCosts(instance.coordinates, decimals);
+    } else {
+      if (!links.distancesHref) {
+        throw new Error("The distances sidecar of this instance is not published; run `mamut-routing export vrp` on a local checkout.");
+      }
+      arcCosts = await fetchDistancesSidecar(links.distancesHref, links.distancesSha256, instance);
+    }
+  } else {
+    arcCosts = instance.arc_costs;
+  }
+  return { filename, text: instanceToVrpText(instance, arcCosts, { edgeWeightType, decimals }) };
+}
+
+function downloadTextFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function reportVrpExportStatus(message) {
+  if (state.status) {
+    setStatus(message);
+  }
+}
+
+async function handleVrpExportClick(button) {
+  const kind = button.dataset.vrpExport;
+  const vrpJsonPath = button.dataset.vrpJson;
+  const distancesPath = button.dataset.vrpDistances || null;
+  const links = {
+    vrpJsonPath,
+    vrpJsonHref: artifactHref(vrpJsonPath),
+    distancesHref: distancesPath ? artifactHref(distancesPath) : null,
+    distancesSha256: button.dataset.vrpSha256 || null,
+  };
+  button.disabled = true;
+  reportVrpExportStatus(`Preparing ${vrpExportFilename(vrpJsonPath, kind)}…`);
+  try {
+    const { filename, text } = await buildInstanceVrpExport(links, kind);
+    downloadTextFile(filename, text);
+    reportVrpExportStatus(`Downloaded ${filename}`);
+  } catch (error) {
+    console.warn("CVRPLIB export failed", error);
+    reportVrpExportStatus(`Export failed: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-vrp-export]") : null;
+    if (!button) {
+      return;
+    }
+    event.preventDefault();
+    void handleVrpExportClick(button);
+  });
+}
+
 export {
   artifactHref,
+  buildInstanceVrpExport,
   catalogCostSortAvailable,
   catalogGeometryValue,
   catalogSortOptions,
@@ -3825,6 +4216,8 @@ export {
   fetchGeometryMetaMemo,
   fetchRouteGeometryMetaMemo,
   fetchWorkbenchPayloadForRoute,
+  instanceToSolomonText,
+  instanceToVrpText,
   normalizeRoute,
   normalizeCatalogSort,
   normalizeSortDirection,
@@ -3833,10 +4226,12 @@ export {
   projectEnuInstanceCoordinates,
   parseUploadedSolutionText,
   relativeFromCurrent,
+  renderVrpExportChips,
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
   usesRoadMetric,
+  vrpExportKinds,
 };
 
 if (!window.__PAPER7_SITE_NO_BOOTSTRAP__) {

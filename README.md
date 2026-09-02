@@ -92,6 +92,14 @@ sha256-pinned sidecars), so the two families are directly comparable.
 The collection's own [README](benchmarks/Mamut2026/README.md) carries the layout
 and the achieved coverage table.
 
+Both collections ship `.vrp.json` instances; the committed CVRPLIB `.vrp` files
+are the `n <= 200` CVRP subset only. Any static instance (CVRP or VRPTW, any
+size) can be exported to the classic format for solvers that do not read the
+lib contract, with `mamut-routing export vrp` from
+[MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib) or the
+`.vrp ↓` download chips of the website (see the site FAQ and
+[the format contract](docs/reports/2026-09-02-cvrplib-vrp-export-contract.md)).
+
 A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
 
 ```bash

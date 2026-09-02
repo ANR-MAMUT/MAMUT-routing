@@ -1459,6 +1459,19 @@ tbody tr:hover {
   background: var(--acc-t);
 }
 
+/* Generated downloads (client-side CVRPLIB .vrp export) are buttons, not links. */
+button.download-chip {
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+button.download-chip[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 .inspector-hint {
   padding: 12px 8px 0;
 }

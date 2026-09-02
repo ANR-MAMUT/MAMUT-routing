@@ -83,6 +83,38 @@ git submodule update --init --recursive
 
 Heads-up: the full checkout is on the order of several gigabytes, dominated by VRPTW road-geometry sidecar files (`*.meta.json`). If you only need a single problem family or a subset of metric variants, `mamut-routing-lib`'s `remote fetch` command above will be much lighter.
 
+### Option C: one instance as a classic CVRPLIB `.vrp` file
+
+Solvers that do not read `.vrp.json` can take the classic TSPLIB-derived
+CVRPLIB text instead. Every static instance (CVRP and VRPTW; not the
+time-dependent families, which have no static matrix) can be downloaded in that
+format directly from this site: select an instance in a catalog and use the
+`.vrp ↓` chip of the inspector pane, or the *Artifacts* card of its record page.
+The file is generated in your browser from the published `.vrp.json` (and, for
+the `shortest`/`fastest` collection instances, from the sha256-pinned distances
+sidecar), so no extra data is stored server-side.
+
+The same writer ships in `mamut-routing-lib` for batches:
+
+```bash
+# One instance: writes <name>.vrp next to the source .vrp.json
+mamut-routing export vrp path/to/instance.vrp.json
+
+# A whole family, mirrored into an output directory
+mamut-routing --benchmarks-dir ./benchmarks export vrp \
+    --problem-type CVRP --benchmark-name Mamut2026 --output-dir ./vrp-out
+```
+
+The default is `EDGE_WEIGHT_TYPE : EXPLICIT` with the full matrix, so the
+solver sees exactly the published costs (3-decimal floats for the collections,
+integers for Dimacs/Ortec, full-precision floats for Sintef); VRPTW files use
+`TYPE : CVRPTW` with `TIME_WINDOW_SECTION` and `SERVICE_TIME_SECTION`, the
+dialect read by VRPLIB and PyVRP. For euclidean-metric instances a
+coordinates-only `EUC_2D` variant (and, for VRPTW, a Solomon `.txt`) is also
+offered: classic readers then compute `nint(euclidean)` distances, which are
+**not** the published 3-decimal costs, so BKS values do not transfer to that
+variant. Node ids are 1-based, the depot is node 1.
+
 ## Contributions
 
 `MAMUT-routing`, including its tooling, website, instance collection, and BKS collection, is open-source. Modifications, new benchmark instances, new problem classes, new objective functions, and other contributions are welcome.
