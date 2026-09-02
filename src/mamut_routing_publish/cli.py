@@ -14,6 +14,10 @@ MAMUT-routing repo root":
 2. The ``MAMUT_ROUTING_ROOT`` environment variable (shared with
    ``mamut-routing-lib``)
 3. The current working directory
+
+``site build`` / ``site webapp`` also read ``MAMUT_BASEMAP_API_KEY`` as the
+default for ``--basemap-api-key`` (the CARTO basemaps key embedded in the
+workbench page; never commit its value).
 """
 
 from __future__ import annotations
@@ -480,6 +484,19 @@ def site_webapp_cmd(
             help="Directory where generated website files are written. Relative paths resolve under --output-repo-dir.",
         ),
     ] = DEFAULT_SITE_OUTPUT_DIR,
+    basemap_api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--basemap-api-key",
+            envvar="MAMUT_BASEMAP_API_KEY",
+            show_envvar=True,
+            help=(
+                "CARTO basemaps API key written into the workbench page so the map can use the "
+                "CARTO Positron / Dark Matter vector basemaps. Without it the workbench map falls "
+                "back to OpenStreetMap tiles."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Generate the static HTML shell only (assumes payloads already exist)."""
     if payload_mode not in {"static", "api"}:
@@ -491,6 +508,7 @@ def site_webapp_cmd(
         repo_dir,
         payload_mode=payload_mode,
         payload_api_prefix=payload_api_prefix,
+        basemap_api_key=basemap_api_key,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
     )
@@ -630,6 +648,19 @@ def site_build_cmd(
         str,
         typer.Option("--jobs", help="Parallel instance-resolution workers: 'auto' or an integer >= 1."),
     ] = "auto",
+    basemap_api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--basemap-api-key",
+            envvar="MAMUT_BASEMAP_API_KEY",
+            show_envvar=True,
+            help=(
+                "CARTO basemaps API key written into the workbench page so the map can use the "
+                "CARTO Positron / Dark Matter vector basemaps. Without it the workbench map falls "
+                "back to OpenStreetMap tiles."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Generate site payloads AND the static HTML shell in one step."""
     if payload_mode not in {"static", "api"}:
@@ -731,6 +762,7 @@ def site_build_cmd(
         repo_dir,
         payload_mode=payload_mode,
         payload_api_prefix=payload_api_prefix,
+        basemap_api_key=basemap_api_key,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
         reporter=reporter,

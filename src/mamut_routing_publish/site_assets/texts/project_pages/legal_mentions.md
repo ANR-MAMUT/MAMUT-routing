@@ -8,7 +8,9 @@ This page summarizes privacy, third-party asset requests, licensing, and contrib
 
 The static MAMUT-routing website has no account system, stores no user information, and does not require cookies for its own operation.
 
-All fonts (Inter) and JavaScript libraries (Leaflet) are self-hosted with the website: opening a page triggers no third-party asset request. The one exception is the workbench map, whose background tiles are fetched by the browser from OpenStreetMap (`tile.openstreetmap.org`) and Carto (`basemaps.cartocdn.com`) tile servers when the map is displayed. MAMUT-routing itself does not use these requests to identify users or store visitor data.
+All fonts (Inter) and JavaScript libraries (Leaflet, MapLibre GL) are self-hosted with the website: opening a page triggers no third-party asset request. The one exception is the workbench map, whose background map is fetched by the browser when the map is displayed: OpenStreetMap raster tiles from `tile.openstreetmap.org`, and the CARTO Positron and Dark Matter vector basemaps from `basemaps.cartocdn.com` and `tiles.basemaps.cartocdn.com`. MAMUT-routing itself does not use these requests to identify users or store visitor data.
+
+The CARTO basemaps are built on OpenStreetMap data and are used under the CARTO Basemaps free tier, which requires both [CARTO](https://carto.com/attributions) and [OpenStreetMap](https://www.openstreetmap.org/copyright) to stay credited on the map. The attribution shown in the map corner is part of that agreement.
 
 ## Licenses
 

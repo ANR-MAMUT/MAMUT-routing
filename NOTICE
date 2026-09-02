@@ -61,5 +61,20 @@ ORTEC benchmark artifacts are derived from the EURO Meets NeurIPS 2022 Vehicle
 Routing Competition material and retain the original CC BY-NC 4.0 terms:
 https://creativecommons.org/licenses/by-nc/4.0/
 
+The website workbench map uses the CARTO Positron and Dark Matter basemaps,
+built on OpenStreetMap data, under the CARTO Basemaps free tier. That tier
+requires CARTO and OpenStreetMap to stay credited on the map:
+https://carto.com/attributions and https://www.openstreetmap.org/copyright
+
+Third-party web libraries
+-------------------------
+
+The static website self-hosts the following libraries, each under its own
+license (see src/mamut_routing_publish/site_assets/vendor/README.md):
+
+- Leaflet (BSD-2-Clause)
+- MapLibre GL JS (BSD-3-Clause)
+- maplibre-gl-leaflet (ISC)
+
 Users redistributing benchmark subsets should preserve this NOTICE and the
 family-level README.md and LICENSE files.

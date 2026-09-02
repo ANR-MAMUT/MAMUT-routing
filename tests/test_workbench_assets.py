@@ -63,3 +63,51 @@ def test_customer_route_controls_and_popup_are_present() -> None:
     assert "Fade/hide customers with routes" in source
     assert "state.routeView.customersFollowRoutes = event.target.checked" in source
     assert 'const routeDetail = isDepot ? "" : `<br/>Route: ${routeLabel}`;' in source
+
+
+@node
+def test_carto_basemap_helpers_build_keyed_urls() -> None:
+    helpers = "\n".join(_extract_function(name) for name in ("cartoStyleUrl", "withBasemapKey"))
+    script = f"""
+{helpers}
+console.log(JSON.stringify({{
+  style: cartoStyleUrl("positron-gl-style", "k_1-2"),
+  styleEncoded: cartoStyleUrl("dark-matter-gl-style", "a b"),
+  tiles: withBasemapKey("https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt", "k_1"),
+  glyphs: withBasemapKey("https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans/0-255.pbf", "k_1"),
+  alreadyKeyed: withBasemapKey("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=other", "k_1"),
+  otherHost: withBasemapKey("https://tile.openstreetmap.org/1/2/3.png", "k_1"),
+  lookalike: withBasemapKey("https://basemaps.cartocdn.com.evil.example/x", "k_1"),
+  noKey: withBasemapKey("https://tiles.basemaps.cartocdn.com/x", ""),
+  relative: withBasemapKey("/local/asset.json", "k_1"),
+}}));
+"""
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "style": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=k_1-2",
+        "styleEncoded": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=a%20b",
+        "tiles": {"url": "https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt?key=k_1"},
+        "glyphs": {"url": "https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans/0-255.pbf?key=k_1"},
+        "alreadyKeyed": {"url": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=other"},
+        "otherHost": {"url": "https://tile.openstreetmap.org/1/2/3.png"},
+        "lookalike": {"url": "https://basemaps.cartocdn.com.evil.example/x"},
+        "noKey": {"url": "https://tiles.basemaps.cartocdn.com/x"},
+        "relative": {"url": "/local/asset.json"},
+    }
+
+
+def test_basemaps_are_keyed_vector_carto_with_osm_fallback_and_linked_attribution() -> None:
+    source = WORKBENCH_JS.read_text(encoding="utf-8")
+    # No unkeyed CARTO raster tile template may survive: it draws a watermark.
+    assert "basemaps.cartocdn.com/light_all" not in source
+    assert "basemaps.cartocdn.com/dark_all" not in source
+    assert "rastertiles" not in source
+    assert "{s}.tile.openstreetmap.org" not in source
+    assert 'const basemapApiKey = body.dataset.basemapApiKey || "";' in source
+    assert 'cartoVectorLayer("positron-gl-style", basemapApiKey)' in source
+    assert 'cartoVectorLayer("dark-matter-gl-style", basemapApiKey)' in source
+    assert "transformRequest: (url) => withBasemapKey(url, key)" in source
+    assert 'href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' in source
+    assert 'href="https://carto.com/attributions">CARTO</a>' in source
+    assert "const baseLayers = { OpenStreetMap: osmBaseLayer };" in source
