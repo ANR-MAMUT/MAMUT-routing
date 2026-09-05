@@ -34,3 +34,6 @@
 [submodule "benchmarks/TDVRPTW/Blauth2024"]
 	path = benchmarks/TDVRPTW/Blauth2024
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Blauth2024.git
+[submodule "benchmarks/Mamut2026"]
+	path = benchmarks/Mamut2026
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Mamut2026.git
