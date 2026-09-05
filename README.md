@@ -20,7 +20,7 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
 | `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
 | `benchmarks/Poryos2026/` *(submodule)* | The generated **Poryos2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
-| `benchmarks/Mamut2026/` | The generated **Mamut2026 CVRP collection**: designed-diversity city instances under three arc-cost metrics — see below. |
+| `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 CVRP collection**: designed-diversity city instances under three arc-cost metrics — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Poryos2026 and Mamut2026 generated benchmarks. |
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
@@ -56,11 +56,13 @@ The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW 
 
 ### The Mamut2026 collection
 
-`benchmarks/Mamut2026/` is the CVRP-only companion to Poryos2026, built for one
-experiment: **what happens to a state-of-the-art solver when the metric between
-customers changes?** Every base instance is materialized under all three arc-cost
-metrics (`euclidean`, `shortest`, `fastest`) over identical customers, demands
-and capacity, so the metric is the only thing that varies within a triple.
+[MAMUT-routing-Mamut2026](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026),
+mounted at `benchmarks/Mamut2026/` as the second family-first collection, is the
+CVRP-only companion to Poryos2026, built for one experiment: **what happens to a
+state-of-the-art solver when the metric between customers changes?** Every base
+instance is materialized under all three arc-cost metrics (`euclidean`,
+`shortest`, `fastest`) over identical customers, demands and capacity, so the
+metric is the only thing that varies within a triple.
 
 Where Poryos2026 is a cartesian grid over 5 cities, Mamut2026 is a *designed*
 set: 100 base instances over 100 distinct OSM city extracts, one per city, with
@@ -89,8 +91,8 @@ bound the way CVRPLIB's `X-n101-k25` does — `mamut-lyon-n1000-k91-poi` — as 
 It otherwise shares Poryos2026's conventions exactly (3-decimal float arc costs,
 sha256-pinned sidecars), so the two families are directly comparable.
 
-The collection's own [README](benchmarks/Mamut2026/README.md) carries the layout
-and the achieved coverage table.
+The collection's own [README](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026#readme)
+carries the layout and the achieved coverage table.
 
 Both collections ship `.vrp.json` instances; the committed CVRPLIB `.vrp` files
 are the `n <= 200` CVRP subset only. Any static instance (CVRP or VRPTW, any
@@ -105,7 +107,8 @@ A plain `git clone` leaves satellite directories empty (the tooling and the defa
 ```bash
 git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one TD family (0.1–0.8 GB each)
 git submodule update --init benchmarks/Poryos2026           # the generated collection (~0.4 GB)
-git submodule update --init                                # everything (~2.5 GB of satellite data)
+git submodule update --init benchmarks/Mamut2026            # the designed CVRP collection (~0.3 GB)
+git submodule update --init                                # everything (~2.8 GB of satellite data)
 ```
 
 ## Python publishing toolkit (`mamut-routing-publish`)
@@ -130,7 +133,7 @@ uv sync
 The whole publish is three chained steps: fetch the data, install, build, then serve:
 
 ```bash
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 \
+git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026 \
   && uv sync \
   && uv run mamut-routing-publish site build \
   && uv run mamut-routing-publish serve
