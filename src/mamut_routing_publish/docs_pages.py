@@ -70,6 +70,12 @@ PACKAGE_README_PAGES = (
     ),
 )
 
+# Root markdown files mirrored into the documentation: (doc path, source).
+ROOT_MARKDOWN_PAGES = (
+    ("developer-guide/contributing.md", "CONTRIBUTING.md"),
+    ("about/changelog.md", "CHANGELOG.md"),
+)
+
 # API reference: package -> (doc directory, source root relative to the repo,
 # top-level modules / subpackages to document, show undocumented members).
 API_REFERENCE_PACKAGES = (
@@ -91,7 +97,7 @@ API_REFERENCE_PACKAGES = (
         "mamut_routing_publish",
         "publish",
         "src/mamut_routing_publish",
-        ("publish_roots", "precompress", "server", "progress", "docs_build", "docs_pages"),
+        ("publish_roots", "precompress", "server", "progress", "release_artifacts", "docs_build", "docs_pages"),
         False,
     ),
 )
@@ -310,6 +316,20 @@ def project_pages(repo_root: Path) -> list[GeneratedDocPage]:
     return pages
 
 
+def root_markdown_pages(repo_root: Path) -> list[GeneratedDocPage]:
+    """``CONTRIBUTING.md`` / ``CHANGELOG.md`` of the superproject, verbatim (links -> GitHub)."""
+    pages: list[GeneratedDocPage] = []
+    _browse, blob_base, raw_base = github_bases_for_path(repo_root, "")
+    for doc_path, source in ROOT_MARKDOWN_PAGES:
+        source_path = repo_root / source
+        if source_path.is_file():
+            text = rewrite_relative_links(source_path.read_text(encoding="utf-8"), blob_base=blob_base, raw_base=raw_base)
+        else:
+            text = f"# {Path(source).stem.capitalize()}\n\nNot available in this build.\n"
+        pages.append(GeneratedDocPage(path=doc_path, markdown=text.rstrip("\n") + f"\n\n---\n\n*Source: [`{source}`]({blob_base}/{source}).*\n"))
+    return pages
+
+
 def package_readme_pages(repo_root: Path) -> list[GeneratedDocPage]:
     pages: list[GeneratedDocPage] = []
     for doc_path, readme_rel, fallback_rel, repo_name in PACKAGE_README_PAGES:
@@ -494,6 +514,7 @@ def generate_docs_pages(repo_root: Path) -> list[GeneratedDocPage]:
     """Every generated page of the documentation site for ``repo_root``."""
     pages: list[GeneratedDocPage] = []
     pages += project_pages(repo_root)
+    pages += root_markdown_pages(repo_root)
     pages += package_readme_pages(repo_root)
     pages += family_pages(repo_root)
     pages += reports_pages(repo_root / "docs" / "reports")

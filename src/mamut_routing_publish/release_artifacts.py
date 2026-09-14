@@ -1,3 +1,14 @@
+"""Release archives: one deterministic zip per (problem type, family) plus a manifest.
+
+``generate_release_artifacts`` discovers the benchmark tree and writes
+``<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`` files with fixed entry
+timestamps, mode 0644 and a streamed sha256, then ``snapshot-manifest.json``
+(``mamut_routing_lib.remote.ReleaseArchiveManifest``) that the lib's
+``mamut-routing remote`` commands consume. Size guards mirror GitHub's
+limits (warn above 1.5 GiB, fail above 2 GiB per asset; refuse repository
+files above 100 MB).
+"""
+
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor

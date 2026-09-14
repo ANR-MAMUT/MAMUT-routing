@@ -1,3 +1,20 @@
+"""Site payload generation: the benchmark tree as one JSON document per route.
+
+The website is static and rendered client-side by ``site.js``; this module
+produces what it renders. ``generate_site_payloads`` discovers every
+benchmark instance (both layouts, via ``mamut_routing_lib.artifacts``),
+resolves instances in parallel, and writes one payload per route under
+``<site-output>/site-payloads/``: the home preview bundle, the benchmarks
+catalog (problem type -> family -> metric variant -> place -> size -> subset
+-> instance), family "context" pages built from the family sections of
+``site_assets/texts/mamut-routing_benchmark_families.md``, the objectives
+page, the project text pages (``site_assets/texts/project_pages``, shared
+with the documentation site), and the publication history, whose ledger and
+per-snapshot inventories live in the persistent state dir
+(``publish_roots``). Payload models are pydantic and versioned by
+``SITE_PAYLOAD_SCHEMA_VERSION``.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

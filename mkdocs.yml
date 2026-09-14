@@ -150,7 +150,15 @@ nav:
   - Benchmarks:
       - benchmarks/index.md
       - Families: benchmarks/families/
-      - Formats: benchmarks/formats/index.md
+      - Formats:
+          - benchmarks/formats/index.md
+          - Layouts, naming and pins: benchmarks/formats/layouts.md
+          - Static instances: benchmarks/formats/instances.md
+          - Time-dependent instances: benchmarks/formats/time-dependent.md
+          - Distances and geo sidecars: benchmarks/formats/sidecars.md
+          - Solutions, BKS and optimality: benchmarks/formats/solutions.md
+          - CVRPLIB .vrp export: benchmarks/formats/cvrplib-export.md
+          - Release archives: benchmarks/formats/releases.md
       - Glossary: benchmarks/glossary.md
   - Maintainer guide:
       - maintainer-guide/index.md
@@ -171,6 +179,7 @@ nav:
       - Package READMEs:
           - mamut-routing-lib: developer-guide/packages/mamut-routing-lib.md
           - mamut-routing-tools: developer-guide/packages/mamut-routing-tools.md
+      - Contributing: developer-guide/contributing.md
       - Engineering reports: reports/
   - Reference:
       - reference/index.md
@@ -180,9 +189,11 @@ nav:
           - mamut-routing-publish: reference/cli/mamut-routing-publish.md
       - Python API: reference/api/
       - Environment variables: reference/environment-variables.md
+      - Workbench HTTP API: reference/workbench-api.md
   - About:
       - about/index.md
       - Authors: about/authors.md
       - Funding: about/funding.md
       - Related projects: about/related-projects.md
       - Legal mentions: about/legal-mentions.md
+      - Changelog: about/changelog.md
