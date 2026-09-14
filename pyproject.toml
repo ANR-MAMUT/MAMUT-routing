@@ -81,10 +81,19 @@ exclude = [
     "benchmarks",
     "osmdata",
     "webapp",
+    "docs",
+    "mkdocs.yml",
+    ".github",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "MAMUT-routing-lib/tests"]
+
+[tool.uv]
+# The documentation site is a `site build` phase (dist/docs/), so the deploy
+# sequence documented in the README (`uv sync && uv run mamut-routing-publish
+# site build`) needs the docs toolchain installed by default.
+default-groups = ["dev", "docs"]
 
 [tool.uv.workspace]
 members = ["MAMUT-routing-tools"]
@@ -108,4 +117,13 @@ dev = [
     "cffconvert",
     "pytest>=9.0.0",
     "httpx>=0.27",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.29",
+    "mkdocs-click>=0.9",
+    "mkdocs-gen-files>=0.5",
+    "mkdocs-literate-nav>=0.6",
+    "ruff>=0.5",
 ]

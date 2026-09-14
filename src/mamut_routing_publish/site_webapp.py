@@ -112,6 +112,11 @@ def _active_nav(route_path: str) -> str:
         return "objectives"
     if route_path.startswith("/history/"):
         return "history"
+    if route_path.startswith("/docs/"):
+        # The documentation is a MkDocs tree built into <site-output>/docs/
+        # (see docs_build.py); the shell generator never renders its pages,
+        # the branch only keeps the nav vocabulary complete.
+        return "docs"
     return ""
 
 
@@ -123,6 +128,7 @@ def _nav_links_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> 
         "project": "/project/",
         "objectives": "/objectives/",
         "history": "/history/",
+        "docs": "/docs/",
     }
     return "\n".join(
         f'<a class="nav-link{active_class}" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, target))}">{label}</a>'
@@ -133,6 +139,7 @@ def _nav_links_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> 
             ("Project", nav_targets["project"], " active" if active_nav == "project" else ""),
             ("Objectives", nav_targets["objectives"], " active" if active_nav == "objectives" else ""),
             ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
+            ("Docs", nav_targets["docs"], " active" if active_nav == "docs" else ""),
         ]
     )
 

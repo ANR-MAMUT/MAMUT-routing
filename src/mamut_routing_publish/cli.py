@@ -4,7 +4,8 @@ Modeled on ``mamut_routing_lib.cli`` (Typer + sub-typers + ``--version`` callbac
 
 Two top-level command groups:
 
-- ``site``    — payload + static-webapp generation
+- ``site``    — payload + static-webapp generation, build-time caches, the
+  MkDocs documentation (``dist/docs/``), precompression
 - ``release`` — release ``.zip`` archives + manifest generation
 
 Repository root resolution order, for arguments that default to "the
@@ -41,6 +42,7 @@ import typer
 
 from mamut_routing_lib.artifacts import DEFAULT_MAMUT_ROUTING_ROOT_ENV
 
+from mamut_routing_publish.docs_build import has_docs_config
 from mamut_routing_publish.progress import SUPPORTED_PROGRESS_FORMATS, make_progress_reporter
 from mamut_routing_publish.release_artifacts import (
     DEFAULT_RELEASE_ARCHIVE_COMPRESS_LEVEL,
@@ -518,6 +520,58 @@ def site_webapp_cmd(
     _emit_summary(summary)
 
 
+@site_app.command("docs")
+def site_docs_cmd(
+    output_repo_dir: Annotated[
+        Optional[Path],
+        typer.Option("--output-repo-dir", help=_OUTPUT_REPO_DIR_HELP),
+    ] = None,
+    site_output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--site-output-dir",
+            help="Site tree the documentation is written into (as <site-output-dir>/docs/). Relative paths resolve under --output-repo-dir.",
+        ),
+    ] = DEFAULT_SITE_OUTPUT_DIR,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict/--no-strict",
+            help="Fail on any MkDocs warning (missing nav target, broken link, unresolved reference). Strict is what CI and deployments use.",
+        ),
+    ] = True,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", help="Silence MkDocs warnings on stderr (errors still abort)."),
+    ] = False,
+) -> None:
+    """Build the MkDocs documentation (docs/ + mkdocs.yml) into <site-output-dir>/docs/.
+
+    The documentation is served by the website under /docs/. `site build` runs
+    this as a phase; use this command to rebuild the documentation alone.
+    Requires the docs toolchain (`uv sync --group docs`, installed by default).
+    """
+    from mamut_routing_publish.docs_build import (
+        DocsBuildError,
+        DocsToolingUnavailable,
+        build_docs_site,
+        docs_output_dir,
+    )
+    from mamut_routing_publish.publish_roots import PublishRoots
+
+    repo_dir = _resolve_repo_dir(output_repo_dir)
+    roots = PublishRoots.resolve(repo_dir, site_output_dir)
+    try:
+        summary = build_docs_site(repo_dir, docs_output_dir(roots.site_output), strict=strict, quiet=quiet)
+    except DocsToolingUnavailable as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1)
+    except DocsBuildError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(summary.as_dict(), indent=2))
+
+
 @site_app.command("build")
 def site_build_cmd(
     output_repo_dir: Annotated[
@@ -573,6 +627,13 @@ def site_build_cmd(
         typer.Option(
             "--skip-route-geometry",
             help="Skip BKS route-geometry materialization (route-geometry-cache). Pages whose BKS geometry is not already cached then fall back to straight lines. Staging builds materialize into the staging cache after seeding it from the active dist.",
+        ),
+    ] = False,
+    skip_docs: Annotated[
+        bool,
+        typer.Option(
+            "--skip-docs",
+            help="Skip the MkDocs documentation build (<site-output-dir>/docs/). The header 'Docs' link then 404s unless the output tree already carries a docs/ directory.",
         ),
     ] = False,
     fetch_missing_osm: Annotated[
@@ -674,9 +735,19 @@ def site_build_cmd(
     # Parsed up front so a bad value fails before any work, even when the
     # phase it belongs to is skipped.
     atf_jobs_requested = _parse_optional_jobs(atf_jobs)
+    repo_dir = _resolve_repo_dir(output_repo_dir)
+    if not skip_docs and has_docs_config(repo_dir):
+        # The documentation phase runs last; check its toolchain now so a
+        # missing MkDocs does not surface after hours of cache materialization.
+        from mamut_routing_publish.docs_build import DocsToolingUnavailable, ensure_docs_tooling_available
+
+        try:
+            ensure_docs_tooling_available()
+        except DocsToolingUnavailable as error:
+            typer.echo(str(error), err=True)
+            raise typer.Exit(code=1)
     build_started_at = time.perf_counter()
     reporter = make_progress_reporter(progress_format=progress_format, quiet=quiet)
-    repo_dir = _resolve_repo_dir(output_repo_dir)
     reporter.phase("resolved repository", repo=repo_dir)
     reporter.phase("resolving source snapshot")
     resolved_commit = source_commit or _resolve_git_value(repo_dir, "rev-parse", "--short=12", "HEAD")
@@ -771,6 +842,24 @@ def site_build_cmd(
         reporter=reporter,
         list_files=list_files,
     )
+    docs_summary = None
+    if not skip_docs and not has_docs_config(repo_dir):
+        # A checkout without mkdocs.yml (a benchmark-only mirror, a test
+        # fixture) simply has no documentation to publish.
+        reporter.phase("skipped documentation site", reason="no mkdocs.yml in the repository")
+    elif not skip_docs:
+        from mamut_routing_publish.docs_build import DocsBuildError, build_docs_site, docs_output_dir
+        from mamut_routing_publish.publish_roots import PublishRoots
+
+        docs_site_dir = docs_output_dir(PublishRoots.resolve(repo_dir, site_output_dir, state_dir).site_output)
+        reporter.phase("building documentation site", site_dir=docs_site_dir)
+        try:
+            docs_summary = build_docs_site(repo_dir, docs_site_dir, strict=True, quiet=quiet)
+        except DocsBuildError as error:
+            typer.echo(str(error), err=True)
+            raise typer.Exit(code=1)
+        reporter.phase("built documentation site", **docs_summary.as_dict())
+
     precompress_summary = None
     if precompress:
         from mamut_routing_publish.precompress import precompress_tree
@@ -800,6 +889,8 @@ def site_build_cmd(
         "jobs_resolved": resolve_site_build_jobs(jobs, payload_summary.instance_pages_written),
         "max_memory_gib": _max_memory_gib(),
     }
+    if docs_summary is not None:
+        build_summary["docs"] = docs_summary.as_dict()
     if precompress_summary is not None:
         build_summary["precompress"] = precompress_summary.as_dict()
     if geometry_summary is not None:

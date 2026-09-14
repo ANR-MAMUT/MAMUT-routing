@@ -1,0 +1,34 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Benchmark satellites are not needed (the docs build degrades to GitHub
+      # links when they are absent, and this job exercises exactly that path).
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      # The tools submodule carries the MAMUT-routing-lib checkout that uv
+      # resolves against ([tool.uv.sources]); --recursive pulls that nested
+      # submodule. actions/checkout rewrites the ssh URLs to HTTPS for the job.
+      - name: Init tooling submodules
+        run: git submodule update --init --recursive MAMUT-routing-tools
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Sync dependencies
+        run: uv sync --group docs
+      - name: Build documentation (strict, same code path as the deploy)
+        run: uv run mamut-routing-publish site docs --output-repo-dir "$PWD" --site-output-dir "$RUNNER_TEMP/site"
+      - name: Docs tests
+        run: uv run pytest -q tests/test_docs_pages.py tests/test_docs_build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: ${{ runner.temp }}/site/docs

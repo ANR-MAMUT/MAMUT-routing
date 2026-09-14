@@ -25,6 +25,7 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
+| `docs/` + `mkdocs.yml` | The [documentation site](https://mamut-routing.univ-ubs.fr/docs/) (MkDocs Material): user guide, benchmark formats, maintainer runbooks, generated CLI/API reference, engineering reports under `docs/reports/`. Built into `dist/docs/` by `site build`. |
 | `MAMUT-routing-lib/` *(submodule)* | Contract/runtime Python library — see [ANR-MAMUT/MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib). |
 | `MAMUT-routing-tools/` *(submodule)* | Local generation tool suite (road-graph engine, route geometry, OSM fetch) — see [ANR-MAMUT/MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools). `site build` uses its road engine for BKS route geometry. |
 | `publish-state/` *(generated, gitignored)* | Persistent publication state: history ledger + snapshot inventories, surviving fresh release directories. |
@@ -143,6 +144,8 @@ git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Por
 
 `serve` binds `127.0.0.1:8082` by default (pass `--host`/`--port` for deployments) and serves `dist/` plus the repo artifact roots with real cache headers, ETags, Range, and precompressed `.gz`/`.br` negotiation (build with `--precompress` to generate the sidecars). Persistent history state lives in `publish-state/`; release-style staging builds (`--site-output-dir`) never write the active `dist`.
 
+The documentation site is a `site build` phase too: `docs/` + `mkdocs.yml` render into `dist/docs/` (served under `/docs/`, linked from the site header) with the docs toolchain that `uv sync` installs by default (`docs` dependency group). `site docs` rebuilds the documentation alone, `--skip-docs` skips the phase, and `uv run mkdocs serve` gives a live-reloading preview while writing. The build is strict: a broken link or a missing page fails it, and the `Docs` GitHub Actions workflow runs the same build on every push.
+
 Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step.
 
 ### CLI variants
@@ -159,6 +162,10 @@ uv run mamut-routing-publish site build --progress-format json --list-files
 # Payloads only / static HTML shell only (assumes payloads already exist)
 uv run mamut-routing-publish site payloads
 uv run mamut-routing-publish site webapp
+
+# Documentation only (dist/docs/), or a build without it
+uv run mamut-routing-publish site docs
+uv run mamut-routing-publish site build --skip-docs
 
 # Build release archives + manifest into ./dist-release/
 uv run mamut-routing-publish release build

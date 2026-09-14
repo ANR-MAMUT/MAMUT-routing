@@ -2136,6 +2136,12 @@ def _load_family_context_sections(
     return sections
 
 
+# Public names for the documentation generator (``docs_pages``), which
+# renders one page per family from the same sections the website uses.
+FamilyContextSection = _FamilyContextSection
+load_family_context_sections = _load_family_context_sections
+
+
 def _context_summary_from_markdown(markdown: str) -> str:
     paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", markdown) if paragraph.strip()]
     if not paragraphs:
