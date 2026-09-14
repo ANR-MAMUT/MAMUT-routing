@@ -1,0 +1,176 @@
+# MkDocs configuration of the MAMUT-routing documentation.
+#
+# Source: docs/ (hand-written pages + docs/reports/) plus the pages generated
+# by docs/_scripts/gen_pages.py from the website texts, the package READMEs
+# and the source tree. Output: <site-output>/docs/ (dist/docs/ by default),
+# written by `mamut-routing-publish site docs` / `site build`, so the website
+# serves the documentation under /docs/. For authoring: `uv run mkdocs serve`.
+site_name: MAMUT-routing documentation
+site_url: https://mamut-routing.univ-ubs.fr/docs/
+site_description: Benchmark contract, tooling, maintenance runbooks and API reference for MAMUT-routing.
+repo_url: https://github.com/ANR-MAMUT/MAMUT-routing
+repo_name: ANR-MAMUT/MAMUT-routing
+copyright: MAMUT-routing (ANR-22-CE22-0016). Code MIT, data under family-specific licenses.
+
+docs_dir: docs
+site_dir: dist/docs
+use_directory_urls: true
+strict: true
+
+exclude_docs: |
+  _scripts/
+
+watch:
+  - src/mamut_routing_publish/site_assets/texts
+  - src/mamut_routing_publish/docs_pages.py
+  - AUTHORS.md
+
+validation:
+  nav:
+    omitted_files: info
+    not_found: warn
+    absolute_links: ignore
+  links:
+    not_found: warn
+    absolute_links: ignore
+    unrecognized_links: warn
+    anchors: info
+
+theme:
+  name: material
+  language: en
+  font: false
+  icon:
+    logo: material/map-marker-path
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+extra:
+  homepage: /
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ANR-MAMUT
+      name: ANR-MAMUT on GitHub
+    - icon: material/web
+      link: /
+      name: MAMUT-routing website
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - def_list
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - docs
+      check_paths: true
+  - mkdocs-click
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/_scripts/gen_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths:
+            - MAMUT-routing-tools/MAMUT-routing-lib/src
+            - MAMUT-routing-tools/src
+            - src
+          options:
+            docstring_style: google
+            show_root_heading: false
+            show_root_toc_entry: false
+            show_source: true
+            members_order: source
+            filters:
+              - "!^_"
+              - "!^model_config$"
+            merge_init_into_class: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: false
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting-started/index.md
+  - User guide:
+      - user-guide/index.md
+      - FAQ: user-guide/faq.md
+      - Citing: user-guide/citing.md
+  - Benchmarks:
+      - benchmarks/index.md
+      - Families: benchmarks/families/
+      - Formats: benchmarks/formats/index.md
+      - Glossary: benchmarks/glossary.md
+  - Maintainer guide:
+      - maintainer-guide/index.md
+  - Developer guide:
+      - developer-guide/index.md
+      - Package READMEs:
+          - mamut-routing-lib: developer-guide/packages/mamut-routing-lib.md
+          - mamut-routing-tools: developer-guide/packages/mamut-routing-tools.md
+      - Engineering reports: reports/
+  - Reference:
+      - reference/index.md
+      - Command-line interfaces:
+          - mamut-routing: reference/cli/mamut-routing.md
+          - mamut-tools: reference/cli/mamut-tools.md
+          - mamut-routing-publish: reference/cli/mamut-routing-publish.md
+      - Python API: reference/api/
+      - Environment variables: reference/environment-variables.md
+  - About:
+      - about/index.md
+      - Authors: about/authors.md
+      - Funding: about/funding.md
+      - Related projects: about/related-projects.md
+      - Legal mentions: about/legal-mentions.md

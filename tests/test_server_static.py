@@ -199,3 +199,21 @@ def test_head_and_range(client: TestClient) -> None:
     partial = client.get("/", headers={"Range": "bytes=0-3"})
     assert partial.status_code == 206
     assert partial.content == b"<htm"
+
+
+def test_docs_tree_is_served_under_docs_prefix(site_repo: Path) -> None:
+    # The MkDocs output lives at dist/docs/ (see docs_build.py); directory
+    # URLs resolve to their index.html like every other site route.
+    docs = site_repo / "dist" / "docs"
+    (docs / "reports").mkdir(parents=True)
+    (docs / "index.html").write_text("<html>docs home</html>")
+    (docs / "reports" / "index.html").write_text("<html>reports</html>")
+    (docs / "search").mkdir()
+    (docs / "search" / "search_index.json").write_text("{}")
+    with TestClient(create_app(site_repo)) as client:
+        assert client.get("/docs/").text == "<html>docs home</html>"
+        assert client.get("/docs/reports/").text == "<html>reports</html>"
+        assert client.get("/docs/reports").status_code == 200
+        assert client.get("/docs/search/search_index.json").status_code == 200
+        assert client.get("/docs/../pyproject.toml").status_code in (400, 404)
+        assert client.get("/docs/missing/").status_code == 404

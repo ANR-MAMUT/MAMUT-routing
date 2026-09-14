@@ -1829,3 +1829,18 @@ def test_resolve_instance_group_isolates_a_failing_instance(monkeypatch) -> None
     results = _resolve_instance_group(Path("."), list(enumerate(items)))
 
     assert results == [(0, None, "ValueError: broken instance"), (1, "resolved", None)]
+
+
+def test_site_header_links_to_the_documentation_tree(tmp_path: Path) -> None:
+    # The documentation is built into <site-output>/docs/ by a later phase, so
+    # the shell's relative nav link must resolve there from every depth.
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    generate_site_payloads(output_repo_dir=output_repo_dir, source_commit="abc123", published_at="2026-01-01T00:00:00Z")
+    generate_site_webapp(output_repo_dir)
+    site_output = output_repo_dir / "dist"
+    home_html = (site_output / "index.html").read_text(encoding="utf-8")
+    assert 'href="docs/index.html">Docs</a>' in home_html
+    benchmarks_html = (site_output / "benchmarks" / "index.html").read_text(encoding="utf-8")
+    assert 'href="../docs/index.html">Docs</a>' in benchmarks_html
+    assert 'class="nav-link active" href="../docs/index.html"' not in benchmarks_html

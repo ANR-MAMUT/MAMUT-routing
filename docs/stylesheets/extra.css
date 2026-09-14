@@ -1,0 +1,44 @@
+/* Align Material with the website's Nocturne palette (nocturne-tokens.css). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  /* Self-hosted by the website; silently falls back to system-ui when the
+     docs are served on their own (`mkdocs serve`). */
+  src: url("/webapp/fonts/InterVariable.woff2") format("woff2-variations");
+}
+
+:root {
+  --md-primary-fg-color: #5b43e8;
+  --md-primary-fg-color--light: #7d6bef;
+  --md-primary-fg-color--dark: #4632c4;
+  --md-accent-fg-color: #0d94ba;
+  --md-accent-fg-color--transparent: rgba(13, 148, 186, 0.12);
+  --md-text-font: "Inter", system-ui, sans-serif;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f6f5f0;
+  --md-default-fg-color: #201b45;
+  --md-code-bg-color: #efede6;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #9d8bff;
+  --md-primary-fg-color--light: #b6a8ff;
+  --md-primary-fg-color--dark: #7d6bef;
+  --md-accent-fg-color: #3cd6f5;
+  --md-default-bg-color: #101226;
+  --md-default-fg-color: #edeffc;
+  --md-code-bg-color: #1b1e3d;
+  --md-typeset-a-color: #b6a8ff;
+}
+
+.md-typeset table:not([class]) {
+  font-size: 0.72rem;
+}
+
+.md-grid {
+  max-width: 76rem;
+}
