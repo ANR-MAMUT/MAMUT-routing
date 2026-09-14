@@ -5,13 +5,18 @@ by a strictly better, freshly validated solution, so running a solver against th
 
 ```bash
 uv run mamut-routing --benchmarks-dir benchmarks solve \
-    --problem-type VRPTW --benchmark-name Sintef2008 --instance-name C101 \
+    --instance-id vrptw-sintef2008-n25-C101 --objective hierarchicalvehiclecost \
     --time-limit-s 10 --seed 42 --save-bks
 ```
 
 The command prints the solver result and the store action: `created`, `replaced` or `kept_existing` (with a 10 s
-budget on a 25-customer instance the published BKS is usually kept). `--jobs` solves several instances side by
-side; `--objective` picks the objective when a family has several.
+budget the published BKS is kept). Two details that matter:
+
+- **Say which objective.** Sintef2008 stores its BKS under `HierarchicalVehicleCost`; without `--objective` the
+  solver runs `MonoCost` (with a warning) and *creates* a second file, `C101.bks.MonoCost.json`, instead of comparing
+  with the published one. CVRP families are always `MonoCost`.
+- **`--instance-name C101` matches every size** (n=25, 50, 100 in Sintef2008); `--instance-id` selects one instance,
+  `--jobs` solves several side by side.
 
 From Python, with any solver:
 
