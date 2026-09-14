@@ -886,7 +886,10 @@ tbody tr:hover {
 
 .home-hero {
   display: grid;
-  grid-template-columns: 1fr 400px;
+  /* The featured card takes the room the copy does not need: the copy column
+     caps itself (16ch heading, 56ch lede), so the card grows up to 640px and
+     never below the 400px it was designed at. */
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 46%, 640px);
   gap: 56px;
   padding: 52px 44px 40px;
   max-width: 1440px;

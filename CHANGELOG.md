@@ -15,6 +15,9 @@ the tools have their own release notes.
 
 ### Changed
 
+- Home page featured showcase: three small Poryos2026 previews (VRPTW, TDVRP, TDVRPTW) and the three smallest
+  Mamut2026 bases replace the four-Poryos-plus-two-historical mix; the card grows with the viewport instead of
+  staying 400px wide.
 - The website header links to the documentation.
 - `uv sync` installs the `docs` dependency group by default.
 

@@ -986,12 +986,16 @@ function homePreviewSampleKey(sample) {
   ].join("::");
 }
 
-// Runtime fallback equivalent of the server-generated Poryos2026 preview mix.
+// Runtime fallback equivalent of the server-generated preview mix: three small
+// Poryos2026 instances (one per non-CVRP problem type) and the three smallest
+// Mamut2026 bases on their road metrics.
 const HOME_PREVIEW_SEEDS = [
-  { problemType: "CVRP", benchmarkName: "Poryos2026", metricVariant: "shortest", placeSlug: "hong_kong", objectiveFunction: "MonoCost" },
-  { problemType: "VRPTW", benchmarkName: "Poryos2026", metricVariant: "euclidean", placeSlug: "lyon", objectiveFunction: "MonoCost" },
-  { problemType: "TDVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "paris", objectiveFunction: "Duration" },
-  { problemType: "TDVRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "san_francisco", objectiveFunction: "Duration" },
+  { problemType: "VRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "hong_kong", objectiveFunction: "MonoCost" },
+  { problemType: "TDVRP", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "lyon", objectiveFunction: "Duration" },
+  { problemType: "TDVRPTW", benchmarkName: "Poryos2026", metricVariant: "fastest", placeSlug: "paris", objectiveFunction: "Duration" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "shortest", placeSlug: "toronto", sizeBucket: "n=100", objectiveFunction: "MonoCost" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "fastest", placeSlug: "rome", sizeBucket: "n=102", objectiveFunction: "MonoCost" },
+  { problemType: "CVRP", benchmarkName: "Mamut2026", metricVariant: "shortest", placeSlug: "athens", sizeBucket: "n=105", objectiveFunction: "MonoCost" },
 ];
 
 async function loadHomePreviewSample(seed) {
