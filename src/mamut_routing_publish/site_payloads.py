@@ -85,10 +85,14 @@ class SitePayloadKind(str, Enum):
 # Seeds that drive the rotating preview card on the home page.
 # Tuples: (problem, family, metric_variant_or_None, place_slug_or_None, objective_function).
 # Resolved server-side at publish time into HomePreviewSample entries.
-HOME_PREVIEW_SEEDS: tuple[tuple[str, str, str | None, str | None, str], ...] = (
-    ("TDVRPTW", "Dabia2013", None, None, "Duration"),
-    ("TDVRPTW", "Rifki2020", None, None, "Duration"),
-)
+#: Home showcase mix: one small Poryos2026 preview per problem type below, then
+#: the smallest Mamut2026 bases. CVRP is left to Mamut2026 (a CVRP-only family)
+#: so the six cards still cover all four problem types.
+HOME_PREVIEW_PORYOS_PROBLEMS: tuple[str, ...] = ("VRPTW", "TDVRP", "TDVRPTW")
+HOME_PREVIEW_MAMUT_COUNT = 3
+#: Mamut2026 cards alternate between the two road metrics; the Euclidean
+#: variant has no road geometry and would render as straight lines.
+HOME_PREVIEW_MAMUT_METRICS: tuple[MetricVariant, ...] = (MetricVariant.SHORTEST, MetricVariant.FASTEST)
 
 # Keep the generated-family samples visually and semantically varied. Static
 # variants can exercise all three metrics; time-dependent variants use the
@@ -2453,29 +2457,6 @@ def _build_home_page_payload(
     )
 
 
-def _match_seed_instance(
-    resolved_items: list[_ResolvedSiteInstance],
-    seed: tuple[str, str, str | None, str | None, str],
-) -> tuple[_ResolvedSiteInstance, BKSPageEntry] | None:
-    problem, family, variant, place, objective = seed
-    candidates = [
-        item
-        for item in resolved_items
-        if item.locator.problem_type.value == problem
-        and item.locator.benchmark_name.value == family
-        and (variant is None or (item.locator.metric_variant is not None and item.locator.metric_variant.value == variant))
-        and (place is None or item.locator.place_slug == place)
-        and any(entry.objective_function.value == objective for entry in item.bks_entries)
-    ]
-    if not candidates:
-        return None
-    # Smallest size bucket first for fast-loading previews.
-    candidates.sort(key=lambda item: (item.instance_summary.num_customers or 0, item.route_path))
-    chosen = candidates[0]
-    bks_entry = next(entry for entry in chosen.bks_entries if entry.objective_function.value == objective)
-    return chosen, bks_entry
-
-
 def _home_preview_metric_rank(problem: str, metric_variant: MetricVariant | None) -> int:
     preferences = HOME_PREVIEW_METRIC_PREFERENCES.get(problem, ())
     if metric_variant is None:
@@ -2484,6 +2465,45 @@ def _home_preview_metric_rank(problem: str, metric_variant: MetricVariant | None
         return preferences.index(metric_variant)
     except ValueError:
         return len(preferences)
+
+
+def _select_home_preview_mamut_matches(
+    resolved_items: list[_ResolvedSiteInstance],
+) -> list[tuple[_ResolvedSiteInstance, BKSPageEntry]]:
+    """Pick the smallest Mamut2026 bases for the home showcase.
+
+    A base is a (city, size) pair; every base is published under each metric
+    variant. The bases are ranked by customer count, and each of the
+    ``HOME_PREVIEW_MAMUT_COUNT`` smallest ones contributes one card, cycling
+    through ``HOME_PREVIEW_MAMUT_METRICS`` so neighbouring cards differ in
+    metric. A base missing the wanted metric (or its MonoCost BKS) falls back
+    to any other road metric it has.
+    """
+    by_base: dict[tuple[int, str], dict[MetricVariant, tuple[_ResolvedSiteInstance, BKSPageEntry]]] = {}
+    for item in resolved_items:
+        if item.locator.benchmark_name.value != "Mamut2026" or item.locator.metric_variant is None:
+            continue
+        if item.locator.metric_variant not in HOME_PREVIEW_MAMUT_METRICS:
+            continue
+        entry = next((e for e in item.bks_entries if e.objective_function.value == "MonoCost"), None)
+        if entry is None:
+            continue
+        base_key = (item.instance_summary.num_customers or 0, item.locator.place_slug or item.route_path)
+        by_base.setdefault(base_key, {})[item.locator.metric_variant] = (item, entry)
+
+    matches: list[tuple[_ResolvedSiteInstance, BKSPageEntry]] = []
+    for index, base_key in enumerate(sorted(by_base)):
+        if len(matches) == HOME_PREVIEW_MAMUT_COUNT:
+            break
+        variants = by_base[base_key]
+        preferred = HOME_PREVIEW_MAMUT_METRICS[index % len(HOME_PREVIEW_MAMUT_METRICS)]
+        chosen = variants.get(preferred) or next(
+            (variants[metric] for metric in HOME_PREVIEW_MAMUT_METRICS if metric in variants),
+            None,
+        )
+        if chosen is not None:
+            matches.append(chosen)
+    return matches
 
 
 def _build_home_preview_bundle(
@@ -2495,7 +2515,7 @@ def _build_home_preview_bundle(
     samples: list[HomePreviewSample] = []
     seen_keys: set[tuple[str, str]] = set()
     selected_matches: list[tuple[_ResolvedSiteInstance, BKSPageEntry]] = []
-    has_mamut_preview_sizes = any(
+    has_poryos_preview_sizes = any(
         item.locator.benchmark_name.value == "Poryos2026" and item.instance_summary.num_customers in {25, 50}
         for item in resolved_items
     )
@@ -2505,11 +2525,11 @@ def _build_home_preview_bundle(
         "TDVRP": "Duration",
         "TDVRPTW": "Duration",
     }
-    # Each problem type prefers a city no earlier preview used, so the four
-    # Poryos2026 cards show four different urban layouts instead of four views
+    # Each problem type prefers a city no earlier preview used, so the
+    # Poryos2026 cards show different urban layouts instead of several views
     # of the alphabetically-first city.
     used_places: set[str] = set()
-    for problem in ("CVRP", "VRPTW", "TDVRP", "TDVRPTW"):
+    for problem in HOME_PREVIEW_PORYOS_PROBLEMS:
         objective = objective_by_problem[problem]
         candidates = [
             (item, entry)
@@ -2536,16 +2556,21 @@ def _build_home_preview_bundle(
             )
             used_places.add(chosen[0].locator.place_slug or "")
             selected_matches.append(chosen)
-    if has_mamut_preview_sizes and len(selected_matches) < 4:
+    if has_poryos_preview_sizes and len(selected_matches) < len(HOME_PREVIEW_PORYOS_PROBLEMS):
         available = sorted({pair[0].locator.problem_type.value for pair in selected_matches})
         raise ValueError(
             "Home preview invariant failed: expected one n=25/50 Poryos2026 preview for each of "
-            f"CVRP, VRPTW, TDVRP and TDVRPTW; available matches: {available}"
+            f"{', '.join(HOME_PREVIEW_PORYOS_PROBLEMS)}; available matches: {available}"
         )
-    for seed in HOME_PREVIEW_SEEDS:
-        historical_match = _match_seed_instance(resolved_items, seed)
-        if historical_match is not None:
-            selected_matches.append(historical_match)
+
+    mamut_matches = _select_home_preview_mamut_matches(resolved_items)
+    has_mamut_instances = any(item.locator.benchmark_name.value == "Mamut2026" for item in resolved_items)
+    if has_mamut_instances and len(mamut_matches) < HOME_PREVIEW_MAMUT_COUNT:
+        raise ValueError(
+            f"Home preview invariant failed: expected {HOME_PREVIEW_MAMUT_COUNT} Mamut2026 road-metric previews "
+            f"with a MonoCost BKS; found {len(mamut_matches)}"
+        )
+    selected_matches.extend(mamut_matches)
 
     for resolved, bks_entry in selected_matches:
         key = (resolved.route_path, bks_entry.objective_function.value)
