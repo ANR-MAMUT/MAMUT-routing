@@ -38,14 +38,15 @@ checkers that define what a valid solution costs.
 
 ```python
 from pathlib import Path
-from mamut_routing_lib import (
-    discover_benchmark_instances, load_benchmark_instance, load_bks, check_solution,
-)
+from mamut_routing_lib import discover_benchmark_instances, load_bks, check_solution
+from mamut_routing_lib.artifacts import get_bks_path_for_instance
+from mamut_routing_lib.enums import ObjectiveFunction
 
 items = discover_benchmark_instances(benchmarks_root=Path("./benchmarks"))
-instance = load_benchmark_instance(items[0].instance_path)
-bks = load_bks(items[0].bks_path)
-report = check_solution(instance, bks)          # status, validated cost, route count
+item = items[0]                                  # problem type, family, size, instance_path, ...
+instance = item.load()
+bks = load_bks(get_bks_path_for_instance(item.instance_path, ObjectiveFunction.MONO_COST))
+report = check_solution(instance, bks)           # status, validated cost, route count
 ```
 
 Time-dependent instances (TDVRP, TDVRPTW) use the exact, epsilon-free checker in `mamut_routing_lib.td`.

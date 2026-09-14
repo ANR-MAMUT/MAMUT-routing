@@ -154,6 +154,18 @@ nav:
       - Glossary: benchmarks/glossary.md
   - Maintainer guide:
       - maintainer-guide/index.md
+      - Repository topology: maintainer-guide/repository-topology.md
+      - Update a benchmark family: maintainer-guide/update-a-family.md
+      - Update or submit a BKS: maintainer-guide/update-a-bks.md
+      - Run a BKS campaign: maintainer-guide/bks-campaigns.md
+      - Add a benchmark family: maintainer-guide/add-a-family.md
+      - Add a problem type or objective: maintainer-guide/add-a-problem-type.md
+      - Generate or convert a family: maintainer-guide/generate-a-family.md
+      - Build the website: maintainer-guide/build-the-website.md
+      - Deploy: maintainer-guide/deploy.md
+      - Cut a release: maintainer-guide/release.md
+      - Publication history and state: maintainer-guide/publication-history.md
+      - Troubleshooting: maintainer-guide/troubleshooting.md
   - Developer guide:
       - developer-guide/index.md
       - Package READMEs:
