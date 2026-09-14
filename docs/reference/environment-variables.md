@@ -2,8 +2,8 @@
 
 | Variable | Read by | Meaning |
 |---|---|---|
-| `MAMUT_ROUTING_ROOT` | lib, publisher | Repository root used when no `--source-repo-dir` / `--output-repo-dir` is given (falls back to the working directory). |
-| `MAMUT_ROUTING_BENCHMARKS_ROOT` | `mamut-routing` | Default for `--benchmarks-dir`. |
+| `MAMUT_ROUTING_ROOT` | lib, publisher | Repository root. The publisher CLI falls back to the working directory when it is unset; the **library** does not: `get_default_mamut_routing_root()` raises, so Python callers pass explicit paths (`discover_benchmark_instances(benchmarks_root=...)`) or set the variable. |
+| `MAMUT_ROUTING_BENCHMARKS_ROOT` | lib, `mamut-routing` | Benchmarks root: the library's default before `MAMUT_ROUTING_ROOT/benchmarks`; the CLI's default for `--benchmarks-dir` (the CLI itself falls back to `./benchmarks`). |
 | `MAMUT_ROUTING_RELEASE_REPO` | `mamut-routing remote` | GitHub repository whose releases carry the archives (`--repo`). |
 | `MAMUT_ROUTING_GITHUB_TOKEN` | `mamut-routing remote` | Token for the GitHub API (`--token`), for rate limits or private releases. |
 | `MAMUT_ROUTING_TEST_NETWORK` | lib tests | Set to `1` to run the opt-in network test. |

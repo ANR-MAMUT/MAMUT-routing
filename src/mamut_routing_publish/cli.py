@@ -235,6 +235,13 @@ def serve_cmd(
         Optional[Path],
         typer.Option("--repo-root", help="MAMUT-routing repo root to serve. Defaults to $MAMUT_ROUTING_ROOT or the current directory."),
     ] = None,
+    site_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--site-dir",
+            help="Site tree to serve instead of <repo-root>/dist, e.g. a staging build made with `site build --site-output-dir`. Relative paths resolve under --repo-root.",
+        ),
+    ] = None,
     log_level: Annotated[
         str,
         typer.Option("--log-level", help="uvicorn log level."),
@@ -246,7 +253,10 @@ def serve_cmd(
     from mamut_routing_publish.server import create_app
 
     resolved_root = _resolve_repo_dir(repo_root)
-    uvicorn.run(create_app(resolved_root), host=host, port=port, log_level=log_level)
+    resolved_site_dir = None
+    if site_dir is not None:
+        resolved_site_dir = site_dir if site_dir.is_absolute() else Path(resolved_root) / site_dir
+    uvicorn.run(create_app(resolved_root, site_dir=resolved_site_dir), host=host, port=port, log_level=log_level)
 
 
 # ---------------------------------------------------------------------------

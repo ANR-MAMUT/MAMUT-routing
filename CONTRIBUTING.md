@@ -28,7 +28,7 @@ and the benchmark satellites) with one contract; the
 
 ```bash
 git clone git@github.com:ANR-MAMUT/MAMUT-routing.git && cd MAMUT-routing
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools
 uv sync
 uv run pytest                       # publisher + lib
 uv run mkdocs build --strict        # documentation

@@ -1,7 +1,7 @@
 # Build the website
 
 ```bash
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026
 uv sync
 uv run mamut-routing-publish site build --precompress
 uv run mamut-routing-publish serve                  # http://127.0.0.1:8082/
@@ -46,9 +46,20 @@ into the release directory of the host; the next build reports `generated=0 reus
 
 ## The documentation phase
 
-Strict: any broken link, missing nav target or unresolved API reference fails the build (and CI). Iterate with
-`uv run mkdocs serve` or `uv run mamut-routing-publish site docs --site-output-dir dist-preview`. A checkout without
+Strict: any broken link, missing nav target, broken anchor or unresolved API reference fails the build (and CI);
+external URLs are not checked. Iterate with `uv run mkdocs serve` or `uv run mamut-routing-publish site docs
+--site-output-dir dist-preview`, and preview a staging tree with `serve --site-dir dist-preview`. A checkout without
 `mkdocs.yml` skips the phase; a checkout without the docs toolchain fails before the cache phases unless `--skip-docs`.
+
+## Previewing a staging build
+
+`serve` serves `<repo>/dist` unless told otherwise. To look at a staging build without touching the live tree or
+the publication history:
+
+```bash
+uv run mamut-routing-publish site build --site-output-dir dist-preview --state-dir dist-preview-state --skip-atf-cache --skip-route-geometry
+uv run mamut-routing-publish serve --site-dir dist-preview
+```
 
 ## Checking a build
 

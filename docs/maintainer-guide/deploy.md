@@ -44,9 +44,10 @@ runbook (paths, users, certificates). This page is the part that is true of any 
 
 ```bash
 # 1. locally: bump the MAMUT-routing pointer in the deploy superproject and push it
-# 2. on the host, in a screen/tmux session or with nohup (a build outlives an ssh session):
+# 2. on the host, in a screen/tmux session or with nohup (a build outlives an ssh session).
+#    deploy.sh pulls the superproject and updates every submodule itself (SKIP_SOURCE_UPDATE=0, the default):
 cd ~/mamut-routing-deploy
-ENV_FILE=~/mamut.env START_API_ONLY=0 SKIP_SOURCE_UPDATE=1 nohup ./scripts/deploy.sh > ~/deploy-$(date +%F).log 2>&1 < /dev/null &
+ENV_FILE=~/mamut.env START_API_ONLY=0 nohup ./scripts/deploy.sh > ~/deploy-$(date +%F).log 2>&1 < /dev/null &
 tail -f ~/deploy-*.log
 # 3. smoke test from the host and from outside
 BASE_URL=http://127.0.0.1:8081 CHECK_HTTP_REDIRECT=0 ./scripts/smoke-test.sh
@@ -55,6 +56,21 @@ BASE_URL=https://<domain> ./scripts/smoke-test.sh
 
 The smoke test checks the home page, payloads, artifacts, `LICENSE`, `/healthz`, that retired compute endpoints return
 404, and precompressed serving. Add `/docs/` to your manual check.
+
+### When the host cannot pull
+
+`SKIP_SOURCE_UPDATE=1` builds **the host's current checkout as it is**: set it only after you updated the sources
+yourself, otherwise the deploy succeeds and republishes the old content. The rootless variant without a GitHub key
+(the deploy repository is private; the site repositories are public over HTTPS):
+
+```bash
+# locally: push the superproject commit straight to the host
+git push ssh://<host>/<path>/mamut-routing-deploy main:refs/remotes/local-push/main
+# on the host: fast-forward, then update submodules over HTTPS, then deploy without a source update
+cd ~/mamut-routing-deploy && git merge --ff-only local-push/main
+git -c url."https://github.com/".insteadOf="git@github.com:" submodule update --init --recursive Mamut-routing
+ENV_FILE=~/mamut.env START_API_ONLY=0 SKIP_SOURCE_UPDATE=1 GIT_SUBMODULE_TRANSPORT=https nohup ./scripts/deploy.sh > ~/deploy-$(date +%F).log 2>&1 < /dev/null &
+```
 
 ## Rollback
 

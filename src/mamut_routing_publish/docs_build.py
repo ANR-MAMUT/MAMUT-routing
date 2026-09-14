@@ -107,6 +107,9 @@ def build_docs_site(
 ) -> DocsBuildSummary:
     """Render ``mkdocs.yml`` into ``site_dir`` (cleaned first by MkDocs itself).
 
+    ``quiet`` silences the console only: strict-mode warnings are still
+    counted and still fail the build.
+
     Runs with the repository root as the working directory: the gen-files
     script, the mkdocstrings source paths and the snippet base path in
     ``mkdocs.yml`` are all relative to it. Strict mode turns every MkDocs
@@ -125,8 +128,16 @@ def build_docs_site(
     site_dir.parent.mkdir(parents=True, exist_ok=True)
 
     mkdocs_logger = logging.getLogger("mkdocs")
-    previous_level = mkdocs_logger.level
-    mkdocs_logger.setLevel(logging.ERROR if quiet else logging.WARNING)
+    previous_propagate = mkdocs_logger.propagate
+    quiet_handler: logging.Handler | None = None
+    if quiet:
+        # MkDocs counts warnings for strict mode through a handler it attaches
+        # to this logger inside build(); records must therefore keep flowing.
+        # Quiet only stops them from reaching the console (root handlers or
+        # logging's last-resort stderr handler).
+        mkdocs_logger.propagate = False
+        quiet_handler = logging.NullHandler()
+        mkdocs_logger.addHandler(quiet_handler)
     # A plugin in the toolchain prints a long advisory about the MkDocs 2.0
     # transition on every build; it is noise for a pinned, tested toolchain.
     previous_advisory = os.environ.get(_MKDOCS_ADVISORY_ENV)
@@ -139,7 +150,9 @@ def build_docs_site(
     except MkDocsException as error:
         raise DocsBuildError(f"mkdocs build failed: {error}") from error
     finally:
-        mkdocs_logger.setLevel(previous_level)
+        mkdocs_logger.propagate = previous_propagate
+        if quiet_handler is not None:
+            mkdocs_logger.removeHandler(quiet_handler)
         if previous_advisory is None:
             os.environ.pop(_MKDOCS_ADVISORY_ENV, None)
         else:

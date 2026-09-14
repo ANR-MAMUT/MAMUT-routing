@@ -52,8 +52,9 @@ Prefer the `git@github.com:ANR-MAMUT/...` URL form used by the other entries; th
 
 ```bash
 uv run pytest
-uv run mamut-routing-publish site build --skip-atf-cache --skip-route-geometry --site-output-dir dist-preview
-uv run mamut-routing-publish serve            # then open /benchmarks/<type>/<family>/ and /docs/benchmarks/families/
+uv run mamut-routing-publish site build --skip-atf-cache --skip-route-geometry \
+    --site-output-dir dist-preview --state-dir dist-preview-state      # a scratch state dir: a preview is not a publication
+uv run mamut-routing-publish serve --site-dir dist-preview            # then open /benchmarks/<type>/<family>/ and /docs/benchmarks/families/
 ```
 
 Then a real build with the caches, a release if the family is meant to be downloadable

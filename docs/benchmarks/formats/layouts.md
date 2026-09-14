@@ -41,8 +41,9 @@ parses either layout (`parse_layout`, `parse_collection_layout`) and yields `Dis
 
 ## Pins
 
-A sidecar reference is a `SidecarRef` (`path`, `sha256`), optionally with a size. The hash covers the
-uncompressed canonical JSON bytes; the loader recomputes it and refuses a mismatch. Consequences:
+A sidecar reference is a `SidecarRef` with exactly two fields: `path` and an optional `sha256` (no other key is
+accepted). The hash covers the uncompressed canonical JSON bytes; when it is present the loader recomputes it and
+refuses a mismatch. Consequences:
 
 - a sidecar can be stored as `.json` or `.json.gz` interchangeably;
 - large sidecars may be **pinned but not committed** (the POI-tier distance matrices of Mamut2026); the generator

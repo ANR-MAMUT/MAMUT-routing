@@ -23,7 +23,7 @@ From Python, with your own solution (any solver):
 from mamut_routing_lib import BenchmarkSolution, save_solution_as_bks_if_improved
 from mamut_routing_lib.enums import ObjectiveFunction
 
-candidate = BenchmarkSolution(routes=routes, cost=None)           # the cost is recomputed by the checker
+candidate = BenchmarkSolution(instance_name="mamut-lyon-n1000-k91-poi", routes=routes)   # cost: the checker's
 result = save_solution_as_bks_if_improved(
     instance_path, ObjectiveFunction.MONO_COST, candidate,
     authors="Your Name (handle)",
@@ -32,8 +32,13 @@ result = save_solution_as_bks_if_improved(
 print(result.action, result.path, result.candidate_cost)           # created | replaced | kept_existing
 ```
 
-Under the hood: `create_bks_from_solution` builds the `BenchmarkBKS` (validation, checker cost, metadata) and
-`save_bks_if_improved(instance, bks, instance_path)` does the compare-and-replace.
+Under the hood: the instance is loaded and, for slim collection instances (Poryos2026, Mamut2026), hydrated from
+its sidecars (`hydrate_collection_instance`); `create_bks_from_solution` builds the `BenchmarkBKS` (validation,
+checker cost, metadata); `save_bks_if_improved(instance, bks, instance_path)` does the compare-and-replace.
+
+!!! warning "One writer per instance"
+    The store is an unlocked read/compare/write. Two processes storing candidates for the same instance at the same
+    time can end with the worse one on disk. Serialize the stores (see [Run a BKS campaign](bks-campaigns.md)).
 `create_bks_from_solution` raises on an invalid solution, requires a non-empty `authors`, and fills
 `validated_cost`, `validated_num_routes` and `date` in the metadata. `is_better_solution` implements the objective's
 order (HierarchicalVehicleCost compares route count first). With PyVRP, `solve_and_update_bks` in

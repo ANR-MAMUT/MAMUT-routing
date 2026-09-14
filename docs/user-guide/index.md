@@ -52,7 +52,7 @@ checker-validated, kept across restarts and comparable. Set `MAMUT_BASEMAP_API_K
 
 Batch family generation (many cities × sizes) is deliberately not a CLI command: campaigns are scripts that call
 the `mamut_routing_tools.family` and `mamut_routing_tools.campaign` library, see
-[Generate a family](../maintainer-guide/index.md#generate-a-family).
+[Generate or convert a family](../maintainer-guide/generate-a-family.md).
 
 External services used: Nominatim and the Overpass mirrors for OSM data, CARTO for optional basemaps. Nothing
 is sent anywhere else.

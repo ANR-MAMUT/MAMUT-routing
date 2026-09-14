@@ -34,7 +34,7 @@ validation:
     not_found: warn
     absolute_links: ignore
     unrecognized_links: warn
-    anchors: info
+    anchors: warn
 
 theme:
   name: material
@@ -146,6 +146,11 @@ nav:
   - Home: index.md
   - Getting started:
       - getting-started/index.md
+      - 1. Browse and download: getting-started/browse-and-download.md
+      - 2. Install the Python stack: getting-started/install.md
+      - 3. Load and check: getting-started/load-and-check.md
+      - 4. Solve and propose a BKS: getting-started/solve-and-bks.md
+      - 5. Export to CVRPLIB .vrp: getting-started/export-vrp.md
   - User guide:
       - user-guide/index.md
       - FAQ: user-guide/faq.md

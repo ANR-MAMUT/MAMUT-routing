@@ -16,9 +16,13 @@ jobs:
           submodules: false
       # The tools submodule carries the MAMUT-routing-lib checkout that uv
       # resolves against ([tool.uv.sources]); --recursive pulls that nested
-      # submodule. actions/checkout rewrites the ssh URLs to HTTPS for the job.
+      # submodule. Its URL is git@github.com: in the tools' .gitmodules and
+      # actions/checkout only rewrites URLs when it handles submodules itself,
+      # so rewrite ssh to https explicitly (public repositories, no key).
       - name: Init tooling submodules
-        run: git submodule update --init --recursive MAMUT-routing-tools
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive MAMUT-routing-tools
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
