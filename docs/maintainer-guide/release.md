@@ -18,7 +18,9 @@ The lib and tools `CITATION.cff` have drifted from their `pyproject.toml` before
 ## 2. Tag and publish the packages
 
 ```bash
-git commit -am "Release X.Y.Z" && git tag vX.Y.Z && git push --follow-tags
+git commit -am "Release X.Y.Z"
+git tag -a vX.Y.Z -m "Release X.Y.Z"        # annotated: --follow-tags ignores lightweight tags
+git push origin main vX.Y.Z                 # push the tag explicitly
 ```
 
 The tools publish to PyPI from a GitHub release via trusted publishing (`.github/workflows/publish.yml`, environment
@@ -26,6 +28,13 @@ The tools publish to PyPI from a GitHub release via trusted publishing (`.github
 bump the tools' nested lib pointer and their dependency floor, then the tools, then the superproject's pointers.
 
 ## 3. Data archives
+
+!!! warning "Collections are not packaged yet"
+    `release build` plans one archive per (problem type, family) from `benchmarks/<ProblemType>/<Family>/`. The
+    family-first collections (Poryos2026, Mamut2026) live at `benchmarks/<Family>/` with shared `sidecars/`, so the
+    planner requests directories that do not exist and the build fails on this checkout. Until the planner learns
+    the collection layout (one archive per collection with its sidecars, and a manifest scope for it), release the
+    classic families only, or package the collections by hand and add them to the manifest.
 
 ```bash
 uv run mamut-routing-publish release build \
@@ -42,10 +51,14 @@ scope). Guards: an asset over 1.5 GiB warns, over 2 GiB fails (GitHub's limit), 
 Upload every archive and the manifest as assets of the GitHub release. Verify from a clean machine:
 
 ```bash
-mamut-routing remote list --tag vX.Y.Z
-mamut-routing --benchmarks-dir /tmp/check remote fetch --benchmark-name Sintef2008 && \
-mamut-routing --benchmarks-dir /tmp/check remote verify
+mamut-routing remote --tag vX.Y.Z list                       # --tag belongs to `remote`, before the subcommand
+mamut-routing --benchmarks-dir /tmp/check remote --tag vX.Y.Z fetch --problem-type VRPTW --benchmark-name Sintef2008
+mamut-routing --benchmarks-dir /tmp/check remote --tag vX.Y.Z verify --problem-type VRPTW --benchmark-name Sintef2008
 ```
+
+Repeat the same `--tag` and the same family filters on `fetch` and `verify`: without `--tag` both fall back to the
+latest release, and an unfiltered `verify` checks every asset of the manifest and fails on the ones you did not
+download.
 
 ## 4. Archive and cite
 

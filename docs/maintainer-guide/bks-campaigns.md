@@ -19,32 +19,44 @@ is the pattern.
 
 ## Driver pattern
 
-Call the library, not the CLI, so extra metadata reaches the BKS:
+Call the library, not the CLI, so extra metadata reaches the BKS. Workers **solve and return**; one
+coordinator **stores**: the BKS store is an unlocked read/compare/write, so two processes writing the same file can
+let a worse candidate win the race (measured, not hypothetical). Consume every future so worker exceptions surface.
 
 ```python
-from concurrent.futures import ProcessPoolExecutor
-from mamut_routing_lib import discover_benchmark_instances, save_solution_as_bks_if_improved, BenchmarkSolution
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+from mamut_routing_lib import BenchmarkSolution, discover_benchmark_instances, save_solution_as_bks_if_improved
 from mamut_routing_lib.enums import ObjectiveFunction
 from mamut_routing_lib.solvers.pyvrp import solve_instance
 
-def run(item, seed, time_limit_s):
-    result = solve_instance(item.load(), time_limit_s=time_limit_s, seed=seed, instance_path=item.instance_path)
-    archive_run(item, seed, time_limit_s, result)                      # every run, winner or not
-    if not result.solver_is_feasible:
-        return None
-    return save_solution_as_bks_if_improved(
-        item.instance_path, ObjectiveFunction.MONO_COST, BenchmarkSolution(routes=result.routes, cost=None),
-        authors="...", metadata={"method": "pyvrp-ils-v2", "seed": seed, "time_limit_s": time_limit_s,
-                                 "solver_version": "0.13.4", "machine": "...", "campaign": "2026-09-bks-2"},
-    )
+BENCHMARKS = Path("benchmarks").resolve()     # the library never falls back to the working directory
 
-items = discover_benchmark_instances(benchmark_names=["Mamut2026"])
+def run(item, seed, time_limit_s):
+    """Worker: solve and return; never writes a BKS."""
+    result = solve_instance(item.load(), time_limit_s=time_limit_s, seed=seed, instance_path=item.instance_path)
+    return item, seed, result
+
+items = discover_benchmark_instances(BENCHMARKS, problem_types=["CVRP"], benchmark_names=["Mamut2026"])
 with ProcessPoolExecutor(max_workers=10) as pool:                       # one core per PyVRP run
     futures = [pool.submit(run, item, seed, 300) for item in items for seed in (1, 2, 3)]
+    for future in as_completed(futures):
+        item, seed, result = future.result()                            # re-raises a worker's exception
+        archive_run(item, seed, result)                                 # every run, winner or not
+        if not result.solver_is_feasible:
+            continue
+        update = save_solution_as_bks_if_improved(                      # coordinator: the only writer
+            item.instance_path, ObjectiveFunction.MONO_COST,
+            BenchmarkSolution(instance_name=item.instance_name, routes=result.routes),
+            authors="...", metadata={"method": "pyvrp-ils-v2", "seed": seed, "time_limit_s": 300,
+                                     "solver_version": "0.13.4", "machine": "...", "campaign": "2026-09-bks-2"},
+        )
+        print(item.instance_id, seed, update.action, update.candidate_cost)
 ```
 
-(`solve_and_update_bks` does both steps in one call but carries no extra metadata, which is why a campaign splits
-them.)
+`save_solution_as_bks_if_improved` hydrates slim collection instances (Mamut2026, Poryos2026) from their sidecars
+before checking (lib ≥ commit `74b8a54`); `solve_and_update_bks` does solve and store in one call but carries no
+extra metadata and would run the store inside each worker, which is exactly the race to avoid.
 
 Make the driver resumable (skip runs whose archive exists) and keep a ledger (`campaigns/<id>/ledger.csv`) with one
 row per run. Memory per worker is roughly 100 MB at n≈500 and 1.6 GB at n=4000.

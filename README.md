@@ -119,11 +119,12 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 ### Setup
 
 ```bash
-# clone with the tooling submodules (benchmark family satellites stay
+# clone with the tooling submodules, recursively: uv installs the lib from
+# the checkout nested in MAMUT-routing-tools (benchmark family satellites stay
 # empty — opt in per family, see "Benchmark family satellites")
 git clone git@github.com:ANR-MAMUT/MAMUT-routing.git
 cd MAMUT-routing
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools
 
 # install (uv workspace: editable mamut-routing-lib + mamut-routing-tools)
 uv sync
@@ -134,7 +135,7 @@ uv sync
 The whole publish is three chained steps: fetch the data, install, build, then serve:
 
 ```bash
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026 \
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026 \
   && uv sync \
   && uv run mamut-routing-publish site build \
   && uv run mamut-routing-publish serve

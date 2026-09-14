@@ -5,7 +5,7 @@ build-time caches (ATF sidecars, BKS route geometry), precompression, this docum
 and the static file server. It runs from a checkout of the repository:
 
 ```bash
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools
 uv sync
 uv run mamut-routing-publish --help
 ```

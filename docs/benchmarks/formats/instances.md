@@ -39,6 +39,11 @@ with its URL. Historic families use a free-form dict. Generated artifacts also c
 
 ## Validation
 
-Models reject extra keys, inconsistent lengths (coordinates, demands, service times, windows versus
-`num_customers + 1`), a square matrix of the wrong size, negative demands, windows with `ready > due`. Loading is
-`load_benchmark_instance(path)`; the problem type of a loaded object is `instance_problem_type(instance)`.
+What the models reject at load time: unknown keys, non-positive `num_customers`, `vehicle_capacity` or
+`num_vehicles`, node vectors (coordinates, demands, service times, windows) whose length is not
+`num_customers + 1`, and an `arc_costs` matrix that is not `(n+1) × (n+1)`. The slim collection models also reject a
+window with `ready > due`. Everything else (demand signs, window order on embedded instances, matrix symmetry,
+triangle inequality) is **not** validated by the models: the checker catches what matters for a solution (capacity,
+arrival after `due`), and the generators guarantee the rest. Loading is `load_benchmark_instance(path)`; the
+problem type of a loaded object is `instance_problem_type(instance)`; `hydrate_collection_instance` turns a slim
+instance into an embedded one.

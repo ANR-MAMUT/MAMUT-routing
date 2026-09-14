@@ -1,104 +1,21 @@
 # Getting started
 
-Three ways in, by increasing involvement. Each step is self-contained.
+Five short tutorials, each self-contained and runnable as written (they were run on a fresh clone before being
+published). Do them in order the first time; later, jump to the one you need.
 
-## 1. Browse and download
+| | Tutorial | You end up with |
+|---|---|---|
+| 1 | [Browse and download benchmarks](browse-and-download.md) | instances and BKS on your disk, by family |
+| 2 | [Install the Python stack](install.md) | `mamut-routing`, `mamut-tools`, and a developer checkout |
+| 3 | [Load an instance and check a solution](load-and-check.md) | the checker's verdict and cost on a published BKS |
+| 4 | [Solve with PyVRP and propose a BKS](solve-and-bks.md) | a validated solution file, stored only if it improves |
+| 5 | [Export to CVRPLIB `.vrp`](export-vrp.md) | classic-format files for solvers that do not read `.vrp.json` |
 
-The [website](/) lists every published instance with its best-known solution (BKS), a route map, the
-objective contract and the publication history. Every static instance page offers a `.vrp ↓` chip that writes the
-classic CVRPLIB file in your browser.
+Then: the [User guide](../user-guide/index.md) for the website, the workbench and instance generation; the
+[Benchmarks](../benchmarks/index.md) section for what the data is; the [Maintainer guide](../maintainer-guide/index.md)
+if you keep the platform running.
 
-For batches, the `mamut-routing` CLI pulls per-family release archives, so you download only what you need:
+## Requirements
 
-```bash
-pip install "mamut-routing-lib[cli]"            # or: uv add "mamut-routing-lib[cli]"
-
-mamut-routing remote list                                       # archives of the latest release
-mamut-routing --benchmarks-dir ./benchmarks remote fetch \
-    --problem-type CVRP --benchmark-name Poryos2026            # download + extract one family
-mamut-routing --benchmarks-dir ./benchmarks remote verify        # sha256 against the manifest
-mamut-routing --benchmarks-dir ./benchmarks list --problem-type CVRP
-```
-
-To pin the whole tree to a commit (for a paper or an experiment), add the repository as a submodule instead and
-initialise the families you need:
-
-```bash
-git submodule add https://github.com/ANR-MAMUT/MAMUT-routing.git external/MAMUT-routing
-git -C external/MAMUT-routing submodule update --init benchmarks/Mamut2026
-```
-
-A plain clone leaves the satellite directories empty; the default families (Sintef2008, Dimacs2021, Ortec2022,
-Dabia2013) are in the repository itself. See [Benchmark families](../benchmarks/families/index.md) for sizes.
-
-## 2. Load, check, solve, export
-
-`mamut-routing-lib` is the contract: pydantic models for instances, solutions, BKS and sidecars, plus the
-checkers that define what a valid solution costs.
-
-```python
-from pathlib import Path
-from mamut_routing_lib import discover_benchmark_instances, load_bks, check_solution
-from mamut_routing_lib.artifacts import get_bks_path_for_instance
-from mamut_routing_lib.enums import ObjectiveFunction
-
-items = discover_benchmark_instances(benchmarks_root=Path("./benchmarks"))
-item = items[0]                                  # problem type, family, size, instance_path, ...
-instance = item.load()
-bks = load_bks(get_bks_path_for_instance(item.instance_path, ObjectiveFunction.MONO_COST))
-report = check_solution(instance, bks)           # status, validated cost, route count
-```
-
-Time-dependent instances (TDVRP, TDVRPTW) use the exact, epsilon-free checker in `mamut_routing_lib.td`.
-The full surface is in the [API reference](../reference/api/index.md).
-
-Solving and proposing a BKS uses the PyVRP wrapper (`pyvrp` extra). A BKS file is only ever replaced by a
-strictly better, re-validated solution:
-
-```bash
-pip install "mamut-routing-lib[cli,pyvrp]"
-mamut-routing --benchmarks-dir ./benchmarks solve \
-    --problem-type CVRP --benchmark-name Mamut2026 --time-limit-s 120 --seed 42 --save-bks
-```
-
-Solvers that do not read `.vrp.json` get the classic format:
-
-```bash
-mamut-routing export vrp path/to/instance.vrp.json          # writes <name>.vrp next to it
-mamut-routing --benchmarks-dir ./benchmarks export vrp \
-    --problem-type CVRP --benchmark-name Mamut2026 --output-dir ./vrp-out
-```
-
-The export is byte-identical across the CLI, the workbench and the website; the contract is documented in
-[Formats](../benchmarks/formats/index.md).
-
-## 3. Generate your own instances
-
-Generation and solving run on your machine with `MAMUT-routing-tools` (the website is static by design, see the
-[FAQ](../user-guide/faq.md)):
-
-```bash
-uvx --from mamut-routing-tools mamut-tools --help
-uvx --from mamut-routing-tools mamut-tools osm fetch-city "Vannes, France" --output-dir ./work
-uvx --from mamut-routing-tools mamut-tools generate single ./work/osmdata/vannes.osm --n 100 --output-dir ./work
-uvx --from mamut-routing-tools mamut-tools gui start        # the local workbench, in your browser
-```
-
-The [User guide](../user-guide/index.md) walks through the workbench, the generation commands and the OSM
-download profiles; the [CLI reference](../reference/cli/mamut-tools.md) lists every option.
-
-## For maintainers and contributors
-
-Clone with the tooling submodules, sync the uv workspace, run the tests, build the site:
-
-```bash
-git clone git@github.com:ANR-MAMUT/MAMUT-routing.git && cd MAMUT-routing
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools
-uv sync
-uv run pytest
-uv run mamut-routing-publish site build --skip-atf-cache --skip-route-geometry
-uv run mamut-routing-publish serve            # http://127.0.0.1:8082/ and /docs/
-```
-
-Continue with the [Maintainer guide](../maintainer-guide/index.md) or the
-[Developer guide](../developer-guide/index.md).
+Python 3.11 or newer, and [uv](https://github.com/astral-sh/uv) (pip works too). Everything runs on Linux, macOS
+and Windows; the generation tools need network access to OpenStreetMap the first time a city is fetched.

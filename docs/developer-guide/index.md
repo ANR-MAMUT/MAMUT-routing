@@ -26,7 +26,7 @@ benchmarks/ (data)  ──►  mamut_routing_lib (contract: models, checkers, BK
 
 ```bash
 git clone git@github.com:ANR-MAMUT/MAMUT-routing.git && cd MAMUT-routing
-git submodule update --init MAMUT-routing-lib MAMUT-routing-tools     # tooling only
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools     # tooling, incl. the nested lib uv installs
 uv sync                                                              # dev + docs groups
 uv run pytest                                                        # publisher + lib suites
 uv run --project MAMUT-routing-tools pytest                          # tools suite

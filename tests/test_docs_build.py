@@ -77,3 +77,25 @@ def test_site_docs_cli_builds_under_staging_dir(tmp_path: Path) -> None:
     assert (staging / "docs" / "index.html").is_file()
     if live_mtime is not None:
         assert live_docs.stat().st_mtime == live_mtime
+
+
+def _broken_docs_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "mkdocs.yml").write_text("site_name: fixture\n", encoding="utf-8")
+    (repo / "docs" / "index.md").write_text("# Home\n\n[Broken](missing.md)\n", encoding="utf-8")
+    return repo
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_strict_build_fails_on_broken_link_regardless_of_quiet(tmp_path: Path, quiet: bool) -> None:
+    # --quiet must silence the console only; strict mode still counts the warning.
+    repo = _broken_docs_repo(tmp_path)
+    with pytest.raises(DocsBuildError, match="strict"):
+        build_docs_site(repo, tmp_path / "out", strict=True, quiet=quiet)
+
+
+def test_non_strict_build_tolerates_broken_link(tmp_path: Path) -> None:
+    repo = _broken_docs_repo(tmp_path)
+    summary = build_docs_site(repo, tmp_path / "out", strict=False, quiet=True)
+    assert summary.html_files_written >= 1

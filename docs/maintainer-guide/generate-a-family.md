@@ -23,9 +23,9 @@ Naming and tree layout are in `family/naming.py`; `family.materialize_distances`
 
 ```bash
 # the per-instance CLI, for one base
-mamut-tools osm fetch-city "Lyon, France" --profile generation --output-dir work
-mamut-tools generate single work/osmdata/lyon.osm --n 200 --output-dir work --vrptw
-mamut-tools generate derive-td work/instances/<base>.vrp.json --all
+mamut-tools osm fetch-city Lyon --country France --profile generation --osm-dir work/osmdata   # -> work/osmdata/Lyon.osm
+mamut-tools generate single Lyon --osm-path work/osmdata/Lyon.osm --n 200 --output-dir work --vrptw
+mamut-tools generate derive-td <folder> <base> --all      # folder and base name as printed by `generate single`
 ```
 
 ## The Mamut2026 design layer (`mamut_routing_tools.campaign`)

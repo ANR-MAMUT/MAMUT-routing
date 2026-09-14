@@ -90,7 +90,7 @@ def _contained(candidate: Path, root: Path) -> bool:
         return False
 
 
-def resolve_public_file(repo_root: Path, request_path: str) -> Path | None:
+def resolve_public_file(repo_root: Path, request_path: str, site_root: Path | None = None) -> Path | None:
     """Port of the Julia server's dual-root resolution.
 
     The ``dist`` tree is tried first (with the extensionless -> index.html
@@ -108,7 +108,7 @@ def resolve_public_file(repo_root: Path, request_path: str) -> Path | None:
         if "." not in relative.rsplit("/", 1)[-1]:
             relative_candidates.append(f"{relative}/index.html")
 
-    site_root = repo_root / "dist"
+    site_root = repo_root / "dist" if site_root is None else site_root
     for relative_candidate in relative_candidates:
         site_candidate = site_root / relative_candidate
         if site_candidate.is_file() and _contained(site_candidate, site_root):
@@ -175,10 +175,11 @@ def _if_none_match_hits(header_value: str | None, etag: str) -> bool:
 
 async def serve_site_file(request: Request) -> Response:
     repo_root: Path = request.app.state.repo_root
+    site_root: Path = request.app.state.site_root
     normalized = normalize_request_path(request.path_params.get("path", ""))
     if normalized is None:
         return PlainTextResponse("Path traversal is not allowed", status_code=400)
-    resolved = resolve_public_file(repo_root, normalized)
+    resolved = resolve_public_file(repo_root, normalized, site_root)
     if resolved is None:
         return PlainTextResponse("Not found", status_code=404)
 
@@ -199,10 +200,18 @@ async def healthz(request: Request) -> Response:
     return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
 
 
-def create_app(repo_root: str | Path) -> Starlette:
+def create_app(repo_root: str | Path, site_dir: str | Path | None = None) -> Starlette:
+    """The static app: ``site_dir`` (default ``<repo_root>/dist``) plus the repo artifact roots.
+
+    ``site_dir`` lets a staging build (``site build --site-output-dir``) be
+    previewed without touching the live ``dist`` tree; repo-relative artifact
+    links (``benchmarks/``, ``LICENSE``, ``dist/`` caches) still resolve
+    against ``repo_root``.
+    """
     root = Path(repo_root).resolve()
-    if not (root / "dist").is_dir():
-        raise FileNotFoundError(f"No dist/ tree under repo root: {root}. Run `site build` first.")
+    site_root = (root / "dist") if site_dir is None else Path(site_dir).resolve()
+    if not site_root.is_dir():
+        raise FileNotFoundError(f"No site tree at {site_root}. Run `site build` first.")
     app = Starlette(
         routes=[
             Route("/healthz", healthz, methods=["GET", "HEAD"]),
@@ -211,4 +220,5 @@ def create_app(repo_root: str | Path) -> Starlette:
         ]
     )
     app.state.repo_root = root
+    app.state.site_root = site_root
     return app
