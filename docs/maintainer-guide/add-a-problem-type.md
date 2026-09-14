@@ -38,5 +38,5 @@ The [Benchmarks](../benchmarks/index.md) table, the Formats page, and the family
 
 ## Write the report
 
-A new problem type or objective deserves a dated report in `docs/reports/` stating the pricing rule, the tie-breaks
-and the reference implementation, so later checkers can be validated against it.
+State the pricing rule, the tie-breaks and the reference implementation in the module docstring of the checker and
+in the Formats pages, so later checkers can be validated against it.

@@ -14,7 +14,6 @@ else, so nothing is duplicated:
   is not (a plain clone leaves satellite directories empty; the docs build
   must never fail because of that);
 - the README of the two tooling packages (lib, tools) as-is;
-- an index of the dated engineering reports under ``docs/reports/``;
 - one API-reference page per module for the curated package list.
 
 Everything here is pure (paths in, markdown out) so it is unit-tested
@@ -102,7 +101,6 @@ API_REFERENCE_PACKAGES = (
     ),
 )
 
-_REPORT_FILENAME_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})-(?P<slug>.+)\.md$")
 _MARKDOWN_LINK_RE = re.compile(r"(?P<bang>!?)\[(?P<text>[^\]]*)\]\((?P<target>[^)\s]+)(?P<title>\s+\"[^\"]*\")?\)")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
@@ -173,14 +171,6 @@ def rewrite_relative_links(markdown: str, *, blob_base: str, raw_base: str) -> s
             continue
         lines.append(line if in_fence else _MARKDOWN_LINK_RE.sub(replace, line))
     return "\n".join(lines) + ("\n" if markdown.endswith("\n") else "")
-
-
-def first_heading(markdown: str, fallback: str) -> str:
-    for line in markdown.splitlines():
-        match = re.match(r"^#\s+(.+?)\s*$", line.strip())
-        if match is not None:
-            return match.group(1)
-    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -427,36 +417,6 @@ def family_pages(repo_root: Path) -> list[GeneratedDocPage]:
     return pages
 
 
-def reports_pages(reports_dir: Path) -> list[GeneratedDocPage]:
-    """Index + nav of ``docs/reports/YYYY-MM-DD-<slug>.md``, newest first."""
-    entries: list[tuple[str, str, str]] = []
-    if reports_dir.is_dir():
-        for path in sorted(reports_dir.glob("*.md"), reverse=True):
-            match = _REPORT_FILENAME_RE.match(path.name)
-            if match is None:
-                continue
-            title = first_heading(path.read_text(encoding="utf-8"), match.group("slug").replace("-", " "))
-            entries.append((match.group("date"), title, path.name))
-    index = [
-        "# Engineering reports\n",
-        "Dated design records and post-mortems, in the spirit of architecture decision records: "
-        "each report states a problem, the decision taken and the evidence, and is never edited "
-        "retroactively (a later report supersedes it). Add one as `docs/reports/YYYY-MM-DD-<slug>.md` "
-        "with a top-level heading; this index is generated.\n",
-    ]
-    if entries:
-        index.append("| Date | Report |\n|---|---|")
-        index.extend(f"| {date} | [{title}]({name}) |" for date, title, name in entries)
-    else:
-        index.append("No report yet.")
-    summary = ["* [Index](index.md)"]
-    summary.extend(f"* [{date} — {title}]({name})" for date, title, name in entries)
-    return [
-        GeneratedDocPage(path="reports/index.md", markdown="\n".join(index) + "\n"),
-        GeneratedDocPage(path="reports/SUMMARY.md", markdown="\n".join(summary) + "\n"),
-    ]
-
-
 def _module_names(source_root: Path, top_level: tuple[str, ...]) -> list[str]:
     """Dotted module names under ``source_root`` for the selected top-level entries, in source order."""
     names: list[str] = []
@@ -517,6 +477,5 @@ def generate_docs_pages(repo_root: Path) -> list[GeneratedDocPage]:
     pages += root_markdown_pages(repo_root)
     pages += package_readme_pages(repo_root)
     pages += family_pages(repo_root)
-    pages += reports_pages(repo_root / "docs" / "reports")
     pages += reference_pages(repo_root)
     return pages

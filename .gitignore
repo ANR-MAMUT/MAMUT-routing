@@ -18,10 +18,14 @@ instances_v2/
 # Persistent publication state (history ledger + snapshot inventories)
 /publish-state/
 
+# Local working notes (campaign plans, design records): not tracked, not published
+/docs/reports/
+
 # MkDocs (the documentation is built into dist/docs/ by `site build`;
 # a stray `mkdocs build` without config and the Material plugin cache)
 /site/
 /.cache/
+/reports/
 
 # Article folder
 /MAMUT_routing_paper/

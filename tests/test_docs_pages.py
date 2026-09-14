@@ -19,7 +19,6 @@ from mamut_routing_publish.docs_pages import (
     package_readme_pages,
     parse_gitmodules,
     project_pages,
-    reports_pages,
     rewrite_relative_links,
     shift_headings,
 )
@@ -52,10 +51,6 @@ def _fixture_repo(tmp_path: Path, *, families_markdown: str) -> Path:
     (repo / "benchmarks" / "Poryos2026" / "README.md").write_text(
         "# Poryos2026 collection\n\nLayout in [CVRP](CVRP/).\n", encoding="utf-8"
     )
-    (repo / "docs" / "reports").mkdir(parents=True)
-    (repo / "docs" / "reports" / "2026-01-05-older.md").write_text("# Older report\n", encoding="utf-8")
-    (repo / "docs" / "reports" / "2026-03-01-newer.md").write_text("# Newer report\n\ntext\n", encoding="utf-8")
-    (repo / "docs" / "reports" / "notes.md").write_text("# Not dated\n", encoding="utf-8")
     return repo
 
 
@@ -156,21 +151,6 @@ def test_family_pages_embed_readme_stub_absent_and_collection(tmp_path: Path, fa
     assert summary.splitlines()[0] == "* [Overview](index.md)"
 
 
-def test_reports_index_newest_first_titles_from_heading(tmp_path: Path, families_report: Path) -> None:
-    repo = _fixture_repo(tmp_path, families_markdown="")
-    pages = {page.path: page.markdown for page in reports_pages(repo / "docs" / "reports")}
-    index = pages["reports/index.md"]
-    assert index.index("Newer report") < index.index("Older report")
-    assert "2026-03-01-newer.md" in index and "notes.md" not in index
-    summary = pages["reports/SUMMARY.md"]
-    assert summary.splitlines()[1] == "* [2026-03-01 — Newer report](2026-03-01-newer.md)"
-
-
-def test_reports_index_with_missing_dir(tmp_path: Path) -> None:
-    pages = {page.path: page.markdown for page in reports_pages(tmp_path / "nope")}
-    assert "No report yet." in pages["reports/index.md"]
-
-
 def test_project_pages_mirror_website_sources(tmp_path: Path, families_report: Path) -> None:
     repo = _fixture_repo(tmp_path, families_markdown="")
     pages = {page.path: page.markdown for page in project_pages(repo)}
@@ -198,9 +178,7 @@ def test_real_repo_every_summary_entry_is_generated() -> None:
             if "](" not in line:
                 continue
             target = line.split("](", 1)[1].rstrip(")")
-            generated = str(base / target) in pages
-            on_disk = (repo / "docs" / base / target).is_file()  # e.g. the dated reports
-            assert generated or on_disk, f"{summary_path} references missing {target}"
+            assert str(base / target) in pages, f"{summary_path} references missing {target}"
     # Every family section of the website has a documentation page.
     families = sum(1 for path in pages if path.startswith("benchmarks/families/") and "/" in path[len("benchmarks/families/"):] and not path.startswith("benchmarks/families/collections/"))
     assert families >= 19

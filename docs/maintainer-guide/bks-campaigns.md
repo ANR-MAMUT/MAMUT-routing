@@ -1,8 +1,7 @@
 # Run a BKS campaign
 
-A campaign is many solver runs whose winners become BKS and whose losers are data. The
-[Mamut2026 campaign 2 plan](../reports/2026-09-06-mamut2026-bks-campaign-2-plan.md) is the worked example; this page
-is the pattern.
+A campaign is many solver runs whose winners become BKS and whose losers are data. This page is the pattern; the
+maintainers' campaign plans are internal working notes.
 
 ## Design checklist
 
@@ -65,5 +64,5 @@ row per run. Memory per worker is roughly 100 MB at n≈500 and 1.6 GB at n=4000
 
 1. Rebuild route geometry for every replaced road-network BKS (locally).
 2. Update the family changelog and README (the README of a generated collection states how its BKS were produced).
-3. Write the report in `docs/reports/` with the achieved gaps, seed spread and the campaign ledger location.
+3. Record the achieved gaps, seed spread and the campaign ledger location in the family README and changelog.
 4. Publish with a `--history-summary` naming the campaign; the ledger records every `improved` BKS.

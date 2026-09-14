@@ -44,8 +44,9 @@ published artifacts).
 - **The checker is the authority.** Costs stored anywhere are checker costs.
 - **Module docstrings are the spec.** Formats, invariants and design rationale live in the docstring of the
   module that owns them and are rendered in the [API reference](../reference/api/index.md).
-- **Reports as decision records.** Non-trivial decisions get a dated report in `docs/reports/`
-  ([index](../reports/index.md)); reports are never rewritten, later ones supersede.
+- **Decisions are written down where they apply.** Contract rules go in the owning module docstring and the
+  Formats pages; family-specific choices in the family README and changelog. `docs/reports/` is a local,
+  untracked scratch folder for working notes and is excluded from the documentation build.
 - **Satellites are optional.** Everything must work with empty satellite directories.
 
 ## Contributing
