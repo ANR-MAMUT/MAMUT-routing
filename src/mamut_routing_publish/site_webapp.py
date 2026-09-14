@@ -1,3 +1,18 @@
+"""The static HTML shell of the website.
+
+``generate_site_webapp`` writes one thin ``index.html`` per route (home,
+catalog levels, instance pages, project pages, objectives, history,
+workbench) that carries the route path, the page kind and the payload
+location as data attributes and loads ``site.js`` / ``site.css`` from
+``webapp/``; all content rendering happens in the browser from the payload
+JSON. The header navigation is hard-coded here (``_nav_links_html``),
+including the ``Docs`` entry pointing at the MkDocs tree built into
+``<site-output>/docs/`` by ``docs_build``. Links are relative so the tree
+serves from any prefix and from ``file://``. Only the vendored asset
+directories are replaced on rebuild; sibling trees (payloads, caches, docs)
+are left alone.
+"""
+
 from __future__ import annotations
 
 import html

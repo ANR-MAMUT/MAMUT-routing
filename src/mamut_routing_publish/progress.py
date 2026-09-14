@@ -1,3 +1,14 @@
+"""Progress reporting for the long-running publisher commands.
+
+``make_progress_reporter`` returns a ``ProgressReporter`` for the requested
+format: ``text`` (human-readable phases and tqdm bars on stderr), ``json``
+(one machine-readable event per line on stderr, for scripts), ``off``, or
+``auto`` (text on a terminal, off otherwise). Phases are ``reporter.phase``
+messages with keyword fields; tasks are ``reporter.task`` context managers
+with an optional total. Reporting never touches stdout, which is reserved
+for the final JSON summary of each command.
+"""
+
 from __future__ import annotations
 
 import json
