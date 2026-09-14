@@ -33,7 +33,7 @@ task done, reference to look things up, and explanation where the *why* matters.
 
     ---
 
-    Architecture of the four repositories, development setup, tests, conventions, engineering reports and the
+    Architecture of the four repositories, development setup, tests, conventions and the
     generated API reference.
 
     [:octicons-arrow-right-24: Developer guide](developer-guide/index.md) ·
@@ -65,4 +65,4 @@ task done, reference to look things up, and explanation where the *why* matters.
 - **Formats and the checker contract**: [Formats](benchmarks/formats/index.md) and the
   [Python API reference](reference/api/index.md).
 - **Every command-line option**: [CLI reference](reference/cli/mamut-routing.md).
-- **Why things are the way they are**: [Engineering reports](reports/index.md) and the [FAQ](user-guide/faq.md).
+- **Why things are the way they are**: the [FAQ](user-guide/faq.md) and the [Developer guide](developer-guide/index.md).

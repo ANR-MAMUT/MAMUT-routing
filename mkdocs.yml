@@ -1,6 +1,6 @@
 # MkDocs configuration of the MAMUT-routing documentation.
 #
-# Source: docs/ (hand-written pages + docs/reports/) plus the pages generated
+# Source: docs/ (hand-written pages; docs/reports/ is local, untracked and excluded) plus the pages generated
 # by docs/_scripts/gen_pages.py from the website texts, the package READMEs
 # and the source tree. Output: <site-output>/docs/ (dist/docs/ by default),
 # written by `mamut-routing-publish site docs` / `site build`, so the website
@@ -19,6 +19,7 @@ strict: true
 
 exclude_docs: |
   _scripts/
+  reports/
 
 watch:
   - src/mamut_routing_publish/site_assets/texts
@@ -188,7 +189,6 @@ nav:
           - mamut-routing-lib: developer-guide/packages/mamut-routing-lib.md
           - mamut-routing-tools: developer-guide/packages/mamut-routing-tools.md
       - Contributing: developer-guide/contributing.md
-      - Engineering reports: reports/
   - Reference:
       - reference/index.md
       - Command-line interfaces:

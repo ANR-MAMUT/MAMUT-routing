@@ -37,7 +37,6 @@ def built_docs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_build_writes_expected_pages(built_docs: Path) -> None:
     for rel in (
         "index.html",
-        "reports/index.html",
         "benchmarks/families/index.html",
         "benchmarks/families/vrptw/sintef2008/index.html",
         "reference/cli/mamut-routing/index.html",

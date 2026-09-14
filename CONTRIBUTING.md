@@ -16,13 +16,14 @@ and the benchmark satellites) with one contract; the
 ## Ground rules
 
 1. **The checker is the authority.** Costs stored anywhere are checker costs; a change to a checker is a contract
-   change with a version bump and a report in `docs/reports/`.
+   change with a version bump, documented in the checker's docstring and the Formats pages.
 2. **Every published byte is reproducible.** Sorted JSON keys, sha256-pinned sidecars, deterministic archives,
    seeded generation. Tests enforce byte-identity where it matters (`.vrp` export, route geometry).
 3. **Satellites are optional.** Code, tests, builds and docs must work with empty satellite directories.
 4. **Data licenses travel with the data.** A family `LICENSE` with an `SPDX-License-Identifier` first line, a clause
    in `NOTICE`, and the license paragraph in the family README.
-5. **Decisions get a dated report** (`docs/reports/YYYY-MM-DD-<slug>.md`), never a rewrite of an older one.
+5. **Decisions are written down where they apply**: module docstrings for contract rules, family README and
+   changelog for family choices. `docs/reports/` is untracked scratch space.
 
 ## Workflow
 

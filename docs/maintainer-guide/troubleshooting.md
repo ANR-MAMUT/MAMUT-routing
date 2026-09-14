@@ -17,8 +17,8 @@ changed after the last materialization. Run `site materialize-route-geometry --f
 capped below that size (`--atf-max-n`, default 400). Run `site materialize-atf --max-n <N> --jobs <k>` (each worker
 holds one full ATF set).
 
-**Floating-point overshoot at the horizon boundary in schedule tables.** Cosmetic, clamped in the display layer; see
-the [2026-07-07 report](../reports/2026-07-07-td-schedule-horizon-boundary-clamp.md).
+**Floating-point overshoot at the horizon boundary in schedule tables.** Cosmetic: IEEE-754 drift of the derived
+schedule, clamped in the publisher's display layer only; the checker and the stored data are unaffected.
 
 **Docs phase fails.** Strict MkDocs: read the warning (a link to a page that does not exist, an API page whose module
 moved). `uv run mkdocs build --strict` reproduces it in seconds. Missing toolchain: `uv sync --group docs`. A checkout

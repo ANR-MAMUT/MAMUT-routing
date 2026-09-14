@@ -25,7 +25,7 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `dist/` *(generated, gitignored)* | Static HTML shell + payload JSON files produced by the Python publisher. |
 | `dist-release/` *(generated, gitignored)* | Release `.zip` archives + `snapshot-manifest.json` produced by the Python publisher. |
 | `src/mamut_routing_publish/` | Python publishing toolkit (this repo's own package). |
-| `docs/` + `mkdocs.yml` | The [documentation site](https://mamut-routing.univ-ubs.fr/docs/) (MkDocs Material): user guide, benchmark formats, maintainer runbooks, generated CLI/API reference, engineering reports under `docs/reports/`. Built into `dist/docs/` by `site build`. |
+| `docs/` + `mkdocs.yml` | The [documentation site](https://mamut-routing.univ-ubs.fr/docs/) (MkDocs Material): user guide, benchmark formats, maintainer runbooks, generated CLI/API reference. Built into `dist/docs/` by `site build`. |
 | `MAMUT-routing-lib/` *(submodule)* | Contract/runtime Python library — see [ANR-MAMUT/MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib). |
 | `MAMUT-routing-tools/` *(submodule)* | Local generation tool suite (road-graph engine, route geometry, OSM fetch) — see [ANR-MAMUT/MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools). `site build` uses its road engine for BKS route geometry. |
 | `publish-state/` *(generated, gitignored)* | Persistent publication state: history ledger + snapshot inventories, surviving fresh release directories. |
@@ -101,7 +101,7 @@ size) can be exported to the classic format for solvers that do not read the
 lib contract, with `mamut-routing export vrp` from
 [MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib) or the
 `.vrp ↓` download chips of the website (see the site FAQ and
-[the format contract](docs/reports/2026-09-02-cvrplib-vrp-export-contract.md)).
+[the format contract](https://mamut-routing.univ-ubs.fr/docs/benchmarks/formats/cvrplib-export/)).
 
 A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
 

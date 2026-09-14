@@ -3,7 +3,7 @@
 Classic solvers read the TSPLIB-derived CVRPLIB text, not `.vrp.json`. `mamut_routing_lib.cvrplib` renders any
 **static** instance into it with one contract shared by three producers that must emit identical bytes: the
 `mamut-routing export vrp` CLI, the tools' workbench ("Download .vrp") and the website's client-side writer
-(`site.js`). The decision record is the [2026-09-02 report](../../reports/2026-09-02-cvrplib-vrp-export-contract.md);
+(`site.js`);
 `tests/test_site_assets_vrp_export.py` runs the JavaScript writer against the Python one, and
 `tests/test_vrp_export_regression.py` checks every committed `.vrp` byte for byte.
 

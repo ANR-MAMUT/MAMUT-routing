@@ -81,5 +81,5 @@ the CLIs when not run from the checkout) and `MAMUT_BASEMAP_API_KEY`.
 | Which families exist | `BenchmarkName` in `mamut_routing_lib.enums` and `.gitmodules` |
 | What a family is, for the website and these docs | `src/mamut_routing_publish/site_assets/texts/mamut-routing_benchmark_families.md` |
 | Data licenses | each family `LICENSE` (first line `SPDX-License-Identifier: ...`) and the root `NOTICE` |
-| Why a decision was made | `docs/reports/` ([index](../reports/index.md)) |
+| Why a decision was made | the owning module docstring, the Formats pages, the family README and changelog |
 | How the production host is set up | `mamut-routing-deploy/docs/OPERATIONS.md` (private) |
