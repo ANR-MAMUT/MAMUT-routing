@@ -5,12 +5,20 @@
 
 ## Archives
 
-One zip per (problem type, family): `<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`, containing the
-`benchmarks/<ProblemType>/<Family>/` tree (instances and BKS). Family-first collections (`benchmarks/<Family>/` with
-shared `sidecars/`) are **not supported by the planner yet**: the collection layout needs its own archive shape and
-manifest scope (see [Cut a release](../../maintainer-guide/release.md)). Deterministic: fixed entry timestamps (1980-01-01), mode 0644,
-deflate level 9 by default, sha256 streamed while writing. Guards: an asset over 1.5 GiB warns, over 2 GiB fails
-(GitHub's asset limit); repository files over 100 MB are refused; at most 1000 assets per release.
+Two shapes, both with entry paths relative to the repository root (`benchmarks/...`):
+
+| Scope | File name | Content |
+|---|---|---|
+| `problem_family` | `<ProblemType>-<Family>-snapshot-<snapshot-id>.zip` | the classic `benchmarks/<ProblemType>/<Family>/` tree (instances, BKS, sidecars) |
+| `family_collection` | `<Family>-snapshot-<snapshot-id>.zip` | a whole family-first collection `benchmarks/<Family>/`: every problem type, the shared `sidecars/`, the `mamut-collection.json` marker, README, LICENSE, CHANGELOG |
+
+A collection asset has `problem_type: null`; its sidecars resolve by walking up from an instance to the marker, so
+the extracted tree works wherever it lands. Files a family ships as sha256 pins rather than bytes are pins in the
+archive as well (see the family page for the `materialize` step). Deterministic: fixed entry timestamps
+(1980-01-01), mode 0644, deflate level 9 by default, sha256 streamed while writing, `.git` gitfiles never archived.
+Guards: an asset over 1.5 GiB warns, over 2 GiB fails (GitHub's asset limit); repository files over 100 MB are
+refused; at most 1000 assets per release. The `family_collection` scope needs `mamut-routing-lib` 0.6.0 or later
+to read the manifest.
 
 ## Manifest (`snapshot-manifest.json`)
 

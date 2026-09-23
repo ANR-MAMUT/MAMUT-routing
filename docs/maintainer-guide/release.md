@@ -29,12 +29,9 @@ bump the tools' nested lib pointer and their dependency floor, then the tools, t
 
 ## 3. Data archives
 
-!!! warning "Collections are not packaged yet"
-    `release build` plans one archive per (problem type, family) from `benchmarks/<ProblemType>/<Family>/`. The
-    family-first collections (Poryos2026, Mamut2026) live at `benchmarks/<Family>/` with shared `sidecars/`, so the
-    planner requests directories that do not exist and the build fails on this checkout. Until the planner learns
-    the collection layout (one archive per collection with its sidecars, and a manifest scope for it), release the
-    classic families only, or package the collections by hand and add them to the manifest.
+Check out every satellite first (`git submodule update --init`, then `git submodule status` shows no `-` or `+`):
+the archives are built from the working tree, so an empty satellite directory is silently missing from the
+release and a satellite off its pinned commit ships data the tag does not record.
 
 ```bash
 uv run mamut-routing-publish release build \
@@ -42,11 +39,15 @@ uv run mamut-routing-publish release build \
     --download-base-url https://github.com/ANR-MAMUT/MAMUT-routing/releases/download/vX.Y.Z
 ```
 
-Writes `dist-release/<ProblemType>-<Family>-snapshot-<id>.zip` (deterministic: fixed timestamps, mode 0644,
-deflate level 9, sha256 streamed while writing) and `snapshot-manifest.json` (`ReleaseArchiveManifest`: snapshot id,
-published at, source commit, release tag, one `ReleaseArchiveAsset` per archive with its download URL, sha256, size,
-scope). Guards: an asset over 1.5 GiB warns, over 2 GiB fails (GitHub's limit), at most 1000 assets per release.
-`--jobs` parallelises compression.
+Writes `dist-release/<ProblemType>-<Family>-snapshot-<id>.zip` for each classic family,
+`dist-release/<Family>-snapshot-<id>.zip` for each family-first collection (the whole `benchmarks/<Family>/` tree:
+every problem type, the shared `sidecars/`, the marker), both deterministic (fixed timestamps, mode 0644, deflate
+level 9, sha256 streamed while writing, `.git` gitfiles skipped), and `snapshot-manifest.json`
+(`ReleaseArchiveManifest`: snapshot id, published at, source commit, release tag, one `ReleaseArchiveAsset` per
+archive with its download URL, sha256, size, scope `problem_family` or `family_collection`). Guards: an asset over
+1.5 GiB warns, over 2 GiB fails (GitHub's limit), at most 1000 assets per release. `--jobs` parallelises compression.
+Files a satellite ships as sha256 pins instead of bytes (Mamut2026's POI-tier distance matrices, Blauth2024's
+n=1000/2000 ATF sidecars) are pins in the archive too; say so in the release notes.
 
 Upload every archive and the manifest as assets of the GitHub release. Verify from a clean machine:
 
@@ -58,7 +59,8 @@ mamut-routing --benchmarks-dir /tmp/check remote --tag vX.Y.Z verify --problem-t
 
 Repeat the same `--tag` and the same family filters on `fetch` and `verify`: without `--tag` both fall back to the
 latest release, and an unfiltered `verify` checks every asset of the manifest and fails on the ones you did not
-download.
+download. A collection asset has no problem type, so select it with `--benchmark-name` alone
+(`--benchmark-name Poryos2026`); adding `--problem-type` filters it out.
 
 ## 4. Archive and cite
 

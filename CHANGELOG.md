@@ -5,15 +5,24 @@ per-snapshot data deltas (families, instances and BKS added, removed, improved) 
 [History](https://mamut-routing.univ-ubs.fr/history/) page; each satellite keeps its own `CHANGELOG.md`; the lib and
 the tools have their own release notes.
 
-## Unreleased
+## Snapshot release 2026-09-23
+
+First release archives since `snapshot-2026-07-06-172eb21`: adds Lera2026 (TDVRP, TDVRPTW), Blauth2024
+(TDVRPTW) and the Poryos2026 and Mamut2026 collections; the v1 `CVRP/Mamut2026` and `VRPTW/Mamut2026` archives are
+gone (that family is now Poryos2026). Per-family notes are in the GitHub release.
 
 ### Added
 
+- `release build` packages each family-first collection as one `family_collection` archive
+  (`<Family>-snapshot-<id>.zip`: every problem type, the shared sidecars, the marker); it used to fail on them.
 - Documentation site (MkDocs Material) under `docs/`, served at `/docs/` and built as a phase of `site build`
   (`site docs`, `--skip-docs`); generated family, report, CLI and API reference pages; `Docs` CI workflow.
 - `CONTRIBUTING.md` and this changelog.
 
 ### Changed
+
+- Release archives no longer include the `.git` gitfiles of satellite submodules.
+- The lib is pinned at 0.11.0.
 
 - Home page featured showcase: three small Poryos2026 previews (VRPTW, TDVRP, TDVRPTW) and the three smallest
   Mamut2026 bases replace the four-Poryos-plus-two-historical mix; the card grows with the viewport instead of

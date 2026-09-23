@@ -1,12 +1,16 @@
-"""Release archives: one deterministic zip per (problem type, family) plus a manifest.
+"""Release archives: one deterministic zip per family plus a manifest.
 
 ``generate_release_artifacts`` discovers the benchmark tree and writes
-``<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`` files with fixed entry
-timestamps, mode 0644 and a streamed sha256, then ``snapshot-manifest.json``
+``<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`` for each classic
+(problem type, family) tree and ``<Family>-snapshot-<snapshot-id>.zip`` for
+each family-first collection (the whole marker-rooted tree, sidecars
+included), with fixed entry timestamps, mode 0644 and a streamed sha256,
+then ``snapshot-manifest.json``
 (``mamut_routing_lib.remote.ReleaseArchiveManifest``) that the lib's
 ``mamut-routing remote`` commands consume. Size guards mirror GitHub's
 limits (warn above 1.5 GiB, fail above 2 GiB per asset; refuse repository
-files above 100 MB).
+files above 100 MB). Git metadata (the ``.git`` gitfiles of satellite
+submodules) is never archived.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import zipfile
 
 from pydantic import BaseModel, ConfigDict
 
-from mamut_routing_lib.artifacts import discover_benchmark_instances
+from mamut_routing_lib.artifacts import discover_benchmark_instances, find_collection_roots
 from mamut_routing_lib.enums import BenchmarkName, ProblemType
 from mamut_routing_lib.json_utils import save_json_to_file
 from mamut_routing_lib.remote import (
@@ -133,7 +137,7 @@ def _deterministic_zip_write(
                     raise FileNotFoundError(f"Archive source directory does not exist: {absolute_dir}")
                 for file_path in sorted(path for path in absolute_dir.rglob("*") if path.is_file()):
                     relative_path = file_path.relative_to(source_repo_dir)
-                    if relative_path in seen_paths:
+                    if ".git" in relative_path.parts or relative_path in seen_paths:
                         continue
                     seen_paths.add(relative_path)
                     data = file_path.read_bytes()
@@ -155,17 +159,36 @@ def _family_dir(problem_type: ProblemType, benchmark_name: BenchmarkName) -> Pat
 
 
 def _build_archive_requests(source_repo_dir: Path, snapshot_id: str) -> list[_ArchiveRequest]:
-    benchmarks_root = source_repo_dir / "benchmarks"
+    benchmarks_root = (source_repo_dir / "benchmarks").resolve()
     discovered = discover_benchmark_instances(benchmarks_root=benchmarks_root)
     if not discovered:
         raise FileNotFoundError(f"No benchmark instances found under {benchmarks_root}")
 
+    # A family-first collection ships whole (every problem type and the shared
+    # sidecars/ tree) as one archive; its instances are not planned per problem type.
+    collection_roots = find_collection_roots(benchmarks_root)
+    requests: list[_ArchiveRequest] = []
+    for root, family in sorted(collection_roots.items(), key=lambda pair: pair[1]):
+        collection_dir = Path("benchmarks") / root.relative_to(benchmarks_root)
+        requests.append(
+            _ArchiveRequest(
+                scope=ReleaseArchiveScope.FAMILY_COLLECTION,
+                filename=f"{family}-snapshot-{snapshot_id}.zip",
+                archive_root=collection_dir.as_posix(),
+                include_dirs=(collection_dir,),
+                benchmark_name=BenchmarkName(family),
+            )
+        )
+
     family_pairs = sorted(
-        {(item.problem_type, BenchmarkName(item.benchmark_name)) for item in discovered},
+        {
+            (item.problem_type, BenchmarkName(item.benchmark_name))
+            for item in discovered
+            if not any(item.instance_path.is_relative_to(root) for root in collection_roots)
+        },
         key=lambda pair: (pair[0].value, pair[1].value),
     )
 
-    requests: list[_ArchiveRequest] = []
     for problem_type, benchmark_name in family_pairs:
         requests.append(
             _ArchiveRequest(

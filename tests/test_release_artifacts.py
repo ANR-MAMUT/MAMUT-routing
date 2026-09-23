@@ -6,10 +6,10 @@ import zipfile
 
 import pytest
 
-from mamut_routing_lib.enums import ObjectiveFunction
+from mamut_routing_lib.enums import BenchmarkName, ObjectiveFunction
 from mamut_routing_lib.json_utils import save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
-from mamut_routing_lib.remote import load_release_manifest
+from mamut_routing_lib.remote import ReleaseArchiveScope, load_release_manifest
 from mamut_routing_publish.release_artifacts import (
     GITHUB_RELEASE_ASSET_MAX_SIZE_BYTES,
     GITHUB_RELEASE_ASSET_WARNING_SIZE_BYTES,
@@ -253,6 +253,70 @@ def test_generate_release_artifacts_is_deterministic_for_same_snapshot(tmp_path:
         "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]:
         assert (first_output_dir / filename).read_bytes() == (second_output_dir / filename).read_bytes()
+
+
+def _write_collection_fixture_tree(source_repo_dir: Path) -> None:
+    collection_root = source_repo_dir / "benchmarks" / "Poryos2026"
+    save_json_to_file(
+        {"format": "mamut-collection", "format_version": 1, "family": "Poryos2026", "layout_version": 1},
+        collection_root / "mamut-collection.json",
+    )
+    for problem_type, instance in (
+        ("CVRP", make_generated_cvrp_instance()),
+        ("VRPTW", make_generated_vrptw_instance()),
+    ):
+        instance_dir = collection_root / problem_type / "fastest" / "brest" / "n=2" / instance.instance_name
+        save_json_to_file(instance.model_dump(mode="json"), instance_dir / f"{instance.instance_name}.vrp.json")
+    save_json_to_file({"matrix": [[0]]}, collection_root / "sidecars" / "brest" / "fastest.distances.json")
+    # Satellite submodules carry a .git gitfile pointing into the superproject's git dir.
+    (collection_root / ".git").write_text("gitdir: ../../.git/modules/benchmarks/Poryos2026\n", encoding="utf-8")
+
+    historical = make_historical_instance()
+    historical_path = source_repo_dir / "benchmarks" / "VRPTW" / "Sintef2008" / "n=2" / "C101.vrp.json"
+    save_json_to_file(historical.model_dump(mode="json"), historical_path)
+    (historical_path.parents[1] / ".git").write_text("gitdir: ../../../.git/modules/Sintef2008\n", encoding="utf-8")
+
+
+def test_generate_release_artifacts_packages_a_collection_as_one_archive(tmp_path: Path) -> None:
+    source_repo_dir = tmp_path / "MAMUT-routing"
+    output_dir = tmp_path / "release-assets"
+    _write_collection_fixture_tree(source_repo_dir)
+
+    summary = generate_release_artifacts(
+        source_repo_dir=source_repo_dir,
+        output_dir=output_dir,
+        source_commit="abcdef123456",
+        published_at="2026-04-24T12:00:00+00:00",
+        snapshot_id="2026-04-24-abcdef1",
+    )
+
+    manifest = load_release_manifest(output_dir / "snapshot-manifest.json")
+    assert summary.archive_count == 2
+    by_filename = {asset.filename: asset for asset in manifest.assets}
+    assert sorted(by_filename) == [
+        "Poryos2026-snapshot-2026-04-24-abcdef1.zip",
+        "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
+    ]
+
+    collection_asset = by_filename["Poryos2026-snapshot-2026-04-24-abcdef1.zip"]
+    assert collection_asset.scope is ReleaseArchiveScope.FAMILY_COLLECTION
+    assert collection_asset.problem_type is None
+    assert collection_asset.benchmark_name is BenchmarkName.PORYOS_2026
+    assert collection_asset.archive_root == "benchmarks/Poryos2026"
+    assert manifest.select_assets(benchmark_name=BenchmarkName.PORYOS_2026) == [collection_asset]
+
+    with zipfile.ZipFile(output_dir / collection_asset.filename, "r") as archive:
+        names = set(archive.namelist())
+    assert {
+        "benchmarks/Poryos2026/mamut-collection.json",
+        "benchmarks/Poryos2026/sidecars/brest/fastest.distances.json",
+        "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
+        "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
+    } <= names
+
+    for asset in manifest.assets:
+        with zipfile.ZipFile(output_dir / asset.filename, "r") as archive:
+            assert not [name for name in archive.namelist() if ".git" in Path(name).parts]
 
 
 def test_validate_release_asset_size_warns_at_1point5_gib() -> None:
