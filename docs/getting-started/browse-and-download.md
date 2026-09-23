@@ -9,8 +9,8 @@ instances, offers a `.vrp ↓` chip that writes the classic CVRPLIB file in your
 
 ## Per family, with the CLI
 
-Release archives are one zip per (problem type, family), so you download only what you need. Install the lib with
-its CLI extra, then:
+Release archives are one zip per (problem type, family), plus one zip per family-first collection (Poryos2026,
+Mamut2026), so you download only what you need. Install the lib with its CLI extra, then:
 
 ```bash
 pip install "mamut-routing-lib[cli]"            # or: uv tool install "mamut-routing-lib[cli]"
@@ -29,8 +29,10 @@ fails on the ones you did not download. To pin a release instead of the latest o
 `remote` itself: `mamut-routing remote --tag <tag> list`.
 
 !!! note "Collections"
-    The family-first collections (Poryos2026, Mamut2026) are not in the release archives yet (see
-    [Release archives](../benchmarks/formats/releases.md)); get them through git, below.
+    A collection archive holds every problem type of the family, so select it by family alone:
+    `remote fetch --benchmark-name Poryos2026` (adding `--problem-type` filters it out). Mamut2026's ten largest
+    POI instances ship their distance matrices as sha256 pins; rebuild them with `mamut-tools generate
+    materialize-distances` as the collection README explains. See [Release archives](../benchmarks/formats/releases.md).
 
 ## Everything, pinned to a commit, with git
 
