@@ -7,16 +7,22 @@
         [27, 1, 69, 31, 62, 19, 11, 64, 49, 47, 36, 82, 8, 83, 18, 60, 5, 84, 17, 45, 46, 48, 7, 88, 52],
         [40, 72, 23, 67, 22, 41, 57, 2, 87, 53]
     ],
-    "cost": 16575.584411743766,
+    "cost": 16575.584411743763,
     "metadata": {
         "authors": "Florian Rascoussier (0nyr)",
         "source": "Timefold Solver 2.3.0 (seed=314, time_limit=3600s)",
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-08-09T18:36:45",
-        "validated_cost": 16575.584411743766,
+        "validated_cost": 16575.584411743763,
         "validated_num_routes": 5,
-        "route_durations": [3221.857032815802, 994.7009570322844, 6372.810544446335, 4196.766522221276, 1789.4493552280692],
-        "route_departure_times": [1315.6432979360518, 8000.0, 3343.899898448769, 1779.533116431727, 2789.0]
+        "route_durations": [3221.857032815801, 994.7009570322844, 6372.810544446334, 4196.766522221274, 1789.4493552280692],
+        "route_departure_times": [1315.6432979360525, 8000.0, 3343.899898448769, 1779.5331164317276, 2789.0],
+        "repriced": {
+            "previous_cost": 16575.584411743766,
+            "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",
+            "contract": "td-fold/2",
+            "date": "2026-09-24"
+        }
     },
     "objective_function": "Duration"
 }

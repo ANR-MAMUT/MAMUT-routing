@@ -17,7 +17,7 @@
         "source": "kayros lera BPC exact solve (HiGHS backend) \u2014 four independent runs (cold/warm starts x two labeling modes) agreeing on the value, each with exact-pricing iterations audited; recorded as a best-known solution (optimality stamping is handled separately)",
         "validated_by": "mamut-routing-lib td Duration checker",
         "route_durations": [2121.5317293632206, 1858.7714717560339, 1936.7674554640123, 1799.9517985430823, 2059.5596006603396, 2204.1200591286724, 192.399914200122, 2107.9040854420687, 2134.8906665819645, 1533.9507254769323],
-        "route_departure_times": [5.43293958037609, 386.0, 251.33332, 42.714911456918074, 80.66666666666663, 40.88027837217118, 884.0000329999835, 45.33333333333331, 45.14301387710321, 702.7997413992347],
+        "route_departure_times": [5.43293958037609, 386.0, 251.33332, 42.714911456918074, 80.66666666666663, 40.88027837217118, 884.0000329999835, 45.333333333333314, 45.143013877103215, 702.7997413992347],
         "authors": "Florian Rascoussier (0nyr)",
         "validated_cost": 17949.847506616446,
         "validated_num_routes": 10,

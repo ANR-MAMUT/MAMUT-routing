@@ -5,18 +5,24 @@
         [10, 11, 12, 14, 17, 47, 16, 15, 9, 13],
         [19, 49, 21, 23, 25, 48, 18, 24, 22, 20, 50, 31, 30, 29, 27, 28, 26, 33, 34, 32]
     ],
-    "cost": 8348.746878889104,
+    "cost": 8348.746878889106,
     "metadata": {
         "authors": "Florian Rascoussier (0nyr)",
         "source": "Onyr heuristic solutions (legacy TDVRPTW-benchmarks personal BKS store)",
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-07-02",
-        "route_durations": [3127.9989545046456, 1690.7491798779083, 3529.9987445065503],
-        "route_departure_times": [3277.1003970486718, 3850.400379199242, 3098.8006323987806],
+        "route_durations": [3127.9989545046456, 1690.7491798779083, 3529.998744506551],
+        "route_departure_times": [3277.1003970486718, 3850.400379199242, 3098.80063239878],
         "legacy_declared_value": 8354.913300371749,
         "legacy_key": "RC208-n=52-36b59e6b8420d76e266561532373a1d158fd2e1f.json",
         "previous_cost": 8362.996959514485,
-        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions"
+        "previous_source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
+        "repriced": {
+            "previous_cost": 8348.746878889104,
+            "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",
+            "contract": "td-fold/2",
+            "date": "2026-09-24"
+        }
     },
     "objective_function": "Duration"
 }
