@@ -75,7 +75,7 @@ for (const [key, entry] of Object.entries(input.cases)) {
     out[key] = instanceToVrpText(entry.instance, entry.arcCosts ?? null, entry.options ?? {});
   }
 }
-out.kinds = Object.fromEntries(Object.entries(input.kinds).map(([key, instance]) => [key, vrpExportKinds(instance).map((k) => k.kind)]));
+out.kinds = Object.fromEntries(Object.entries(input.kinds).map(([key, entry]) => [key, vrpExportKinds(entry.instance, entry.coordinateExports).map((k) => k.kind)]));
 out.filenames = input.filenames.map(([path, kind]) => vrpExportFilename(path, kind));
 process.stdout.write(JSON.stringify(out));
 """
@@ -118,6 +118,34 @@ def _sintef_like() -> dict:
         ],
         "metadata": {"metric_variant": "euclidean", "authors": "Marius M. Solomon"},
     }
+
+
+def _dimacs_like() -> dict:
+    """Dimacs2021's shape: the Solomon coordinates, floor(10 * d) costs and x10 times."""
+    import math
+
+    payload = _sintef_like()
+    coordinates = payload["coordinates"]
+    payload["benchmark_name"] = "Dimacs2021"
+    payload["arc_costs"] = [
+        [math.floor(10 * math.hypot(xi - xj, yi - yj)) for xj, yj in coordinates] for xi, yi in coordinates
+    ]
+    payload["service_times"] = [10 * value for value in payload["service_times"]]
+    payload["time_windows"] = [[10 * a, 10 * b] for a, b in payload["time_windows"]]
+    return payload
+
+
+def _coordinate_exports_flag(instance: dict) -> bool:
+    """What the publisher emits as `coordinate_exports` for this instance JSON."""
+    from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
+
+    if instance.get("td"):
+        return False
+    if "arc_costs_source" in instance:
+        model = BenchmarkInstanceVRPTWCollection if "time_windows" in instance else BenchmarkInstanceCVRPCollection
+    else:
+        model = BenchmarkInstance if "time_windows" in instance else BenchmarkInstanceCVRP
+    return coordinates_define_arc_costs(model(**instance))
 
 
 def _collection(*, metric: str, family: str = "Mamut2026", vrptw: bool = False, source: dict | None = None) -> dict:
@@ -195,11 +223,15 @@ def _python_cases() -> tuple[dict, dict]:
     node_input = {
         "cases": node_cases,
         "kinds": {
-            "toy": toy,
-            "sintef": sintef,
-            "mamut_euclid": mamut_euclid,
-            "poryos_vrptw_shortest": poryos_vrptw,
-            "td": {"instance_name": "RC202", "td": {"model": "atf-ndcpwlf"}, "coordinates": [[0, 0], [1, 1]]},
+            key: {"instance": instance, "coordinateExports": _coordinate_exports_flag(instance)}
+            for key, instance in {
+                "toy": toy,
+                "sintef": sintef,
+                "mamut_euclid": mamut_euclid,
+                "poryos_vrptw_shortest": poryos_vrptw,
+                "dimacs_like": _dimacs_like(),
+                "td": {"instance_name": "RC202", "td": {"model": "atf-ndcpwlf"}, "coordinates": [[0, 0], [1, 1]]},
+            }.items()
         },
         "filenames": [
             ["benchmarks/VRPTW/Sintef2008/n=400/R1_4_6.vrp.json", "explicit"],
@@ -234,6 +266,7 @@ def test_javascript_writer_matches_the_python_writer_byte_for_byte() -> None:
         "sintef": ["explicit", "euc2d", "solomon"],
         "mamut_euclid": ["explicit", "euc2d"],
         "poryos_vrptw_shortest": ["explicit"],
+        "dimacs_like": ["explicit"],
         "td": [],
     }
     assert produced["filenames"] == ["R1_4_6.vrp", "R1_4_6.txt"]
