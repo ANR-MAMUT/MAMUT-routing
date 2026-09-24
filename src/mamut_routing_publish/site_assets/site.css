@@ -1651,6 +1651,10 @@ tbody tr.inspector-selected:hover {
   color: var(--cor);
 }
 
+.change-reprice .change-delta {
+  color: var(--mut);
+}
+
 .change-from,
 .change-to {
   font-variant-numeric: tabular-nums;

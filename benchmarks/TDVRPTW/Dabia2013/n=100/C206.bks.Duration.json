@@ -12,7 +12,7 @@
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-07-02",
         "route_durations": [31655.27407263013, 30278.02994031331, 33682.86199520263],
-        "route_departure_times": [654.619394516256, 19.14320244799302, 25.33333333333334],
+        "route_departure_times": [654.6193945162565, 19.14320244799302, 25.333333333333336],
         "published_duration_sum": 95616.16600814607
     },
     "objective_function": "Duration"

@@ -1,6 +1,6 @@
 # Changelog — Dimacs2021 BKS
 
-All notable changes to the curated `Dimacs2021` best-known solutions (BKS) are recorded here. Objective: **mono-cost** (minimize total cost only). Distances use the DIMACS-2021 metric: coordinates scaled by 10 and arc costs truncated to integers, so costs are exact integers and comparisons are exact.
+All notable changes to the curated `Dimacs2021` best-known solutions (BKS) are recorded here. Objective: **mono-cost** (minimize total cost only). Distances use the DIMACS-2021 metric: each arc cost is `floor(10 × d)` with `d` the Euclidean distance of the original Solomon / Gehring-Homberger coordinates (which the instance files store unscaled), and time windows and service times are ×10, so costs are exact integers and comparisons are exact. Because the stored coordinates do not define the costs, only the explicit-matrix `.vrp` export is faithful for this family.
 
 ## 2026-06-15
 

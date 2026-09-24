@@ -5,15 +5,21 @@
         [16, 15, 47, 14, 12, 11, 22, 23, 21, 18, 19, 49],
         [34, 32, 26, 50, 24, 20, 48, 25, 13, 17]
     ],
-    "cost": 12032.840668996927,
+    "cost": 12032.840668996929,
     "metadata": {
         "authors": "Florian Rascoussier (0nyr)",
         "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-07-02",
-        "route_durations": [6533.927288734409, 2546.9827271605263, 2951.930653101992],
-        "route_departure_times": [748.6192764450478, 1706.2669064659094, 5263.5201558049175],
-        "published_duration_sum": 12032.840668996927
+        "route_durations": [6533.92728873441, 2546.9827271605263, 2951.930653101992],
+        "route_departure_times": [748.6192764450478, 1706.2669064659096, 5263.5201558049175],
+        "published_duration_sum": 12032.840668996927,
+        "repriced": {
+            "previous_cost": 12032.840668996927,
+            "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",
+            "contract": "td-fold/2",
+            "date": "2026-09-24"
+        }
     },
     "objective_function": "Duration"
 }

@@ -32,8 +32,8 @@ Rules:
 - number formatting is value-driven so the JavaScript mirror (no int/float distinction) matches: collection arc costs
   print with the source's `decimals`; other vectors print as integers when every entry is integral, else as shortest
   round-trip floats; coordinates with 6 decimals when not all integral;
-- `EUC_2D` is opt-in for euclidean-metric instances only: it drops the matrix and readers compute `nint(hypot)`,
-  which is **not** the published cost, so BKS values do not transfer; a Solomon `.txt` variant exists for VRPTW;
+- `EUC_2D` (and the Solomon `.txt` variant for VRPTW) is opt-in, and offered only where the published costs are the coordinates' Euclidean distances rounded at most to the nearest unit (`coordinates_define_arc_costs`: every arc between `floor` and `ceil` of `hypot`). Sintef2008 and the euclidean collections qualify; Dimacs2021 does not, because its costs are `trunc(10 × hypot)` on the unscaled coordinates, so a coordinates-only file would describe another instance. It drops the matrix and
+  readers compute `nint(hypot)`, which is still **not** the published cost, so BKS values do not transfer;
 - time-dependent instances are refused (`UnsupportedInstanceError`): they have no static matrix.
 
 The committed `.vrp` files next to the collection CVRP instances (`n <= 200`) are the `EXPLICIT` output.

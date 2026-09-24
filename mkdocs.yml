@@ -175,6 +175,7 @@ nav:
       - Update a benchmark family: maintainer-guide/update-a-family.md
       - Update or submit a BKS: maintainer-guide/update-a-bks.md
       - Run a BKS campaign: maintainer-guide/bks-campaigns.md
+      - Re-price after a checker-contract change: maintainer-guide/reprice-after-a-contract-change.md
       - Add a benchmark family: maintainer-guide/add-a-family.md
       - Add a problem type or objective: maintainer-guide/add-a-problem-type.md
       - Generate or convert a family: maintainer-guide/generate-a-family.md

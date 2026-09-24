@@ -118,14 +118,15 @@ def hardlink_tree(source_dir: Path, target_dir: Path) -> int:
     """Mirror ``source_dir`` into ``target_dir`` via hardlinks (copy fallback).
 
     Existing target files are left untouched, so the operation is idempotent
-    and safe over content-addressed caches. Returns the number of files
-    linked or copied.
+    and safe over content-addressed caches. ``*.partial`` files (atomic
+    writes a killed build left behind) are not mirrored. Returns the number
+    of files linked or copied.
     """
     if not source_dir.is_dir():
         return 0
     linked = 0
     for path in sorted(source_dir.rglob("*")):
-        if not path.is_file():
+        if not path.is_file() or path.name.endswith(".partial"):
             continue
         target = target_dir / path.relative_to(source_dir)
         if target.exists():

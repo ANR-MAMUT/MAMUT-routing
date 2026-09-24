@@ -16,7 +16,12 @@ Per base instance (city × n × sampling method), three stages, each recorded in
 3. **`build_td`** (stage `build-td`): aligns the six traffic overlays (`bpr` and `wave` models × three intensities),
    materializes canonical ATFs, certifies anchor routes under every overlay, applies minimal shared deadline lifts,
    emits the twelve sha-pinned TD twins. Hard gates: the published `distances-fastest` equals the road graph's
-   free-flow times after rounding, and the post-lift audit holds for every overlay.
+   free-flow times after rounding, and the post-lift audit holds for every overlay. Since tools 0.6.0 the stage is
+   all or nothing: preconditions are checked first, the VRPTW file, overlays and twins are written into a staging
+   tree (`<collection>/.mamut-staging/`), one TDVRPTW twin per overlay is loaded from it with full sha256 checks, and
+   only then is anything published. A rebuild with new traffic re-materializes the ATF pins (an existing
+   `atf_sha256` is reused only under `reuse_traffic` and only when it pins the same graph and overlay), and a re-run
+   audits from the pre-lift windows, so `metadata.tw_repair` is reproduced rather than erased.
 
 Naming and tree layout are in `family/naming.py`; `family.materialize_distances` rebuilds pinned matrices;
 `generation.bulk.generate_bulk_instances` / `preflight_rows` drive many bases from a row table.
@@ -27,6 +32,12 @@ mamut-tools osm fetch-city Lyon --country France --profile generation --osm-dir 
 mamut-tools generate single Lyon --osm-path work/osmdata/Lyon.osm --n 200 --output-dir work --vrptw
 mamut-tools generate derive-td <folder> <base> --all      # folder and base name as printed by `generate single`
 ```
+
+The per-instance path uses the same anchor discipline as the family: `derive-vrptw` stores capacity-, horizon- and
+window-feasible `anchor_routes`, and `derive-td` certifies the windows along them, splitting a route that no longer
+returns by the horizon under traffic. `generate single` never overwrites a different instance of the same name
+silently: it reports `unchanged`, writes `<name>-2` (`renamed`), or with `--replace` purges the old instance and its
+twins and BKS (`replaced`).
 
 ## The Mamut2026 design layer (`mamut_routing_tools.campaign`)
 

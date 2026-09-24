@@ -13,8 +13,8 @@
         "source": "Lera-Romero et al. 2020 (linear edge costs) published solutions",
         "validated_by": "mamut-routing-lib td Duration checker",
         "date": "2026-07-02",
-        "route_durations": [10475.142664379515, 7948.463847693701, 10534.513515390487, 8850.966129605386, 10410.157357159971],
-        "route_departure_times": [22.00039428458777, 207.03579005744325, 42.48649420951645, 99.33333333333334, 0.0],
+        "route_durations": [10475.142664379515, 7948.463847693702, 10534.513515390487, 8850.966129605386, 10410.157357159971],
+        "route_departure_times": [22.00039428458777, 108.0, 42.48649420951646, 99.33333333333334, 0.0],
         "published_duration_sum": 48219.24351422906,
         "optimality": {
             "proven": true,
