@@ -29,6 +29,7 @@ import warnings
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
 from mamut_routing_lib.artifacts import (
     AnyBenchmarkInstance,
     DiscoveredBenchmarkInstance,
@@ -262,6 +263,9 @@ class InstanceListItem(BaseModel):
     viewer_render_mode: ViewerRenderMode = "straight_line"
     road_cache_status: RoadCacheStatus = "not_applicable"
     objective_availability: list[ObjectiveAvailability]
+    # The coordinates reproduce the published costs (cvrplib.coordinates_define_arc_costs):
+    # only then does the site offer the coordinates-only EUC_2D / Solomon downloads.
+    coordinate_exports: bool = False
 
 
 class SiteArtifactLinks(BaseModel):
@@ -387,6 +391,7 @@ class InstancePageSummary(BaseModel):
     license: str | None = None
     license_url: str | None = None
     instance_provider: str | None = None
+    coordinate_exports: bool = False
 
 
 class BksValue(BaseModel):
@@ -741,6 +746,17 @@ class _ResolvedSiteInstance(BaseModel):
     source_problem_routes: dict[str, str] = Field(default_factory=dict)
     bks_entries: list[BKSPageEntry] = Field(default_factory=list)
     td_route_functions: list[TDRouteFunctionsPayload] = Field(default_factory=list)
+    coordinate_exports: bool = False
+
+
+def _coordinate_exports(instance, problem_type: ProblemType) -> bool:
+    """Whether the coordinates-only .vrp exports reproduce this instance (never for TD)."""
+    if problem_type not in (ProblemType.CVRP, ProblemType.VRPTW):
+        return False
+    try:
+        return coordinates_define_arc_costs(instance)
+    except (TypeError, ValueError):
+        return False
 
 
 def _now_utc_iso() -> str:
@@ -1853,6 +1869,7 @@ def _resolve_instance(
             geometry_summary["road_cache_entry_count"] = geometry_summary["road_cache_expected_entry_count"]
 
     return _ResolvedSiteInstance(
+        coordinate_exports=_coordinate_exports(instance, problem_type),
         locator=BenchmarkLocator(
             problem_type=problem_type,
             benchmark_name=benchmark_name,
@@ -1948,6 +1965,7 @@ def _build_instance_list_item(resolved: _ResolvedSiteInstance) -> InstanceListIt
         viewer_render_mode=resolved.viewer_render_mode,
         road_cache_status=resolved.road_cache_status,
         objective_availability=_objective_availability(resolved.bks_entries),
+        coordinate_exports=resolved.coordinate_exports,
     )
 
 
@@ -2347,6 +2365,7 @@ def _build_instance_page_payload(
             license=resolved.instance_summary.license,
             license_url=resolved.instance_summary.license_url,
             instance_provider=resolved.instance_summary.instance_provider,
+            coordinate_exports=resolved.coordinate_exports,
         ),
         artifact_links=resolved.artifact_links,
         sibling_variant_routes=resolved.sibling_variant_routes,

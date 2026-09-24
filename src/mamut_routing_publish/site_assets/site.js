@@ -1670,6 +1670,7 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
       vrpJsonPath: item.artifact_vrp_json_path,
       distancesPath: item.artifact_distances_path,
       distancesSha256: item.artifact_distances_sha256,
+      coordinateExports: item.coordinate_exports === true,
     }),
     entry?.artifact_path ? `<a class="download-chip" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener">.bks.${escapeHtml(entry.objective_function)}.json ↓</a>` : "",
   ].join("");
@@ -2795,7 +2796,7 @@ async function renderInstancePage(payload, options = {}) {
         "Artifacts",
         `<ul class="artifact-list">
           <li><a href="${artifactHref(payload.artifact_links.vrp_json_path)}">vrp.json</a></li>
-          ${renderVrpExportChips(rawInstance, { vrpJsonPath: payload.artifact_links.vrp_json_path, distancesPath: payload.artifact_links.distances_path, distancesSha256: payload.artifact_links.distances_sha256 }, { asListItems: true })}
+          ${renderVrpExportChips(rawInstance, { vrpJsonPath: payload.artifact_links.vrp_json_path, distancesPath: payload.artifact_links.distances_path, distancesSha256: payload.artifact_links.distances_sha256, coordinateExports: payload.summary.coordinate_exports === true }, { asListItems: true })}
           ${payload.artifact_links.meta_path ? `<li><a href="${artifactHref(payload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
           ${payload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(payload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
@@ -3949,7 +3950,7 @@ function vrpComment(instance, edgeWeightType) {
     comment = parts.join("; ");
   }
   if (edgeWeightType === "EUC_2D") {
-    comment = `${comment}; EUC_2D: costs are TSPLIB nint distances, not the published 3-decimal costs`;
+    comment = `${comment}; EUC_2D: costs are TSPLIB nint distances, not the published costs`;
   }
   return comment;
 }
@@ -4062,18 +4063,20 @@ function instanceToSolomonText(instance) {
   return lines.join("\n");
 }
 
-function vrpExportKinds(instance) {
+function vrpExportKinds(instance, coordinateExports = false) {
   if (!instance || instance.td) {
     return [];
   }
   const kinds = [
     { kind: "explicit", label: ".vrp ↓", title: "Classic CVRPLIB .vrp with the explicit full matrix (the published costs)" },
   ];
-  if (vrpMetricVariant(instance) === "euclidean") {
+  // Coordinates-only formats only when the build found that the coordinates
+  // reproduce the published costs (not Dimacs2021, whose costs are floor(10 * d)).
+  if (coordinateExports === true && vrpMetricVariant(instance) === "euclidean") {
     kinds.push({
       kind: "euc2d",
       label: ".vrp EUC_2D ↓",
-      title: "Coordinates only: TSPLIB readers use nint(euclidean) distances, not the published 3-decimal costs",
+      title: "Coordinates only: TSPLIB readers use nint(euclidean) distances, not the published costs",
     });
     if (vrpIsVrptw(instance)) {
       kinds.push({ kind: "solomon", label: "Solomon .txt ↓", title: "Solomon / Gehring-Homberger layout (coordinates only)" });
@@ -4088,7 +4091,7 @@ function vrpExportFilename(vrpJsonPath, kind) {
 }
 
 function renderVrpExportChips(instance, links, options = {}) {
-  const kinds = vrpExportKinds(instance);
+  const kinds = vrpExportKinds(instance, links.coordinateExports === true);
   if (!kinds.length) {
     return "";
   }
@@ -4096,6 +4099,7 @@ function renderVrpExportChips(instance, links, options = {}) {
     `data-vrp-json="${escapeHtml(links.vrpJsonPath || "")}"`,
     `data-vrp-distances="${escapeHtml(links.distancesPath || "")}"`,
     `data-vrp-sha256="${escapeHtml(links.distancesSha256 || "")}"`,
+    `data-vrp-coordinates="${links.coordinateExports === true ? "1" : ""}"`,
   ].join(" ");
   const chips = kinds.map(
     (entry) => `<button type="button" class="download-chip" data-vrp-export="${entry.kind}" ${attrs} title="${escapeHtml(entry.title)}">${escapeHtml(entry.label)}</button>`,
@@ -4138,13 +4142,15 @@ async function buildInstanceVrpExport(links, kind) {
     throw new Error("Time-dependent instances have no static matrix; there is no classic .vrp for them.");
   }
   const filename = vrpExportFilename(links.vrpJsonPath, kind);
-  const metric = vrpMetricVariant(instance);
+  const coordinatesOnly = kind === "solomon" || kind === "euc2d";
+  if (coordinatesOnly && links.coordinateExports !== true) {
+    throw new Error(
+      "The coordinates of this instance do not reproduce its published costs (e.g. Dimacs2021 costs are floor(10 * d)); use the explicit .vrp.",
+    );
+  }
   if (kind === "solomon") {
     if (!vrpIsVrptw(instance)) {
       throw new Error("The Solomon format is VRPTW-only.");
-    }
-    if (metric !== "euclidean") {
-      throw new Error("The Solomon format (coordinates only) needs the euclidean metric.");
     }
     return { filename, text: instanceToSolomonText(instance) };
   }
@@ -4152,9 +4158,7 @@ async function buildInstanceVrpExport(links, kind) {
   let arcCosts = null;
   let decimals = null;
   if (edgeWeightType === "EUC_2D") {
-    if (metric !== "euclidean") {
-      throw new Error("EUC_2D (coordinates only) needs the euclidean metric.");
-    }
+    // Coordinates only: no matrix to resolve.
   } else if (vrpIsCollection(instance)) {
     decimals = vrpCollectionDecimals(instance);
     if (instance.arc_costs_source.model === "euclidean") {
@@ -4197,6 +4201,7 @@ async function handleVrpExportClick(button) {
     vrpJsonHref: artifactHref(vrpJsonPath),
     distancesHref: distancesPath ? artifactHref(distancesPath) : null,
     distancesSha256: button.dataset.vrpSha256 || null,
+    coordinateExports: button.dataset.vrpCoordinates === "1",
   };
   button.disabled = true;
   reportVrpExportStatus(`Preparing ${vrpExportFilename(vrpJsonPath, kind)}…`);
