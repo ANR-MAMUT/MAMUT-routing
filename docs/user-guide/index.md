@@ -32,8 +32,11 @@ mamut-tools gui run          # foreground, for development (default port 8788)
 The workspace directory (`--output-dir`, `MAMUT_TOOLS_WORKSPACE`, `<repo>/.cache/mamut-tools` or
 `~/.cache/mamut-tools`, in that order) holds `osmdata/`, `instances/`, `solutions/<instance-id>/` and
 `state/{gui.json,preferences.json,jobs/,logs/}`. Long operations are durable jobs with logs; solver runs are
-checker-validated, kept across restarts and comparable. Set `MAMUT_BASEMAP_API_KEY` for the CARTO vector basemaps
-(the key is visible to the browser by design).
+checker-validated, kept across restarts and comparable. Each run records the sha256 of the instance file it was
+validated on: after the instance is regenerated with **Replace existing** (without it, a different configuration
+that yields the same name is saved as `<name>-2`), its old runs are flagged stale, hidden from rendering and
+comparison, and no longer counted. Set `MAMUT_BASEMAP_API_KEY` for the CARTO vector basemaps (the key is visible
+to the browser by design).
 
 ## Generate instances
 
@@ -43,11 +46,11 @@ checker-validated, kept across restarts and comparable. Set `MAMUT_BASEMAP_API_K
 | `mamut-tools osm validate` / `refresh-pois` | Reject incomplete extracts; backfill way/relation-mapped amenities (`--check` audits only). |
 | `mamut-tools roadgraph info` | Build the drivable road graph of an extract and print its statistics. |
 | `mamut-tools generate preview` | GeoJSON preview of a customer selection, nothing written. |
-| `mamut-tools generate single` | One CVRP base instance under the three metrics (`euclidean`, `shortest`, `fastest`) with sidecars; `--vrptw` adds the time-window twin. |
+| `mamut-tools generate single` | One CVRP base instance under the three metrics (`euclidean`, `shortest`, `fastest`) with sidecars; `--vrptw` adds the time-window twin. An existing instance of the same name is kept when identical (`unchanged`), else the new one is written as `<name>-2` (`renamed`), or with `--replace` replaces it and deletes its twins and BKS (`replaced`). |
 | `mamut-tools generate derive-vrptw` | The fastest-metric VRPTW twin of an existing CVRP base. |
-| `mamut-tools generate derive-td` | TDVRP + TDVRPTW twins: traffic overlay (`--model bpr|wave`, `--intensity light|moderate|heavy`, `--all` for the six) → arrival-time functions → time-window lift. |
+| `mamut-tools generate derive-td` | TDVRP + TDVRPTW twins: traffic overlay (`--model bpr|wave`, `--intensity light|moderate|heavy`, `--all` for the six) → arrival-time functions → time-window lift along the feasible anchor routes. All or nothing (exits 1 with the reason); existing twins are kept only if derived from the current inputs. |
 | `mamut-tools generate materialize-distances` | Rebuild the sha256-pinned distance sidecars of large published instances. |
-| `mamut-tools solve` | Solve a `.vrp.json` with PyVRP (or KAYROS for time-dependent Duration, `kayros` extra); `--update-bks` writes an improved BKS. |
+| `mamut-tools solve` | Solve a `.vrp.json` with PyVRP (or KAYROS for time-dependent Duration, `kayros` extra); prints the checker's cost; `--update-bks` offers the solution to the BKS store and prints its action (`created`, `replaced`, `kept_existing`, with `tie`). |
 | `mamut-tools convert blauth2024` | Convert the upstream vrptdt-benchmark into the canonical Blauth2024 family. |
 
 Batch family generation (many cities × sizes) is deliberately not a CLI command: campaigns are scripts that call
