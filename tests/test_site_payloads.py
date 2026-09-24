@@ -454,9 +454,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js").exists()
 
     root_html = (site_output / "index.html").read_text(encoding="utf-8")
-    assert 'data-payload-mode="static"' in root_html
-    assert 'data-payload-api-prefix="/api/site-payload"' in root_html
+    # Static-only: no payload-mode / API-prefix attributes a page could follow elsewhere.
+    assert "data-payload-mode" not in root_html
+    assert "data-payload-api-prefix" not in root_html
     assert 'data-payload-static-root="/site-payloads"' in root_html
+    assert '<meta http-equiv="Content-Security-Policy"' in root_html
     assert 'webapp/site.js' in root_html
     assert 'rel="icon" type="image/svg+xml"' in root_html
     assert 'webapp/icons/favicon.svg' in root_html
@@ -556,12 +558,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert vrptw_instance_page["summary"]["place_slug"] == "brest"
     assert historical_instance_page["summary"]["place_slug"] is None
 
-    api_webapp_summary = generate_site_webapp(output_repo_dir, payload_mode="api")
-    assert api_webapp_summary.html_files_written == webapp_summary.html_files_written
-    root_html_api = (site_output / "index.html").read_text(encoding="utf-8")
-    assert 'data-payload-mode="api"' in root_html_api
-    assert 'data-payload-api-prefix="/api/site-payload"' in root_html_api
-    assert 'data-payload-static-root="/site-payloads"' in root_html_api
+    with pytest.raises(ValueError, match="static-only"):
+        generate_site_webapp(output_repo_dir, payload_mode="api")
 
     # The CARTO basemaps key lands on the workbench shells only, HTML-escaped,
     # and a key outside the URL-safe alphabet is refused before anything is written.

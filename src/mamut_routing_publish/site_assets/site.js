@@ -21,8 +21,6 @@ function normalizeSortDirection(value) {
 const state = {
   routePath: document.body.dataset.routePath || "/",
   payloadSource: document.body.dataset.payloadSource || "",
-  payloadMode: resolvePayloadMode(),
-  payloadApiPrefix: resolvePayloadApiPrefix(),
   payloadStaticRoot: resolvePayloadStaticRoot(),
   pageKind: document.body.dataset.pageKind || "payload",
   workbenchMode: document.body.dataset.workbenchMode || "catalog",
@@ -91,33 +89,37 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function normalizeApiPrefix(prefix) {
-  const value = String(prefix || "/api/site-payload").trim();
-  if (!value) {
-    return "/api/site-payload";
-  }
-  if (/^https?:\/\//i.test(value)) {
-    return value.replace(/\/+$/, "");
-  }
-  return `/${value.replace(/^\/+/, "").replace(/\/+$/, "")}`;
-}
-
-function resolvePayloadMode() {
-  const requestedMode = runtimeParams.get("payloadMode") || document.body.dataset.payloadMode || "static";
-  return requestedMode === "api" ? "api" : "static";
-}
-
-
-function resolvePayloadApiPrefix() {
-  return normalizeApiPrefix(runtimeParams.get("apiPrefix") || document.body.dataset.payloadApiPrefix || "/api/site-payload");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function resolvePayloadStaticRoot() {
-  const value = runtimeParams.get("payloadRoot") || document.body.dataset.payloadStaticRoot || "/site-payloads";
-  return `/${String(value).replace(/^\/+/, "").replace(/\/+$/, "")}`;
+  // Set by the build in the HTML shell. It is never read from the URL: a link
+  // must not be able to choose where the page loads the data it renders.
+  const segments = String(document.body.dataset.payloadStaticRoot || "/site-payloads")
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== ".." && /^[A-Za-z0-9._-]+$/.test(segment));
+  return `/${segments.length > 0 ? segments.join("/") : "site-payloads"}`;
+}
+
+function encodePathSegment(segment) {
+  // Percent-encode one path segment (keeping "=" readable, as in n=100): a
+  // payload string can then never close an attribute, open a tag or start a
+  // scheme such as javascript: once it is placed in an href.
+  return encodeURIComponent(segment).replaceAll("%3D", "=");
+}
+
+function safeExternalHref(url) {
+  // External links from payloads: http(s) and mailto only, escaped for an attribute.
+  try {
+    const parsed = new URL(String(url ?? ""), "https://base.invalid/");
+    if (["http:", "https:", "mailto:"].includes(parsed.protocol) && parsed.origin !== "https://base.invalid") {
+      return escapeHtml(String(url));
+    }
+  } catch (error) {
+    // Unparseable: fall through.
+  }
+  return "#";
 }
 
 function normalizeRoute(routePath) {
@@ -151,7 +153,7 @@ function relativeFromCurrent(targetPath, { directory = false } = {}) {
     shared += 1;
   }
   const up = new Array(fromParts.length - shared).fill("..");
-  const down = targetParts.slice(shared);
+  const down = targetParts.slice(shared).map((segment) => encodePathSegment(segment));
   const relative = [...up, ...down].join("/");
   return relative || "index.html";
 }
@@ -337,7 +339,7 @@ function mergeGeometryMeta(geometryMeta, routeGeometryMeta) {
 
 async function fetchWorkbenchPayloadForRoute(routePath) {
   const sourcePath = payloadUrlForRoute(routePath);
-  const cacheKey = `${state.payloadMode}:${sourcePath}`;
+  const cacheKey = sourcePath;
   if (WORKBENCH_PAYLOAD_CACHE.has(cacheKey)) {
     return WORKBENCH_PAYLOAD_CACHE.get(cacheKey);
   }
@@ -356,16 +358,10 @@ function payloadStaticHref(routePath) {
 
 function payloadUrlForRoute(routePath) {
   const normalizedRoute = normalizeRoute(routePath);
-  if (state.payloadMode !== "api") {
-    if (normalizedRoute === state.routePath && state.payloadSource) {
-      return state.payloadSource;
-    }
-    return payloadStaticHref(normalizedRoute);
+  if (normalizedRoute === state.routePath && state.payloadSource) {
+    return state.payloadSource;
   }
-  if (normalizedRoute === "/") {
-    return state.payloadApiPrefix;
-  }
-  return `${state.payloadApiPrefix}${normalizedRoute.slice(0, -1)}`;
+  return payloadStaticHref(normalizedRoute);
 }
 
 function setStatus(message) {
@@ -438,7 +434,7 @@ function githubBenchmarksHref(items) {
   const githubSegments = githubBenchmarkPathSegments(sourceSegments);
   const encodedPath = githubSegments
     .slice(1)
-    .map((segment) => encodeGithubPathSegment(segment))
+    .map((segment) => encodePathSegment(segment))
     .join("/");
   return encodedPath ? `${GITHUB_BENCHMARKS_ROOT}/${encodedPath}` : GITHUB_BENCHMARKS_ROOT;
 }
@@ -451,10 +447,6 @@ function githubBenchmarkPathSegments(sourceSegments) {
     sourceSegments.length >= 5 &&
     !lastSegment.startsWith("n=");
   return pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments;
-}
-
-function encodeGithubPathSegment(segment) {
-  return encodeURIComponent(segment).replaceAll("%3D", "=");
 }
 
 function renderBenchmarksGithubLink(href) {
@@ -696,7 +688,7 @@ function renderSubrouteList(title, entries) {
     `<ul class="link-list">${entries
       .map(
         (entry) =>
-          `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`,
+          `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${escapeHtml(entry.instance_count)} instances · ${escapeHtml(entry.bks_count)} BKS</span></li>`,
       )
       .join("")}</ul>`,
   );
@@ -712,7 +704,7 @@ function renderFacetList(facets) {
       .map(
         (facet) =>
           `<div class="mini-card"><h3>${escapeHtml(facet.label)}</h3><div class="chip-row">${facet.options
-            .map((option) => `<span class="badge">${escapeHtml(option.label)} · ${option.count}</span>`)
+            .map((option) => `<span class="badge">${escapeHtml(option.label)} · ${escapeHtml(option.count)}</span>`)
             .join("")}</div></div>`,
       )
       .join(""),
@@ -764,7 +756,7 @@ function renderCollectionFilterSelect(payload, facet) {
     const sourceOption = (facet.options || []).find((option) => option.value === selected);
     options.push({ value: selected, label: sourceOption?.label || selected, count: 0 });
   }
-  return `<label class="field"><span>${escapeHtml(facet.label)}</span><select data-collection-filter="${escapeHtml(facet.key)}"><option value="">All</option>${options.map((option) => `<option value="${escapeHtml(option.value)}"${state.collectionFilters[facet.key] === option.value ? " selected" : ""}>${escapeHtml(option.label)} (${option.count})</option>`).join("")}</select></label>`;
+  return `<label class="field"><span>${escapeHtml(facet.label)}</span><select data-collection-filter="${escapeHtml(facet.key)}"><option value="">All</option>${options.map((option) => `<option value="${escapeHtml(option.value)}"${state.collectionFilters[facet.key] === option.value ? " selected" : ""}>${escapeHtml(option.label)} (${escapeHtml(option.count)})</option>`).join("")}</select></label>`;
 }
 
 function collectionSearchMatches(item) {
@@ -837,7 +829,7 @@ function renderProblemCards(problems) {
   return `<div class="problem-grid">${problems
     .map(
       (problem) =>
-        `<article class="mini-card"><h3>${escapeHtml(problem.problem_type)}</h3><p>${problem.family_count} families · ${problem.instance_count} instances · ${problem.bks_count} BKS</p><div class="badge-row">${problem.supported_objective_functions
+        `<article class="mini-card"><h3>${escapeHtml(problem.problem_type)}</h3><p>${escapeHtml(problem.family_count)} families · ${escapeHtml(problem.instance_count)} instances · ${escapeHtml(problem.bks_count)} BKS</p><div class="badge-row">${problem.supported_objective_functions
           .map((objective) => badge(objective))
           .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(problem.route_path)}">Browse ${escapeHtml(problem.problem_type)}</a></div></article>`,
     )
@@ -877,7 +869,7 @@ const HOME_PROBLEM_TAG_TONES = {
 
 function renderHomeCatalogRow(problem) {
   const tone = HOME_PROBLEM_TAG_TONES[problem.problem_type] || "tag-acc";
-  const description = HOME_PROBLEM_DESCRIPTIONS[problem.problem_type] || `${problem.instance_count} instances`;
+  const description = HOME_PROBLEM_DESCRIPTIONS[problem.problem_type] || `${escapeHtml(problem.instance_count)} instances`;
   const familyChips = (problem.benchmark_names || [])
     .map((name) => `<span class="badge ${tone}">${escapeHtml(name)}</span>`)
     .join("");
@@ -1116,7 +1108,7 @@ function renderFamilyCards(families) {
         const contextAction = family.context_route_path
           ? `<a class="button-link" href="${routeHref(family.context_route_path)}">Description</a>`
           : "";
-        return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${family.instance_count} instances · ${family.bks_count} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
+        return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${escapeHtml(family.instance_count)} instances · ${escapeHtml(family.bks_count)} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
           .map((objective) => badge(objective, true))
           .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a>${contextAction}</div></article>`;
       },
@@ -2794,7 +2786,7 @@ async function renderInstancePage(payload, options = {}) {
           ...(payload.summary.instance_provider ? [["Provider", payload.summary.instance_provider]] : []),
           ...(payload.summary.authors ? [["Authors", payload.summary.authors]] : []),
           ...(payload.summary.license ? [["License", payload.summary.license_url
-            ? { html: `<a href="${escapeHtml(payload.summary.license_url)}" target="_blank" rel="noopener">${escapeHtml(payload.summary.license)}</a>` }
+            ? { html: `<a href="${safeExternalHref(payload.summary.license_url)}" target="_blank" rel="noopener">${escapeHtml(payload.summary.license)}</a>` }
             : payload.summary.license]] : []),
         ])}<div class="badge-row">${(payload.summary.supported_objective_functions || []).map((objective) => badge(objective)).join("")}${payload.summary.historical_topology_type ? badge(payload.summary.historical_topology_type, true) : ""}${payload.summary.historical_tw_type ? badge(`TW${payload.summary.historical_tw_type}`, true) : ""}${payload.summary.subset ? badge(`subset:${payload.summary.subset}`, true) : ""}</div>`,
       ),
@@ -2810,7 +2802,7 @@ async function renderInstancePage(payload, options = {}) {
           ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
-      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${safeExternalHref(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -3663,7 +3655,7 @@ function renderObjectives(payload) {
   );
   state.stage.innerHTML = `<div class="explainer-grid">${payload.explainers
     .map(
-      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${formatInlineCode(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${formatInlineCode(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`).join("")}</ul></article>`,
+      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${formatInlineCode(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${formatInlineCode(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${escapeHtml(entry.instance_count)} instances · ${escapeHtml(entry.bks_count)} BKS</span></li>`).join("")}</ul></article>`,
     )
     .join("")}</div>`;
   setStatus(`Loaded ${payload.explainers.length} objective guides`);
@@ -3682,7 +3674,7 @@ function renderProject(payload) {
       `${renderStatGrid([
         ["Code", payload.anr_project_code],
         ["Project", payload.anr_project_title],
-        ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
+        ["Source", { html: `<a class="mini-link" href="${safeExternalHref(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
       ])}`,
     ),
     renderCard(
@@ -3698,14 +3690,14 @@ function renderProject(payload) {
   const factCards = (payload.facts || [])
     .map((fact) => {
       const value = fact.href
-        ? `<a class="mini-link" href="${escapeHtml(fact.href)}" target="_blank" rel="noopener">${escapeHtml(fact.value)}</a>`
+        ? `<a class="mini-link" href="${safeExternalHref(fact.href)}" target="_blank" rel="noopener">${escapeHtml(fact.value)}</a>`
         : escapeHtml(fact.value);
       return `<article class="project-fact"><span>${escapeHtml(fact.label)}</span><strong>${value}</strong></article>`;
     })
     .join("");
   const participantLogos = PROJECT_PARTICIPANT_LOGOS
     .map(
-      (logo) => `<a class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}" href="${escapeHtml(logo.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(logo.label)} (opens in a new tab)">
+      (logo) => `<a class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}" href="${safeExternalHref(logo.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(logo.label)} (opens in a new tab)">
         <img src="${siteAssetHref(logo.src)}" alt="${escapeHtml(logo.label)} logo" loading="lazy" />
         <span class="project-logo-caption">${escapeHtml(logo.label)}</span>
       </a>`,

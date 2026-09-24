@@ -468,6 +468,19 @@ def site_payloads_cmd(
     _emit_summary(summary)
 
 
+def _check_payload_mode(payload_mode: str, payload_api_prefix: str | None) -> None:
+    """The site is static-only: refuse the removed 'api' mode, ignore a leftover API prefix."""
+    if payload_mode != "static":
+        typer.echo(
+            "--payload-mode 'api' was removed: the site is static-only (no server implements "
+            "/api/site-payload, and letting a page choose its payload source made it injectable).",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if payload_api_prefix is not None:
+        typer.secho("Warning: --payload-api-prefix is deprecated and ignored.", fg=typer.colors.YELLOW, err=True)
+
+
 @site_app.command("webapp")
 def site_webapp_cmd(
     output_repo_dir: Annotated[
@@ -478,16 +491,18 @@ def site_webapp_cmd(
         str,
         typer.Option(
             "--payload-mode",
-            help="How generated HTML shells should fetch route payloads ('static' or 'api').",
+            hidden=True,
+            help="Deprecated: the site is static-only; only 'static' is accepted.",
         ),
     ] = "static",
     payload_api_prefix: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             "--payload-api-prefix",
-            help="API prefix embedded into generated HTML shells when --payload-mode is 'api'.",
+            hidden=True,
+            help="Deprecated and ignored (the 'api' payload mode was removed).",
         ),
-    ] = "/api/site-payload",
+    ] = None,
     payload_root_dir: Annotated[
         Path,
         typer.Option("--payload-root-dir", help="Directory under the site output root for route payload JSON files."),
@@ -514,15 +529,12 @@ def site_webapp_cmd(
     ] = None,
 ) -> None:
     """Generate the static HTML shell only (assumes payloads already exist)."""
-    if payload_mode not in {"static", "api"}:
-        typer.echo("--payload-mode must be one of: static, api", err=True)
-        raise typer.Exit(code=1)
+    _check_payload_mode(payload_mode, payload_api_prefix)
     repo_dir = _resolve_repo_dir(output_repo_dir)
 
     summary = generate_site_webapp(
         repo_dir,
         payload_mode=payload_mode,
-        payload_api_prefix=payload_api_prefix,
         basemap_api_key=basemap_api_key,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
@@ -668,16 +680,18 @@ def site_build_cmd(
         str,
         typer.Option(
             "--payload-mode",
-            help="How generated HTML shells should fetch route payloads ('static' or 'api').",
+            hidden=True,
+            help="Deprecated: the site is static-only; only 'static' is accepted.",
         ),
     ] = "static",
     payload_api_prefix: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             "--payload-api-prefix",
-            help="API prefix embedded into generated HTML shells when --payload-mode is 'api'.",
+            hidden=True,
+            help="Deprecated and ignored (the 'api' payload mode was removed).",
         ),
-    ] = "/api/site-payload",
+    ] = None,
     payload_root_dir: Annotated[
         Path,
         typer.Option("--payload-root-dir", help="Directory under the site output root for route payload JSON files."),
@@ -737,9 +751,7 @@ def site_build_cmd(
     ] = None,
 ) -> None:
     """Generate site payloads AND the static HTML shell in one step."""
-    if payload_mode not in {"static", "api"}:
-        typer.echo("--payload-mode must be one of: static, api", err=True)
-        raise typer.Exit(code=1)
+    _check_payload_mode(payload_mode, payload_api_prefix)
     _validate_progress_format(progress_format)
     _validate_jobs(jobs)
     # Parsed up front so a bad value fails before any work, even when the
@@ -845,7 +857,6 @@ def site_build_cmd(
     webapp_summary = generate_site_webapp(
         repo_dir,
         payload_mode=payload_mode,
-        payload_api_prefix=payload_api_prefix,
         basemap_api_key=basemap_api_key,
         payload_root_dir=payload_root_dir,
         site_output_dir=site_output_dir,
