@@ -18,6 +18,8 @@ from __future__ import annotations
 import html
 import re
 
+import base64
+import hashlib
 import os
 import shutil
 from pathlib import Path
@@ -29,7 +31,10 @@ from mamut_routing_publish.progress import ProgressReporter
 from mamut_routing_publish.site_payloads import DEFAULT_SITE_OUTPUT_DIR, DEFAULT_SITE_PAYLOAD_ROOT_DIR
 
 
-SUPPORTED_PAYLOAD_MODES = {"static", "api"}
+#: The site is static: pages read their payloads from the build's own
+#: ``site-payloads`` tree. The former ``api`` mode had no server and let a
+#: query string pick the payload origin, so it is gone.
+SUPPORTED_PAYLOAD_MODES = {"static"}
 # The CARTO basemaps API key is interpolated into an HTML attribute and into
 # tile URLs, so the accepted alphabet is deliberately narrow.
 BASEMAP_API_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -64,6 +69,62 @@ LAYOUT_INIT_SCRIPT = (
     "document.documentElement,window.MamutLayout.readState("
     'window.MamutLayout.STORAGE_KEY,{leftWidth:320}));}catch(e){}})();</script>'
 )
+
+
+def _inline_script_hash(script_tag: str) -> str:
+    """CSP source for an inline ``<script>...</script>``: the sha256 of its text."""
+    inner = script_tag.removeprefix("<script>").removesuffix("</script>")
+    digest = base64.b64encode(hashlib.sha256(inner.encode("utf-8")).digest()).decode("ascii")
+    return f"'sha256-{digest}'"
+
+
+def content_security_policy(*inline_scripts: str) -> str:
+    """The shells' Content-Security-Policy.
+
+    Scripts run only from the site itself plus the pinned inline bootstrap
+    scripts, so markup injected into the page cannot execute anything (no
+    inline handlers, no foreign scripts, no plugins, no <base> rewrite).
+    Images and fetches may reach any https host (basemap styles, tiles and
+    glyphs); MapLibre starts its worker from a blob: URL; inline style
+    attributes are used throughout the renderer.
+    """
+    script_sources = " ".join(["'self'", *(_inline_script_hash(script) for script in inline_scripts)])
+    return "; ".join(
+        [
+            "default-src 'self'",
+            f"script-src {script_sources}",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https:",
+            "connect-src 'self' https:",
+            "font-src 'self'",
+            "worker-src 'self' blob:",
+            "child-src 'self' blob:",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+        ]
+    )
+
+
+def _csp_meta(*inline_scripts: str) -> str:
+    return f'<meta http-equiv="Content-Security-Policy" content="{html.escape(content_security_policy(*inline_scripts), quote=True)}" />'
+
+
+def _attr(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def _validate_route_path(route_path: str) -> str:
+    """A route path becomes a directory under the site root: refuse anything that could escape it."""
+    parts = route_path.split("/")
+    if (
+        not route_path.startswith("/")
+        or any(part in {".", ".."} for part in parts)
+        or "\\" in route_path
+        or any(ord(character) < 0x20 for character in route_path)
+    ):
+        raise ValueError(f"Unsafe route path in a site payload: {route_path!r}")
+    return route_path
 
 
 class SiteWebappGenerationSummary(BaseModel):
@@ -182,8 +243,6 @@ def _render_shell_html(
     *,
     payload_source_path: Path | None,
     page_kind: str,
-    payload_mode: str,
-    payload_api_prefix: str,
     payload_static_root: str,
     workbench_mode: str | None = None,
 ) -> str:
@@ -194,11 +253,12 @@ def _render_shell_html(
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
     payload_source = _relative_path(route_dir, payload_source_path) if payload_source_path is not None else ""
     active_nav = _active_nav(route_path)
-    workbench_attr = f' data-workbench-mode="{workbench_mode}"' if workbench_mode else ""
+    workbench_attr = f' data-workbench-mode="{_attr(workbench_mode)}"' if workbench_mode else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  {_csp_meta(THEME_INIT_SCRIPT)}
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MAMUT-routing</title>
   {THEME_INIT_SCRIPT}
@@ -206,7 +266,7 @@ def _render_shell_html(
   <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="{css_href}" />
 </head>
-<body data-route-path="{route_path}" data-page-kind="{page_kind}" data-payload-source="{payload_source}" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}"{workbench_attr}>
+<body data-route-path="{_attr(route_path)}" data-page-kind="{_attr(page_kind)}" data-payload-source="{_attr(payload_source)}" data-payload-static-root="{_attr(payload_static_root)}"{workbench_attr}>
   {_render_header_html(output_repo_dir, route_dir, active_nav)}
   <div id="breadcrumbTrail" class="breadcrumbs"></div>
 
@@ -226,8 +286,6 @@ def _render_workbench_shell_html(
     output_repo_dir: Path,
     route_path: str,
     *,
-    payload_mode: str,
-    payload_api_prefix: str,
     payload_static_root: str,
     workbench_mode: str,
     basemap_api_key: str | None = None,
@@ -257,6 +315,7 @@ def _render_workbench_shell_html(
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
+    {_csp_meta(THEME_INIT_SCRIPT, LAYOUT_INIT_SCRIPT)}
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAMUT-routing Workbench</title>
     {THEME_INIT_SCRIPT}
@@ -269,7 +328,7 @@ def _render_workbench_shell_html(
     <link rel="stylesheet" href="{maplibre_css_href}" />
     <link rel="stylesheet" href="{css_href}" />
 </head>
-<body data-route-path="{route_path}" data-page-kind="workbench-app" data-payload-mode="{payload_mode}" data-payload-api-prefix="{payload_api_prefix}" data-payload-static-root="{payload_static_root}" data-workbench-mode="{workbench_mode}"{basemap_attr}>
+<body data-route-path="{_attr(route_path)}" data-page-kind="workbench-app" data-payload-static-root="{_attr(payload_static_root)}" data-workbench-mode="{_attr(workbench_mode)}"{basemap_attr}>
     {_render_header_html(output_repo_dir, route_dir, active_nav)}
 
     <main class="wb-stage">
@@ -429,7 +488,6 @@ def generate_site_webapp(
     output_repo_dir: str | Path,
     *,
     payload_mode: str = "static",
-    payload_api_prefix: str = "/api/site-payload",
     payload_root_dir: str | Path = DEFAULT_SITE_PAYLOAD_ROOT_DIR,
     site_output_dir: str | Path | None = None,
     reporter: ProgressReporter | None = None,
@@ -444,7 +502,7 @@ def generate_site_webapp(
         raise ValueError(f"Site payload root must be repository-relative, got: {payload_root}")
     payload_static_root = f"/{payload_root.as_posix().strip('/')}"
     if payload_mode not in SUPPORTED_PAYLOAD_MODES:
-        raise ValueError(f"Unsupported payload mode: {payload_mode!r}")
+        raise ValueError(f"Unsupported payload mode: {payload_mode!r} (the site is static-only)")
     source_assets_dir = Path(__file__).with_name("site_assets")
     if not source_assets_dir.exists():
         raise FileNotFoundError(f"Missing site asset directory: {source_assets_dir}")
@@ -490,7 +548,7 @@ def generate_site_webapp(
         route_path = payload.get("route_path")
         if not isinstance(route_path, str):
             continue
-        route_payloads[route_path] = payload_path
+        route_payloads[_validate_route_path(route_path)] = payload_path
 
     with (reporter.task("write HTML shells", len(route_payloads)) if reporter else _NullProgressTask()) as task:
         for route_path, payload_path in route_payloads.items():
@@ -502,8 +560,6 @@ def generate_site_webapp(
                     route_path,
                     payload_source_path=payload_path,
                     page_kind="payload",
-                    payload_mode=payload_mode,
-                    payload_api_prefix=payload_api_prefix,
                     payload_static_root=payload_static_root,
                 ),
                 encoding="utf-8",
@@ -520,8 +576,6 @@ def generate_site_webapp(
                 "/history/",
                 payload_source_path=site_output / "site" / "history.json",
                 page_kind="payload",
-                payload_mode=payload_mode,
-                payload_api_prefix=payload_api_prefix,
                 payload_static_root=payload_static_root,
             ),
             encoding="utf-8",
@@ -541,8 +595,6 @@ def generate_site_webapp(
             _render_workbench_shell_html(
                 site_output,
                 route_path,
-                payload_mode=payload_mode,
-                payload_api_prefix=payload_api_prefix,
                 payload_static_root=payload_static_root,
                 workbench_mode=workbench_mode,
                 basemap_api_key=basemap_api_key,
