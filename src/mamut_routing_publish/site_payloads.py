@@ -41,7 +41,7 @@ from mamut_routing_lib.geo import load_instance_geo
 from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import find_collection_root
-from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
+from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
 from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, atf_cache_path
@@ -1214,16 +1214,30 @@ def _instance_atf_sha256(instance: AnyBenchmarkInstance) -> str | None:
 
 
 def _load_td_atfs(sidecar_path: Path, atf_sha256: str | None):
-    """``load_instance_atfs``, reusing the current group's sidecar when pinned."""
-    if atf_sha256 is None:
-        return load_instance_atfs(sidecar_path)
-    memoized = _TD_ATFS_MEMO.get(atf_sha256)
-    if memoized is not None:
-        return memoized
-    # Release the previous sidecar before allocating the next one.
-    _TD_ATFS_MEMO.clear()
-    atfs = load_instance_atfs(sidecar_path)
-    _TD_ATFS_MEMO[atf_sha256] = atfs
+    """``load_instance_atfs`` checked against the instance's pin, memoized per pin.
+
+    Returns ``None`` (with a warning) when the sidecar does not hold the
+    pinned functions or cannot be read: the page then renders without the
+    schedule table, as for an above-cap instance, instead of showing
+    durations computed from other functions or failing the whole build.
+    """
+    if atf_sha256 is not None:
+        memoized = _TD_ATFS_MEMO.get(atf_sha256)
+        if memoized is not None:
+            return memoized
+        # Release the previous sidecar before allocating the next one.
+        _TD_ATFS_MEMO.clear()
+    try:
+        atfs = load_instance_atfs(sidecar_path, expected_sha256=atf_sha256)
+    except (ATFFormatError, OSError, ValueError) as error:
+        warnings.warn(
+            f"Ignoring ATF sidecar {sidecar_path}: {error}. The page is built without the BKS schedule table; "
+            "rebuild the ATF cache (`mamut-routing-publish site materialize-atf`) or fix the sidecar.",
+            stacklevel=2,
+        )
+        return None
+    if atf_sha256 is not None:
+        _TD_ATFS_MEMO[atf_sha256] = atfs
     return atfs
 
 
@@ -1826,8 +1840,8 @@ def _resolve_instance(
         else None
     )
     if atf_sidecar is not None:
-        # The sha256 gate lives in the population/verification tooling; payload
-        # generation only needs the functions themselves.
+        # The sidecar is checked against the instance's atf_sha256 pin on
+        # load; a mismatch drops the schedule table, not the page.
         sidecar_path, is_committed = atf_sidecar
         if is_committed:
             # Hybrid-hosted tiers (Blauth2024 n=1000/2000) commit the instance
@@ -1836,11 +1850,16 @@ def _resolve_instance(
             # models.
             if sidecar_path.is_file():
                 td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
+                if td_atfs is None:
+                    artifact_links = artifact_links.model_copy(update={"atf_json_path": None})
         elif sidecar_path.is_file():
             # Materialized td models (igp-profile, road-graph): use the
             # build-time cache when materialized (above the size cap the page
             # renders without schedule tables).
             td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
+            if td_atfs is None:
+                # The viewer would fetch the same wrong functions.
+                artifact_links = artifact_links.model_copy(update={"atf_json_path": None})
         elif int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
             warnings.warn(
                 f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
