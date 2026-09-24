@@ -21,8 +21,6 @@ function normalizeSortDirection(value) {
 const state = {
   routePath: document.body.dataset.routePath || "/",
   payloadSource: document.body.dataset.payloadSource || "",
-  payloadMode: resolvePayloadMode(),
-  payloadApiPrefix: resolvePayloadApiPrefix(),
   payloadStaticRoot: resolvePayloadStaticRoot(),
   pageKind: document.body.dataset.pageKind || "payload",
   workbenchMode: document.body.dataset.workbenchMode || "catalog",
@@ -54,7 +52,7 @@ const state = {
     objective_function: runtimeParams.get("objective") || "",
     has_bks: runtimeParams.get("bks") || "",
     search: runtimeParams.get("q") || "",
-    sort: runtimeParams.get("sort") || "size-name",
+    sort: normalizeCollectionSort(runtimeParams.get("sort")),
   },
 };
 
@@ -91,33 +89,37 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function normalizeApiPrefix(prefix) {
-  const value = String(prefix || "/api/site-payload").trim();
-  if (!value) {
-    return "/api/site-payload";
-  }
-  if (/^https?:\/\//i.test(value)) {
-    return value.replace(/\/+$/, "");
-  }
-  return `/${value.replace(/^\/+/, "").replace(/\/+$/, "")}`;
-}
-
-function resolvePayloadMode() {
-  const requestedMode = runtimeParams.get("payloadMode") || document.body.dataset.payloadMode || "static";
-  return requestedMode === "api" ? "api" : "static";
-}
-
-
-function resolvePayloadApiPrefix() {
-  return normalizeApiPrefix(runtimeParams.get("apiPrefix") || document.body.dataset.payloadApiPrefix || "/api/site-payload");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function resolvePayloadStaticRoot() {
-  const value = runtimeParams.get("payloadRoot") || document.body.dataset.payloadStaticRoot || "/site-payloads";
-  return `/${String(value).replace(/^\/+/, "").replace(/\/+$/, "")}`;
+  // Set by the build in the HTML shell. It is never read from the URL: a link
+  // must not be able to choose where the page loads the data it renders.
+  const segments = String(document.body.dataset.payloadStaticRoot || "/site-payloads")
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== ".." && /^[A-Za-z0-9._-]+$/.test(segment));
+  return `/${segments.length > 0 ? segments.join("/") : "site-payloads"}`;
+}
+
+function encodePathSegment(segment) {
+  // Percent-encode one path segment (keeping "=" readable, as in n=100): a
+  // payload string can then never close an attribute, open a tag or start a
+  // scheme such as javascript: once it is placed in an href.
+  return encodeURIComponent(segment).replaceAll("%3D", "=");
+}
+
+function safeExternalHref(url) {
+  // External links from payloads: http(s) and mailto only, escaped for an attribute.
+  try {
+    const parsed = new URL(String(url ?? ""), "https://base.invalid/");
+    if (["http:", "https:", "mailto:"].includes(parsed.protocol) && parsed.origin !== "https://base.invalid") {
+      return escapeHtml(String(url));
+    }
+  } catch (error) {
+    // Unparseable: fall through.
+  }
+  return "#";
 }
 
 function normalizeRoute(routePath) {
@@ -151,7 +153,7 @@ function relativeFromCurrent(targetPath, { directory = false } = {}) {
     shared += 1;
   }
   const up = new Array(fromParts.length - shared).fill("..");
-  const down = targetParts.slice(shared);
+  const down = targetParts.slice(shared).map((segment) => encodePathSegment(segment));
   const relative = [...up, ...down].join("/");
   return relative || "index.html";
 }
@@ -337,7 +339,7 @@ function mergeGeometryMeta(geometryMeta, routeGeometryMeta) {
 
 async function fetchWorkbenchPayloadForRoute(routePath) {
   const sourcePath = payloadUrlForRoute(routePath);
-  const cacheKey = `${state.payloadMode}:${sourcePath}`;
+  const cacheKey = sourcePath;
   if (WORKBENCH_PAYLOAD_CACHE.has(cacheKey)) {
     return WORKBENCH_PAYLOAD_CACHE.get(cacheKey);
   }
@@ -356,16 +358,10 @@ function payloadStaticHref(routePath) {
 
 function payloadUrlForRoute(routePath) {
   const normalizedRoute = normalizeRoute(routePath);
-  if (state.payloadMode !== "api") {
-    if (normalizedRoute === state.routePath && state.payloadSource) {
-      return state.payloadSource;
-    }
-    return payloadStaticHref(normalizedRoute);
+  if (normalizedRoute === state.routePath && state.payloadSource) {
+    return state.payloadSource;
   }
-  if (normalizedRoute === "/") {
-    return state.payloadApiPrefix;
-  }
-  return `${state.payloadApiPrefix}${normalizedRoute.slice(0, -1)}`;
+  return payloadStaticHref(normalizedRoute);
 }
 
 function setStatus(message) {
@@ -438,7 +434,7 @@ function githubBenchmarksHref(items) {
   const githubSegments = githubBenchmarkPathSegments(sourceSegments);
   const encodedPath = githubSegments
     .slice(1)
-    .map((segment) => encodeGithubPathSegment(segment))
+    .map((segment) => encodePathSegment(segment))
     .join("/");
   return encodedPath ? `${GITHUB_BENCHMARKS_ROOT}/${encodedPath}` : GITHUB_BENCHMARKS_ROOT;
 }
@@ -451,10 +447,6 @@ function githubBenchmarkPathSegments(sourceSegments) {
     sourceSegments.length >= 5 &&
     !lastSegment.startsWith("n=");
   return pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments;
-}
-
-function encodeGithubPathSegment(segment) {
-  return encodeURIComponent(segment).replaceAll("%3D", "=");
 }
 
 function renderBenchmarksGithubLink(href) {
@@ -696,7 +688,7 @@ function renderSubrouteList(title, entries) {
     `<ul class="link-list">${entries
       .map(
         (entry) =>
-          `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`,
+          `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${escapeHtml(entry.instance_count)} instances · ${escapeHtml(entry.bks_count)} BKS</span></li>`,
       )
       .join("")}</ul>`,
   );
@@ -712,7 +704,7 @@ function renderFacetList(facets) {
       .map(
         (facet) =>
           `<div class="mini-card"><h3>${escapeHtml(facet.label)}</h3><div class="chip-row">${facet.options
-            .map((option) => `<span class="badge">${escapeHtml(option.label)} · ${option.count}</span>`)
+            .map((option) => `<span class="badge">${escapeHtml(option.label)} · ${escapeHtml(option.count)}</span>`)
             .join("")}</div></div>`,
       )
       .join(""),
@@ -764,7 +756,7 @@ function renderCollectionFilterSelect(payload, facet) {
     const sourceOption = (facet.options || []).find((option) => option.value === selected);
     options.push({ value: selected, label: sourceOption?.label || selected, count: 0 });
   }
-  return `<label class="field"><span>${escapeHtml(facet.label)}</span><select data-collection-filter="${escapeHtml(facet.key)}"><option value="">All</option>${options.map((option) => `<option value="${escapeHtml(option.value)}"${state.collectionFilters[facet.key] === option.value ? " selected" : ""}>${escapeHtml(option.label)} (${option.count})</option>`).join("")}</select></label>`;
+  return `<label class="field"><span>${escapeHtml(facet.label)}</span><select data-collection-filter="${escapeHtml(facet.key)}"><option value="">All</option>${options.map((option) => `<option value="${escapeHtml(option.value)}"${state.collectionFilters[facet.key] === option.value ? " selected" : ""}>${escapeHtml(option.label)} (${escapeHtml(option.count)})</option>`).join("")}</select></label>`;
 }
 
 function collectionSearchMatches(item) {
@@ -773,12 +765,35 @@ function collectionSearchMatches(item) {
   return `${item.display_name || ""} ${item.instance_id || ""} ${item.base_instance || ""}`.toLowerCase().includes(search);
 }
 
+function normalizeCollectionSort(value) {
+  // A stale or hand-written ?sort= must not reach the comparator.
+  return ["size-name", "name", "cost", "routes"].includes(value) ? value : "size-name";
+}
+
+function collectionObjectiveNumber(item, field) {
+  // The best BKS value of an item, restricted to the objective filter when one is set.
+  const objective = state.collectionFilters.objective_function;
+  const values = (item.objective_availability || [])
+    .filter((entry) => !objective || entry?.objective_function === objective)
+    .map((entry) => Number(entry?.[field]))
+    .filter(Number.isFinite);
+  return values.length > 0 ? minOf(values) : null;
+}
+
 function compareCollectionItems(left, right) {
   const sort = state.collectionFilters.sort;
-  if (sort === "name") return left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
-  if (sort === "cost") return publicCatalogObjectiveNumber(left, "cost") - publicCatalogObjectiveNumber(right, "cost") || left.num_customers - right.num_customers;
-  if (sort === "routes") return publicCatalogObjectiveNumber(left, "num_routes") - publicCatalogObjectiveNumber(right, "num_routes") || left.num_customers - right.num_customers;
-  return left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  const byName = left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  if (sort === "name") return byName;
+  if (sort === "cost" || sort === "routes") {
+    // Items without a BKS (null) sort last; ties fall back to size, then name.
+    const field = sort === "cost" ? "cost" : "num_routes";
+    return (
+      compareCatalogNumber(collectionObjectiveNumber(left, field), collectionObjectiveNumber(right, field), 1) ||
+      left.num_customers - right.num_customers ||
+      byName
+    );
+  }
+  return left.num_customers - right.num_customers || byName;
 }
 
 function filteredCollectionItems(payload) {
@@ -814,7 +829,7 @@ function renderProblemCards(problems) {
   return `<div class="problem-grid">${problems
     .map(
       (problem) =>
-        `<article class="mini-card"><h3>${escapeHtml(problem.problem_type)}</h3><p>${problem.family_count} families · ${problem.instance_count} instances · ${problem.bks_count} BKS</p><div class="badge-row">${problem.supported_objective_functions
+        `<article class="mini-card"><h3>${escapeHtml(problem.problem_type)}</h3><p>${escapeHtml(problem.family_count)} families · ${escapeHtml(problem.instance_count)} instances · ${escapeHtml(problem.bks_count)} BKS</p><div class="badge-row">${problem.supported_objective_functions
           .map((objective) => badge(objective))
           .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(problem.route_path)}">Browse ${escapeHtml(problem.problem_type)}</a></div></article>`,
     )
@@ -854,7 +869,7 @@ const HOME_PROBLEM_TAG_TONES = {
 
 function renderHomeCatalogRow(problem) {
   const tone = HOME_PROBLEM_TAG_TONES[problem.problem_type] || "tag-acc";
-  const description = HOME_PROBLEM_DESCRIPTIONS[problem.problem_type] || `${problem.instance_count} instances`;
+  const description = HOME_PROBLEM_DESCRIPTIONS[problem.problem_type] || `${escapeHtml(problem.instance_count)} instances`;
   const familyChips = (problem.benchmark_names || [])
     .map((name) => `<span class="badge ${tone}">${escapeHtml(name)}</span>`)
     .join("");
@@ -1093,7 +1108,7 @@ function renderFamilyCards(families) {
         const contextAction = family.context_route_path
           ? `<a class="button-link" href="${routeHref(family.context_route_path)}">Description</a>`
           : "";
-        return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${family.instance_count} instances · ${family.bks_count} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
+        return `<article class="mini-card"><h3>${escapeHtml(family.benchmark_name)}</h3><p>${escapeHtml(family.instance_count)} instances · ${escapeHtml(family.bks_count)} BKS</p><div class="badge-row">${family.metric_variants.map((variant) => badge(variant)).join("")}${family.supported_objective_functions
           .map((objective) => badge(objective, true))
           .join("")}</div><div class="inline-actions"><a class="button-link primary" href="${routeHref(family.route_path)}">Open family</a>${contextAction}</div></article>`;
       },
@@ -1655,6 +1670,7 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
       vrpJsonPath: item.artifact_vrp_json_path,
       distancesPath: item.artifact_distances_path,
       distancesSha256: item.artifact_distances_sha256,
+      coordinateExports: item.coordinate_exports === true,
     }),
     entry?.artifact_path ? `<a class="download-chip" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener">.bks.${escapeHtml(entry.objective_function)}.json ↓</a>` : "",
   ].join("");
@@ -1814,7 +1830,7 @@ function renderCatalogIndex(payload) {
     renderCatalogIndex(payload);
   });
   sortSelect?.addEventListener("change", (event) => {
-    state.collectionFilters.sort = event.target.value;
+    state.collectionFilters.sort = normalizeCollectionSort(event.target.value);
     syncCollectionFilterUrl();
     renderCatalogIndex(payload);
   });
@@ -2771,7 +2787,7 @@ async function renderInstancePage(payload, options = {}) {
           ...(payload.summary.instance_provider ? [["Provider", payload.summary.instance_provider]] : []),
           ...(payload.summary.authors ? [["Authors", payload.summary.authors]] : []),
           ...(payload.summary.license ? [["License", payload.summary.license_url
-            ? { html: `<a href="${escapeHtml(payload.summary.license_url)}" target="_blank" rel="noopener">${escapeHtml(payload.summary.license)}</a>` }
+            ? { html: `<a href="${safeExternalHref(payload.summary.license_url)}" target="_blank" rel="noopener">${escapeHtml(payload.summary.license)}</a>` }
             : payload.summary.license]] : []),
         ])}<div class="badge-row">${(payload.summary.supported_objective_functions || []).map((objective) => badge(objective)).join("")}${payload.summary.historical_topology_type ? badge(payload.summary.historical_topology_type, true) : ""}${payload.summary.historical_tw_type ? badge(`TW${payload.summary.historical_tw_type}`, true) : ""}${payload.summary.subset ? badge(`subset:${payload.summary.subset}`, true) : ""}</div>`,
       ),
@@ -2780,14 +2796,14 @@ async function renderInstancePage(payload, options = {}) {
         "Artifacts",
         `<ul class="artifact-list">
           <li><a href="${artifactHref(payload.artifact_links.vrp_json_path)}">vrp.json</a></li>
-          ${renderVrpExportChips(rawInstance, { vrpJsonPath: payload.artifact_links.vrp_json_path, distancesPath: payload.artifact_links.distances_path, distancesSha256: payload.artifact_links.distances_sha256 }, { asListItems: true })}
+          ${renderVrpExportChips(rawInstance, { vrpJsonPath: payload.artifact_links.vrp_json_path, distancesPath: payload.artifact_links.distances_path, distancesSha256: payload.artifact_links.distances_sha256, coordinateExports: payload.summary.coordinate_exports === true }, { asListItems: true })}
           ${payload.artifact_links.meta_path ? `<li><a href="${artifactHref(payload.artifact_links.meta_path)}">meta.json</a></li>` : ""}
           ${payload.artifact_links.geo_json_path ? `<li><a href="${artifactHref(payload.artifact_links.geo_json_path)}">geo.json.gz</a></li>` : ""}
           ${payload.artifact_links.manifest_path ? `<li><a href="${artifactHref(payload.artifact_links.manifest_path)}">manifest.json</a></li>` : ""}
           ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
-      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${escapeHtml(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${safeExternalHref(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -2983,6 +2999,7 @@ function timelineCountsHeadline(counts, options = {}) {
     counts.instances_removed && `−${counts.instances_removed} instance${counts.instances_removed > 1 ? "s" : ""}`,
     counts.bks_improved && `${counts.bks_improved} BKS improved`,
     counts.bks_regressed && `${counts.bks_regressed} BKS regressed`,
+    counts.bks_repriced && `${counts.bks_repriced} BKS re-priced (checker contract)`,
     counts.bks_added && `+${counts.bks_added} BKS`,
     counts.bks_removed && `−${counts.bks_removed} BKS`,
   ].filter(Boolean);
@@ -3070,6 +3087,7 @@ function renderChangeRowBks(change) {
   if (change.kind === "added") cls = "change-add";
   else if (change.kind === "removed") cls = "change-remove";
   else if (change.kind === "improved") cls = "change-improve";
+  else if (change.kind === "repriced") cls = "change-reprice";
   else cls = "change-regress";
 
   const variant = change.metric_variant ? ` · ${escapeHtml(change.metric_variant)}` : "";
@@ -3094,7 +3112,7 @@ function renderChangeRowBks(change) {
     const v = change.prev || {};
     return `<li class="${cls}">− ${head} · <span class="change-from">${valueHtml(v)}</span></li>`;
   }
-  // improved / regressed
+  // improved / regressed / repriced (same routes, new checker contract)
   const prev = change.prev || {};
   const next = change.new || {};
   const deltaParts = [];
@@ -3148,11 +3166,12 @@ function renderInstanceChangeSection(changes) {
 }
 
 function renderBksChangeSection(changes) {
-  const buckets = { added: [], removed: [], improved: [], regressed: [] };
+  const buckets = { added: [], removed: [], improved: [], regressed: [], repriced: [] };
   for (const c of changes) {
     if (buckets[c.kind]) buckets[c.kind].push(c);
   }
-  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed`;
+  const repricedSummary = buckets.repriced.length ? ` / ${buckets.repriced.length} re-priced` : "";
+  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed${repricedSummary}`;
   const groupBy = (list) => {
     const map = new Map();
     for (const c of list) {
@@ -3170,7 +3189,7 @@ function renderBksChangeSection(changes) {
     return `<details class="change-subsection"><summary>${escapeHtml(label)} · ${sign}${list.length}</summary>${groups}</details>`;
   };
   const body = changes.length
-    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
+    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Re-priced (checker contract, routes unchanged)", buckets.repriced, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
     : `<p class="meta-line">No BKS-level changes.</p>`;
   return `<details class="change-section"><summary>${escapeHtml(summary)}</summary>${body}</details>`;
 }
@@ -3640,7 +3659,7 @@ function renderObjectives(payload) {
   );
   state.stage.innerHTML = `<div class="explainer-grid">${payload.explainers
     .map(
-      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${formatInlineCode(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${formatInlineCode(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${entry.instance_count} instances · ${entry.bks_count} BKS</span></li>`).join("")}</ul></article>`,
+      (explainer) => `<article class="mini-card" id="${escapeHtml(explainer.objective_function)}"><div class="badge-row">${badge(explainer.short_label)}${badge(explainer.objective_function, true)}</div><h3>${escapeHtml(explainer.title)}</h3><p>${formatInlineCode(explainer.description)}</p><ul class="plain-list">${explainer.interpretation_notes.map((note) => `<li>${formatInlineCode(note)}</li>`).join("")}</ul><h4 style="margin-top:0.9rem">Related Families</h4><ul class="link-list">${explainer.related_routes.map((entry) => `<li><a href="${routeHref(entry.route_path)}">${escapeHtml(entry.label)}</a> <span class="meta-line">${escapeHtml(entry.instance_count)} instances · ${escapeHtml(entry.bks_count)} BKS</span></li>`).join("")}</ul></article>`,
     )
     .join("")}</div>`;
   setStatus(`Loaded ${payload.explainers.length} objective guides`);
@@ -3659,7 +3678,7 @@ function renderProject(payload) {
       `${renderStatGrid([
         ["Code", payload.anr_project_code],
         ["Project", payload.anr_project_title],
-        ["Source", { html: `<a class="mini-link" href="${escapeHtml(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
+        ["Source", { html: `<a class="mini-link" href="${safeExternalHref(payload.anr_project_url)}" target="_blank" rel="noopener">ANR official page</a>` }],
       ])}`,
     ),
     renderCard(
@@ -3675,14 +3694,14 @@ function renderProject(payload) {
   const factCards = (payload.facts || [])
     .map((fact) => {
       const value = fact.href
-        ? `<a class="mini-link" href="${escapeHtml(fact.href)}" target="_blank" rel="noopener">${escapeHtml(fact.value)}</a>`
+        ? `<a class="mini-link" href="${safeExternalHref(fact.href)}" target="_blank" rel="noopener">${escapeHtml(fact.value)}</a>`
         : escapeHtml(fact.value);
       return `<article class="project-fact"><span>${escapeHtml(fact.label)}</span><strong>${value}</strong></article>`;
     })
     .join("");
   const participantLogos = PROJECT_PARTICIPANT_LOGOS
     .map(
-      (logo) => `<a class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}" href="${escapeHtml(logo.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(logo.label)} (opens in a new tab)">
+      (logo) => `<a class="project-logo-card${logo.wide ? " project-logo-card-wide" : ""}" href="${safeExternalHref(logo.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(logo.label)} (opens in a new tab)">
         <img src="${siteAssetHref(logo.src)}" alt="${escapeHtml(logo.label)} logo" loading="lazy" />
         <span class="project-logo-caption">${escapeHtml(logo.label)}</span>
       </a>`,
@@ -3934,7 +3953,7 @@ function vrpComment(instance, edgeWeightType) {
     comment = parts.join("; ");
   }
   if (edgeWeightType === "EUC_2D") {
-    comment = `${comment}; EUC_2D: costs are TSPLIB nint distances, not the published 3-decimal costs`;
+    comment = `${comment}; EUC_2D: costs are TSPLIB nint distances, not the published costs`;
   }
   return comment;
 }
@@ -4047,18 +4066,20 @@ function instanceToSolomonText(instance) {
   return lines.join("\n");
 }
 
-function vrpExportKinds(instance) {
+function vrpExportKinds(instance, coordinateExports = false) {
   if (!instance || instance.td) {
     return [];
   }
   const kinds = [
     { kind: "explicit", label: ".vrp ↓", title: "Classic CVRPLIB .vrp with the explicit full matrix (the published costs)" },
   ];
-  if (vrpMetricVariant(instance) === "euclidean") {
+  // Coordinates-only formats only when the build found that the coordinates
+  // reproduce the published costs (not Dimacs2021, whose costs are floor(10 * d)).
+  if (coordinateExports === true && vrpMetricVariant(instance) === "euclidean") {
     kinds.push({
       kind: "euc2d",
       label: ".vrp EUC_2D ↓",
-      title: "Coordinates only: TSPLIB readers use nint(euclidean) distances, not the published 3-decimal costs",
+      title: "Coordinates only: TSPLIB readers use nint(euclidean) distances, not the published costs",
     });
     if (vrpIsVrptw(instance)) {
       kinds.push({ kind: "solomon", label: "Solomon .txt ↓", title: "Solomon / Gehring-Homberger layout (coordinates only)" });
@@ -4073,7 +4094,7 @@ function vrpExportFilename(vrpJsonPath, kind) {
 }
 
 function renderVrpExportChips(instance, links, options = {}) {
-  const kinds = vrpExportKinds(instance);
+  const kinds = vrpExportKinds(instance, links.coordinateExports === true);
   if (!kinds.length) {
     return "";
   }
@@ -4081,6 +4102,7 @@ function renderVrpExportChips(instance, links, options = {}) {
     `data-vrp-json="${escapeHtml(links.vrpJsonPath || "")}"`,
     `data-vrp-distances="${escapeHtml(links.distancesPath || "")}"`,
     `data-vrp-sha256="${escapeHtml(links.distancesSha256 || "")}"`,
+    `data-vrp-coordinates="${links.coordinateExports === true ? "1" : ""}"`,
   ].join(" ");
   const chips = kinds.map(
     (entry) => `<button type="button" class="download-chip" data-vrp-export="${entry.kind}" ${attrs} title="${escapeHtml(entry.title)}">${escapeHtml(entry.label)}</button>`,
@@ -4123,13 +4145,15 @@ async function buildInstanceVrpExport(links, kind) {
     throw new Error("Time-dependent instances have no static matrix; there is no classic .vrp for them.");
   }
   const filename = vrpExportFilename(links.vrpJsonPath, kind);
-  const metric = vrpMetricVariant(instance);
+  const coordinatesOnly = kind === "solomon" || kind === "euc2d";
+  if (coordinatesOnly && links.coordinateExports !== true) {
+    throw new Error(
+      "The coordinates of this instance do not reproduce its published costs (e.g. Dimacs2021 costs are floor(10 * d)); use the explicit .vrp.",
+    );
+  }
   if (kind === "solomon") {
     if (!vrpIsVrptw(instance)) {
       throw new Error("The Solomon format is VRPTW-only.");
-    }
-    if (metric !== "euclidean") {
-      throw new Error("The Solomon format (coordinates only) needs the euclidean metric.");
     }
     return { filename, text: instanceToSolomonText(instance) };
   }
@@ -4137,9 +4161,7 @@ async function buildInstanceVrpExport(links, kind) {
   let arcCosts = null;
   let decimals = null;
   if (edgeWeightType === "EUC_2D") {
-    if (metric !== "euclidean") {
-      throw new Error("EUC_2D (coordinates only) needs the euclidean metric.");
-    }
+    // Coordinates only: no matrix to resolve.
   } else if (vrpIsCollection(instance)) {
     decimals = vrpCollectionDecimals(instance);
     if (instance.arc_costs_source.model === "euclidean") {
@@ -4182,6 +4204,7 @@ async function handleVrpExportClick(button) {
     vrpJsonHref: artifactHref(vrpJsonPath),
     distancesHref: distancesPath ? artifactHref(distancesPath) : null,
     distancesSha256: button.dataset.vrpSha256 || null,
+    coordinateExports: button.dataset.vrpCoordinates === "1",
   };
   button.disabled = true;
   reportVrpExportStatus(`Preparing ${vrpExportFilename(vrpJsonPath, kind)}…`);

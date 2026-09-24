@@ -109,11 +109,13 @@ The default is `EDGE_WEIGHT_TYPE : EXPLICIT` with the full matrix, so the
 solver sees exactly the published costs (3-decimal floats for the collections,
 integers for Dimacs/Ortec, full-precision floats for Sintef); VRPTW files use
 `TYPE : CVRPTW` with `TIME_WINDOW_SECTION` and `SERVICE_TIME_SECTION`, the
-dialect read by VRPLIB and PyVRP. For euclidean-metric instances a
-coordinates-only `EUC_2D` variant (and, for VRPTW, a Solomon `.txt`) is also
-offered: classic readers then compute `nint(euclidean)` distances, which are
-**not** the published 3-decimal costs, so BKS values do not transfer to that
-variant. Node ids are 1-based, the depot is node 1.
+dialect read by VRPLIB and PyVRP. Where the coordinates define the costs
+(Sintef2008 and the euclidean collections) a coordinates-only `EUC_2D` variant
+(and, for VRPTW, a Solomon `.txt`) is also offered: classic readers then
+compute `nint(euclidean)` distances, which are **not** the published costs, so
+BKS values do not transfer to that variant. Dimacs2021 is offered `EXPLICIT`
+only: its integer costs are `trunc(10 × euclidean)`, which no coordinates-only
+file reproduces. Node ids are 1-based, the depot is node 1.
 
 ## Contributions
 

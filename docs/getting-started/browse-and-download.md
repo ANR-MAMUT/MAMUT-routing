@@ -24,13 +24,17 @@ mamut-routing --benchmarks-dir ./benchmarks remote verify \
 mamut-routing --benchmarks-dir ./benchmarks list --problem-type VRPTW        # what is on disk now
 ```
 
-Keep the same filters on `verify` as on `fetch`: an unfiltered `verify` checks every asset of the manifest and
-fails on the ones you did not download. To pin a release instead of the latest one, `--tag` is an option of
-`remote` itself: `mamut-routing remote --tag <tag> list`.
+Each archive lands in the canonical tree (`./benchmarks/VRPTW/Sintef2008/…`), stamped with the snapshot it came
+from; fetching again replaces that directory, so keep your own files (for example BKS saved by `solve`) elsewhere
+or commit them first. Keep the same filters on `verify` as on `fetch`: an unfiltered `verify` checks every asset of
+the manifest and fails on the ones you did not download. To pin a release instead of the latest one, `--tag` is an
+option of `remote` itself: `mamut-routing remote --tag <tag> list`. This layout needs `mamut-routing-lib` 0.12.0
+or later; older versions extracted under `./benchmarks/<archive name>/benchmarks/…`.
 
 !!! note "Collections"
-    A collection archive holds every problem type of the family, so select it by family alone:
-    `remote fetch --benchmark-name Poryos2026` (adding `--problem-type` filters it out). Mamut2026's ten largest
+    A collection archive holds every problem type of the family: `remote fetch --benchmark-name Poryos2026`
+    fetches it, and so does a `--problem-type` filter (a `--problem-type TDVRP` fetch downloads the Poryos2026
+    collection along with the TDVRP families). It lands at `./benchmarks/Poryos2026/`. Mamut2026's ten largest
     POI instances ship their distance matrices as sha256 pins; rebuild them with `mamut-tools generate
     materialize-distances` as the collection README explains. See [Release archives](../benchmarks/formats/releases.md).
 

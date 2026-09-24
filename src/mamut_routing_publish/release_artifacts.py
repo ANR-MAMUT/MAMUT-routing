@@ -114,6 +114,20 @@ class _HashingBinaryWriter:
         return self._digest.hexdigest()
 
 
+def _is_local_only(relative_path: Path) -> bool:
+    """Files that never ship: git metadata, and the state ``remote fetch`` and
+    atomic writers leave in a tree (``.mamut-release.json`` stamps,
+    ``.mamut-staging/`` dirs, ``*.partial`` temp files). A release built from
+    a fetched tree would otherwise carry a stale stamp that makes the
+    consumer's ``remote verify`` report the wrong snapshot.
+    """
+    return (
+        ".git" in relative_path.parts
+        or any(part.startswith(".mamut-") for part in relative_path.parts)
+        or relative_path.name.endswith(".partial")
+    )
+
+
 def _deterministic_zip_write(
     source_repo_dir: Path,
     include_dirs: tuple[Path, ...],
@@ -137,7 +151,7 @@ def _deterministic_zip_write(
                     raise FileNotFoundError(f"Archive source directory does not exist: {absolute_dir}")
                 for file_path in sorted(path for path in absolute_dir.rglob("*") if path.is_file()):
                     relative_path = file_path.relative_to(source_repo_dir)
-                    if ".git" in relative_path.parts or relative_path in seen_paths:
+                    if _is_local_only(relative_path) or relative_path in seen_paths:
                         continue
                     seen_paths.add(relative_path)
                     data = file_path.read_bytes()

@@ -21,6 +21,8 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -29,6 +31,8 @@ import warnings
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mamut_routing_lib.checker import canonical_route_order
+from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
 from mamut_routing_lib.artifacts import (
     AnyBenchmarkInstance,
     DiscoveredBenchmarkInstance,
@@ -40,7 +44,7 @@ from mamut_routing_lib.geo import load_instance_geo
 from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import find_collection_root
-from mamut_routing_lib.td.artifacts import get_atf_path_for_instance, load_instance_atfs
+from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
 from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, atf_cache_path
@@ -262,6 +266,9 @@ class InstanceListItem(BaseModel):
     viewer_render_mode: ViewerRenderMode = "straight_line"
     road_cache_status: RoadCacheStatus = "not_applicable"
     objective_availability: list[ObjectiveAvailability]
+    # The coordinates reproduce the published costs (cvrplib.coordinates_define_arc_costs):
+    # only then does the site offer the coordinates-only EUC_2D / Solomon downloads.
+    coordinate_exports: bool = False
 
 
 class SiteArtifactLinks(BaseModel):
@@ -356,6 +363,12 @@ class BKSPageEntry(BaseModel):
     # OptimalityMetadata model in mamut-routing-lib), passed through verbatim
     # so the site can badge proven-optimal solutions.
     optimality: dict[str, Any] | None = None
+    # ``metadata.repriced`` (previous cost, checker, contract, date) when a
+    # checker-contract change re-priced the unchanged routes.
+    repriced: dict[str, Any] | None = None
+    # Fingerprint of the canonical route list, for the history diff only (not
+    # published): same routes + different cost = re-priced, not improved.
+    routes_sha256: str | None = Field(default=None, exclude=True)
 
 
 class InstancePageSummary(BaseModel):
@@ -387,6 +400,7 @@ class InstancePageSummary(BaseModel):
     license: str | None = None
     license_url: str | None = None
     instance_provider: str | None = None
+    coordinate_exports: bool = False
 
 
 class BksValue(BaseModel):
@@ -430,7 +444,8 @@ class BksChange(BaseModel):
     num_customers: int
     instance_name: str
     objective_function: ObjectiveFunction
-    kind: Literal["added", "removed", "improved", "regressed"]
+    #: ``repriced``: same routes, cost changed by a checker-contract change.
+    kind: Literal["added", "removed", "improved", "regressed", "repriced"]
     prev: BksValue | None = None
     new: BksValue | None = None
     cost_delta: int | float | None = None
@@ -450,6 +465,7 @@ class ChangeCounts(BaseModel):
     bks_removed: int = 0
     bks_improved: int = 0
     bks_regressed: int = 0
+    bks_repriced: int = 0
 
 
 class SnapshotChangeLog(BaseModel):
@@ -741,6 +757,17 @@ class _ResolvedSiteInstance(BaseModel):
     source_problem_routes: dict[str, str] = Field(default_factory=dict)
     bks_entries: list[BKSPageEntry] = Field(default_factory=list)
     td_route_functions: list[TDRouteFunctionsPayload] = Field(default_factory=list)
+    coordinate_exports: bool = False
+
+
+def _coordinate_exports(instance, problem_type: ProblemType) -> bool:
+    """Whether the coordinates-only .vrp exports reproduce this instance (never for TD)."""
+    if problem_type not in (ProblemType.CVRP, ProblemType.VRPTW):
+        return False
+    try:
+        return coordinates_define_arc_costs(instance)
+    except (TypeError, ValueError):
+        return False
 
 
 def _now_utc_iso() -> str:
@@ -1198,16 +1225,30 @@ def _instance_atf_sha256(instance: AnyBenchmarkInstance) -> str | None:
 
 
 def _load_td_atfs(sidecar_path: Path, atf_sha256: str | None):
-    """``load_instance_atfs``, reusing the current group's sidecar when pinned."""
-    if atf_sha256 is None:
-        return load_instance_atfs(sidecar_path)
-    memoized = _TD_ATFS_MEMO.get(atf_sha256)
-    if memoized is not None:
-        return memoized
-    # Release the previous sidecar before allocating the next one.
-    _TD_ATFS_MEMO.clear()
-    atfs = load_instance_atfs(sidecar_path)
-    _TD_ATFS_MEMO[atf_sha256] = atfs
+    """``load_instance_atfs`` checked against the instance's pin, memoized per pin.
+
+    Returns ``None`` (with a warning) when the sidecar does not hold the
+    pinned functions or cannot be read: the page then renders without the
+    schedule table, as for an above-cap instance, instead of showing
+    durations computed from other functions or failing the whole build.
+    """
+    if atf_sha256 is not None:
+        memoized = _TD_ATFS_MEMO.get(atf_sha256)
+        if memoized is not None:
+            return memoized
+        # Release the previous sidecar before allocating the next one.
+        _TD_ATFS_MEMO.clear()
+    try:
+        atfs = load_instance_atfs(sidecar_path, expected_sha256=atf_sha256)
+    except (ATFFormatError, OSError, ValueError) as error:
+        warnings.warn(
+            f"Ignoring ATF sidecar {sidecar_path}: {error}. The page is built without the BKS schedule table; "
+            "rebuild the ATF cache (`mamut-routing-publish site materialize-atf`) or fix the sidecar.",
+            stacklevel=2,
+        )
+        return None
+    if atf_sha256 is not None:
+        _TD_ATFS_MEMO[atf_sha256] = atfs
     return atfs
 
 
@@ -1618,6 +1659,7 @@ def _build_bks_entries(
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
         optimality_value = bks.metadata.get("optimality") if isinstance(bks.metadata, dict) else None
+        repriced_value = bks.metadata.get("repriced") if isinstance(bks.metadata, dict) else None
         td_schedules = None
         route_functions_path = None
         route_geometry_path = None
@@ -1676,6 +1718,8 @@ def _build_bks_entries(
                 route_geometry_bks_sha256=route_geometry_bks_sha256,
                 route_geometry_metric=route_geometry_metric,
                 optimality=optimality_value,
+                repriced=repriced_value if isinstance(repriced_value, dict) else None,
+                routes_sha256=routes_fingerprint(bks.routes),
             )
         )
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
@@ -1810,8 +1854,8 @@ def _resolve_instance(
         else None
     )
     if atf_sidecar is not None:
-        # The sha256 gate lives in the population/verification tooling; payload
-        # generation only needs the functions themselves.
+        # The sidecar is checked against the instance's atf_sha256 pin on
+        # load; a mismatch drops the schedule table, not the page.
         sidecar_path, is_committed = atf_sidecar
         if is_committed:
             # Hybrid-hosted tiers (Blauth2024 n=1000/2000) commit the instance
@@ -1820,11 +1864,16 @@ def _resolve_instance(
             # models.
             if sidecar_path.is_file():
                 td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
+                if td_atfs is None:
+                    artifact_links = artifact_links.model_copy(update={"atf_json_path": None})
         elif sidecar_path.is_file():
             # Materialized td models (igp-profile, road-graph): use the
             # build-time cache when materialized (above the size cap the page
             # renders without schedule tables).
             td_atfs = _load_td_atfs(sidecar_path, _instance_atf_sha256(instance))
+            if td_atfs is None:
+                # The viewer would fetch the same wrong functions.
+                artifact_links = artifact_links.model_copy(update={"atf_json_path": None})
         elif int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
             warnings.warn(
                 f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
@@ -1853,6 +1902,7 @@ def _resolve_instance(
             geometry_summary["road_cache_entry_count"] = geometry_summary["road_cache_expected_entry_count"]
 
     return _ResolvedSiteInstance(
+        coordinate_exports=_coordinate_exports(instance, problem_type),
         locator=BenchmarkLocator(
             problem_type=problem_type,
             benchmark_name=benchmark_name,
@@ -1948,6 +1998,7 @@ def _build_instance_list_item(resolved: _ResolvedSiteInstance) -> InstanceListIt
         viewer_render_mode=resolved.viewer_render_mode,
         road_cache_status=resolved.road_cache_status,
         objective_availability=_objective_availability(resolved.bks_entries),
+        coordinate_exports=resolved.coordinate_exports,
     )
 
 
@@ -2347,6 +2398,7 @@ def _build_instance_page_payload(
             license=resolved.instance_summary.license,
             license_url=resolved.instance_summary.license_url,
             instance_provider=resolved.instance_summary.instance_provider,
+            coordinate_exports=resolved.coordinate_exports,
         ),
         artifact_links=resolved.artifact_links,
         sibling_variant_routes=resolved.sibling_variant_routes,
@@ -2918,8 +2970,20 @@ def _inventory_path(state_dir: Path, snapshot_id: str) -> Path:
     return state_dir / SNAPSHOTS_DIR_NAME / f"{snapshot_id}.inventory.json"
 
 
+def routes_fingerprint(routes: list[list[int]]) -> str:
+    """sha256 of the canonical route list (order-insensitive, like the BKS store)."""
+    canonical = canonical_route_order([list(route) for route in routes])
+    return hashlib.sha256(json.dumps(canonical, separators=(",", ":")).encode("ascii")).hexdigest()
+
+
 def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
-    """Build the diff-source-of-truth inventory for the current snapshot."""
+    """Build the diff-source-of-truth inventory for the current snapshot.
+
+    Besides the displayed values each BKS records ``routes_sha256`` and, when
+    the BKS carries a ``metadata.repriced`` block, ``repriced_from`` (its
+    previous cost): together they let the next diff tell a re-priced BKS
+    (same routes, new checker contract) from an improvement.
+    """
     instances: dict[str, dict] = {}
     for item in resolved_items:
         bks: dict[str, dict] = {}
@@ -2929,12 +2993,17 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
                 if entry.objective_function is ObjectiveFunction.HIERARCHICAL_VEHICLE_COST and entry.validated_num_routes is not None
                 else entry.num_routes
             )
-            bks[entry.objective_function.value] = {
+            record = {
                 "cost": entry.cost,
                 "num_routes": num_routes,
                 "authors": entry.authors,
                 "method": entry.method,
             }
+            if entry.routes_sha256 is not None:
+                record["routes_sha256"] = entry.routes_sha256
+            if entry.repriced is not None and entry.repriced.get("previous_cost") is not None:
+                record["repriced_from"] = entry.repriced["previous_cost"]
+            bks[entry.objective_function.value] = record
         metric_variant = item.locator.metric_variant.value if item.locator.metric_variant is not None else None
         instances[item.instance_id] = {
             "problem_type": item.locator.problem_type.value,
@@ -3010,7 +3079,7 @@ def _bks_change_from_inventory(
     record: dict,
     objective_function_value: str,
     *,
-    kind: Literal["added", "removed", "improved", "regressed"],
+    kind: Literal["added", "removed", "improved", "regressed", "repriced"],
     prev: BksValue | None,
     new: BksValue | None,
     cost_delta: int | float | None = None,
@@ -3051,11 +3120,17 @@ def _classify_bks_pair(
     objective_function_value: str,
     prev_record: dict,
     new_record: dict,
-) -> tuple[Literal["improved", "regressed"] | None, int | float | None, float | None, int | None, float | None]:
+) -> tuple[
+    Literal["improved", "regressed", "repriced"] | None, int | float | None, float | None, int | None, float | None
+]:
     """Return (kind, cost_delta, cost_pct, routes_delta, routes_pct) for a BKS pair.
 
     kind is None when the pair is exactly equal (no change). All deltas are
     new − prev so a negative delta == improvement when sense matches.
+
+    A changed cost on unchanged routes is ``repriced``: the new BKS names the
+    old cost in its ``repriced_from`` marker, or both inventories fingerprint
+    the same routes. Exact comparisons only, no tolerance.
     """
     prev_cost = prev_record.get("cost")
     new_cost = new_record.get("cost")
@@ -3077,6 +3152,15 @@ def _classify_bks_pair(
     else:
         routes_delta = new_routes - prev_routes
         routes_pct = (routes_delta / prev_routes * 100.0) if prev_routes not in (0, 0.0) else None
+
+    if prev_cost is not None and new_cost is not None and new_cost != prev_cost:
+        prev_fingerprint = prev_record.get("routes_sha256")
+        new_fingerprint = new_record.get("routes_sha256")
+        same_routes = prev_fingerprint is not None and prev_fingerprint == new_fingerprint
+        routes_differ = prev_fingerprint is not None and new_fingerprint is not None and not same_routes
+        marker = new_record.get("repriced_from")
+        if same_routes or (not routes_differ and marker is not None and marker == prev_cost):
+            return ("repriced", cost_delta, cost_pct, routes_delta, routes_pct)
 
     objective = ObjectiveFunction(objective_function_value)
     if objective is ObjectiveFunction.HIERARCHICAL_VEHICLE_COST:
@@ -3231,6 +3315,7 @@ def _compute_change_log(
         bks_removed=sum(1 for c in bks_changes if c.kind == "removed"),
         bks_improved=sum(1 for c in bks_changes if c.kind == "improved"),
         bks_regressed=sum(1 for c in bks_changes if c.kind == "regressed"),
+        bks_repriced=sum(1 for c in bks_changes if c.kind == "repriced"),
     )
 
     return SnapshotChangeLog(

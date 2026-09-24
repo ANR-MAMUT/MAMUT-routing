@@ -454,9 +454,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js").exists()
 
     root_html = (site_output / "index.html").read_text(encoding="utf-8")
-    assert 'data-payload-mode="static"' in root_html
-    assert 'data-payload-api-prefix="/api/site-payload"' in root_html
+    # Static-only: no payload-mode / API-prefix attributes a page could follow elsewhere.
+    assert "data-payload-mode" not in root_html
+    assert "data-payload-api-prefix" not in root_html
     assert 'data-payload-static-root="/site-payloads"' in root_html
+    assert '<meta http-equiv="Content-Security-Policy"' in root_html
     assert 'webapp/site.js' in root_html
     assert 'rel="icon" type="image/svg+xml"' in root_html
     assert 'webapp/icons/favicon.svg' in root_html
@@ -556,12 +558,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert vrptw_instance_page["summary"]["place_slug"] == "brest"
     assert historical_instance_page["summary"]["place_slug"] is None
 
-    api_webapp_summary = generate_site_webapp(output_repo_dir, payload_mode="api")
-    assert api_webapp_summary.html_files_written == webapp_summary.html_files_written
-    root_html_api = (site_output / "index.html").read_text(encoding="utf-8")
-    assert 'data-payload-mode="api"' in root_html_api
-    assert 'data-payload-api-prefix="/api/site-payload"' in root_html_api
-    assert 'data-payload-static-root="/site-payloads"' in root_html_api
+    with pytest.raises(ValueError, match="static-only"):
+        generate_site_webapp(output_repo_dir, payload_mode="api")
 
     # The CARTO basemaps key lands on the workbench shells only, HTML-escaped,
     # and a key outside the URL-safe alphabet is refused before anything is written.
@@ -786,6 +784,7 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
         "bks_removed": 0,
         "bks_improved": 0,
         "bks_regressed": 0,
+        "bks_repriced": 0,
     }
     assert ledger["entries"][1]["snapshot"]["snapshot_id"] == "2026-04-22-legacy"
     assert ledger["entries"][1]["affected_benchmark_names"] == ["Poryos2026"]
@@ -798,6 +797,7 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
         "bks_removed": 0,
         "bks_improved": 0,
         "bks_regressed": 0,
+        "bks_repriced": 0,
     }
 
 
@@ -1129,7 +1129,8 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
     )
     mc_path = vrptw_dir / f"{generated_vrptw.instance_name}.bks.MonoCost.json"
     mc_data = load_json_from_file(mc_path)
-    mc_data["cost"] = 10  # was 12 — improvement
+    mc_data["cost"] = 10  # was 12 — improvement, with new routes
+    mc_data["routes"] = [[customer for route in mc_data["routes"] for customer in route][::-1]]
     save_json_to_file(mc_data, mc_path)
     hvc_path = vrptw_dir / f"{generated_vrptw.instance_name}.bks.HierarchicalVehicleCost.json"
     hvc_path.unlink()
@@ -1169,6 +1170,110 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
     assert ledger["entries"][0]["snapshot"]["snapshot_id"] == "2026-04-30-secondc"
     assert ledger["entries"][0]["change_counts"]["bks_improved"] == 1
     assert ledger["entries"][1]["change_counts"]["bks_added"] == 4  # initial entry preserved
+
+
+def test_compute_change_log_same_routes_new_cost_is_repriced() -> None:
+    from mamut_routing_publish.site_payloads import _compute_change_log
+
+    prev = {"instances": {"iid": _bks_only_record(bks={"Duration": {"cost": 8292.0, "routes_sha256": "r"}})}}
+    new = {"instances": {"iid": _bks_only_record(bks={"Duration": {"cost": 8267.0, "routes_sha256": "r"}})}}
+    log = _compute_change_log(prev, new)
+    assert log.counts.bks_repriced == 1
+    assert log.counts.bks_improved == 0
+    assert log.bks_changes[0].kind == "repriced"
+    assert log.bks_changes[0].cost_delta == -25.0
+
+
+def test_compute_change_log_marker_classifies_against_a_legacy_inventory() -> None:
+    """Published inventories predate routes_sha256: the BKS's repriced marker decides."""
+    from mamut_routing_publish.site_payloads import _compute_change_log
+
+    prev_cost = 3027.3900000000003
+    prev = {"instances": {"iid": _bks_only_record(bks={"Duration": {"cost": prev_cost}})}}
+    repriced = {"cost": 3027.39, "routes_sha256": "r", "repriced_from": prev_cost}
+    log = _compute_change_log(prev, {"instances": {"iid": _bks_only_record(bks={"Duration": repriced})}})
+    assert [c.kind for c in log.bks_changes] == ["repriced"]
+
+    # A marker naming another cost (the BKS moved twice between snapshots) is no proof.
+    other = {**repriced, "repriced_from": 3100.0}
+    log = _compute_change_log(prev, {"instances": {"iid": _bks_only_record(bks={"Duration": other})}})
+    assert [c.kind for c in log.bks_changes] == ["improved"]
+
+
+def test_compute_change_log_new_routes_are_never_repriced() -> None:
+    from mamut_routing_publish.site_payloads import _compute_change_log
+
+    prev = {"instances": {"iid": _bks_only_record(bks={"Duration": {"cost": 100.0, "routes_sha256": "a"}})}}
+    new_record = {"cost": 90.0, "routes_sha256": "b", "repriced_from": 100.0}
+    log = _compute_change_log(prev, {"instances": {"iid": _bks_only_record(bks={"Duration": new_record})}})
+    assert [c.kind for c in log.bks_changes] == ["improved"]
+
+
+def test_routes_fingerprint_ignores_route_order_only() -> None:
+    from mamut_routing_publish.site_payloads import routes_fingerprint
+
+    assert routes_fingerprint([[3, 4], [1, 2]]) == routes_fingerprint([[1, 2], [3, 4]])
+    assert routes_fingerprint([[2, 1], [3, 4]]) != routes_fingerprint([[1, 2], [3, 4]])
+
+
+def test_generate_site_payloads_reports_a_repriced_bks(tmp_path: Path) -> None:
+    from mamut_routing_lib.json_utils import load_json_from_file
+
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    _, generated_vrptw = build_fixture_site_inputs(output_repo_dir)
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="firstcommit01",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="2026-04-23-firstcom",
+    )
+    mc_path = (
+        output_repo_dir
+        / "benchmarks"
+        / "VRPTW"
+        / "Poryos2026"
+        / "fastest"
+        / "brest"
+        / "n=2"
+        / generated_vrptw.instance_name
+        / f"{generated_vrptw.instance_name}.bks.MonoCost.json"
+    )
+    mc_data = load_json_from_file(mc_path)
+    repriced = {"previous_cost": mc_data["cost"], "checker": "test", "contract": "td-fold/2", "date": "2026-09-24"}
+    mc_data["cost"] = mc_data["cost"] - 1
+    mc_data["metadata"]["repriced"] = repriced
+    save_json_to_file(mc_data, mc_path)
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="secondcommit2",
+        published_at="2026-04-30T12:00:00",
+        snapshot_id="2026-04-30-secondc",
+    )
+    detail = json.loads(
+        (output_repo_dir / "dist" / "site-payloads" / "history" / "2026-04-30-secondc" / "index.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    counts = detail["change_log"]["counts"]
+    assert (counts["bks_repriced"], counts["bks_improved"], counts["bks_regressed"]) == (1, 0, 0)
+    inventory = json.loads(
+        (output_repo_dir / "publish-state" / "snapshots" / "2026-04-30-secondc.inventory.json").read_text(encoding="utf-8")
+    )
+    record = next(
+        value["bks"]["MonoCost"]
+        for value in inventory["instances"].values()
+        if value["instance_name"] == generated_vrptw.instance_name and "MonoCost" in value["bks"]
+    )
+    assert record["repriced_from"] == repriced["previous_cost"]
+    assert len(record["routes_sha256"]) == 64
+    pages = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (output_repo_dir / "dist" / "site-payloads").rglob("index.json")
+        if generated_vrptw.instance_name in path.read_text(encoding="utf-8")
+    ]
+    entries = [entry for page in pages for entry in page.get("bks_entries", []) if entry.get("repriced")]
+    assert entries and all("routes_sha256" not in entry for entry in entries)
+    assert entries[0]["repriced"] == repriced
 
 
 def test_site_build_reports_progress_on_stderr_and_keeps_stdout_json(tmp_path: Path) -> None:
