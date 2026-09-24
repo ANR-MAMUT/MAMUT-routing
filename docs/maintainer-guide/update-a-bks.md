@@ -5,7 +5,12 @@ A best-known solution is a solution file the checker has validated, stored next 
 
 - **the stored cost is the checker's cost**, whatever the solver reported;
 - **a BKS is replaced only by a strictly better, freshly validated solution**; the stored file is itself
-  re-validated before comparison, so a corrupted BKS is caught rather than silently kept.
+  re-validated before comparison, so a corrupted BKS is caught rather than silently kept. Static stores compare
+  exact decimal costs (lib ≥ 0.12.0): the incumbent's routes reordered, reversed or re-summed are a tie, never an
+  improvement, and a tie keeps the incumbent (`BKSUpdateResult.tie`). Routes are stored in canonical order.
+
+When the TD checker contract changes, stored TD costs are re-priced instead: see
+[Re-price after a checker-contract change](reprice-after-a-contract-change.md).
 
 ## Static families (CVRP, VRPTW)
 

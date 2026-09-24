@@ -20,6 +20,31 @@ Guards: an asset over 1.5 GiB warns, over 2 GiB fails (GitHub's asset limit); re
 refused; at most 1000 assets per release. The `family_collection` scope needs `mamut-routing-lib` 0.6.0 or later
 to read the manifest.
 
+Archives never contain local state: `.git` gitfiles, `.mamut-release.json` stamps, `.mamut-staging/` directories
+and `*.partial` temp files are skipped, so a release built from a fetched tree is clean.
+
+## Extraction (`remote fetch`, lib ≥ 0.12.0)
+
+`mamut-routing --benchmarks-dir <bd> remote fetch …` keeps each archive at `<bd>/<filename>` and extracts the
+subtree under the asset's `archive_root` into the **canonical tree**: `benchmarks/VRPTW/Sintef2008` lands at
+`<bd>/VRPTW/Sintef2008`, a collection `benchmarks/Poryos2026` at `<bd>/Poryos2026`. `mamut-routing list`,
+`discover_benchmark_instances(<bd>)` and the website then give the same instance IDs. `extract_release_archive`
+does the work:
+
+- every member is validated first (relative, no `..`, inside `archive_root`; the root is inferred when an older
+  manifest lacks it);
+- the archive is extracted into `<bd>/.mamut-staging/` and swapped in, so a failure leaves the previous subtree
+  untouched;
+- the target gets a `.mamut-release.json` stamp (file name, checksum, snapshot id, release tag, archive root);
+- an existing target is replaced only if it carries a stamp (a previous fetch) or with `--force` (for example over
+  a git checkout of the family). Re-fetching replaces the whole subtree, including files written into it since,
+  such as BKS saved by `solve`.
+
+`remote verify` checks the kept archives against the manifest (`OK`, `MISMATCH`, `NO_SHA`) and, when an archive was
+deleted after extraction, the stamp of its extracted tree (`EXTRACTED` for this checksum, `STALE` for another
+snapshot, `MISSING` otherwise). Before 0.12.0 the lib extracted under `<bd>/<archive stem>/benchmarks/…`, which
+discovery could not read; `fetch` warns about such leftover directories and leaves them in place.
+
 ## Manifest (`snapshot-manifest.json`)
 
 `ReleaseArchiveManifest` in `mamut_routing_lib.remote`:
