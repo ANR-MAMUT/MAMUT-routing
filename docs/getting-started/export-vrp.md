@@ -13,9 +13,10 @@ Defaults and options:
 
 - `EDGE_WEIGHT_TYPE : EXPLICIT` with the full matrix, so the solver sees exactly the published costs; VRPTW files
   use `TYPE : CVRPTW` with time-window and service-time sections (the dialect VRPLIB and PyVRP read).
-- `--edge-weight-type EUC_2D` (euclidean-metric instances only) drops the matrix; readers then compute
-  `nint(hypot)`, which is **not** the published cost, so BKS values do not transfer. `--format solomon` writes the
-  Solomon `.txt` dialect for VRPTW instead of `.vrp`.
+- `--edge-weight-type EUC_2D` drops the matrix; readers then compute `nint(hypot)`, which is **not** the published
+  cost, so BKS values do not transfer. `--format solomon` writes the Solomon `.txt` dialect for VRPTW instead of
+  `.vrp`. Both are refused unless the coordinates define the costs (Sintef2008 and the euclidean collections:
+  Dimacs2021's integer costs are `trunc(10 × hypot)`, so only `EXPLICIT` describes them).
 - Time-dependent instances have no static matrix and are refused.
 
 The full contract is on the [CVRPLIB export](../benchmarks/formats/cvrplib-export.md) page. On the website, the

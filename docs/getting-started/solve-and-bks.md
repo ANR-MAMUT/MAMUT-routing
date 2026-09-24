@@ -10,7 +10,10 @@ uv run mamut-routing --benchmarks-dir benchmarks solve \
 ```
 
 The command prints the solver result and the store action: `created`, `replaced` or `kept_existing` (with a 10 s
-budget the published BKS is kept). Two details that matter:
+budget the published BKS is kept; a solution of exactly equal cost is kept out as a tie, even if its float sum
+differs by an ulp). A failing instance becomes an `error` row and the batch goes on; scanned time-dependent
+instances are skipped (`solve` is static-only). The exit status is 0 when every solved instance is feasible, 1 if
+any row is infeasible or an error, 2 on a usage error. Two details that matter:
 
 - **Say which objective.** Sintef2008 stores its BKS under `HierarchicalVehicleCost`; without `--objective` the
   solver runs `MonoCost` (with a warning) and *creates* a second file, `C101.bks.MonoCost.json`, instead of comparing

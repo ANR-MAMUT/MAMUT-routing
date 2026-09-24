@@ -45,4 +45,8 @@ loaded = load_td_instance(path_to_td_instance)          # materializes the arriv
 result = check_td_solution(loaded, solution)            # Duration objective by default
 ```
 
+TD costs are defined by the checker contract `td-fold/2` (mamut-routing-lib ≥ 0.12.0); published TD BKS were
+re-priced under it on 2026-09-24, so an older lib reports some of them as `objective_value_mismatch`. Upgrade the
+lib rather than comparing with a tolerance.
+
 Next: [Solve with PyVRP and propose a BKS](solve-and-bks.md).

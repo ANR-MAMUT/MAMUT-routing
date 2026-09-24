@@ -14,10 +14,10 @@ Only initialized families are published. `dist/` is fully static.
 | Phase | What it does | Knobs |
 |---|---|---|
 | resolve snapshot | commit, branch, snapshot id (`<date>-<short sha>` by default) | `--source-commit`, `--source-branch`, `--published-at`, `--snapshot-id`, `--history-summary` |
-| ATF cache | materializes arrival-time sidecars of materialized-td-model families (Lera2026, Poryos2026 TD) into `dist/atf-cache/`, one file per (family, instance), incremental by recorded sha | `--atf-max-n` (400), `--atf-jobs` (memory knob: one full ATF set per worker), `--skip-atf-cache` |
+| ATF cache | materializes arrival-time sidecars of materialized-td-model families (Lera2026, Poryos2026 TD) into `dist/atf-cache/`, one file per (family, instance), incremental: a reused entry must hash to the instance's `atf_sha256` (streamed, about 25 s for the full cache), else it is regenerated and counted as `invalidated`; writes are atomic | `--atf-max-n` (400), `--atf-jobs` (memory knob: one full ATF set per worker), `--skip-atf-cache` |
 | route geometry | road-following BKS polylines into `dist/route-geometry-cache/`, content-addressed by BKS sha256; validates and fetches missing OSM extracts under `osmdata/` first | `--route-geometry-jobs` (`auto` = 1: a city graph can exceed 15 GiB), `--no-fetch-missing-osm`, `--skip-route-geometry` |
 | payloads | `dist/site-payloads/**.json`, one per route, instances resolved in parallel; writes the history ledger | `--jobs` (`auto` = cores − 2), `--schema-version`, `--payload-root-dir` |
-| webapp | thin HTML shells per route, assets, workbench page | `--payload-mode static|api`, `--basemap-api-key` / `MAMUT_BASEMAP_API_KEY` |
+| webapp | thin HTML shells per route, assets, workbench page | `--basemap-api-key` / `MAMUT_BASEMAP_API_KEY`; shells carry a Content-Security-Policy (hash-pinned inline scripts, same-origin payloads) |
 | docs | this documentation into `dist/docs/` (strict MkDocs build) | `--skip-docs` |
 | precompress | `.gz` + `.br` sidecars for text assets ≥ 1 KiB, incremental by mtime | `--precompress` |
 
