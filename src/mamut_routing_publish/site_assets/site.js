@@ -54,7 +54,7 @@ const state = {
     objective_function: runtimeParams.get("objective") || "",
     has_bks: runtimeParams.get("bks") || "",
     search: runtimeParams.get("q") || "",
-    sort: runtimeParams.get("sort") || "size-name",
+    sort: normalizeCollectionSort(runtimeParams.get("sort")),
   },
 };
 
@@ -773,12 +773,35 @@ function collectionSearchMatches(item) {
   return `${item.display_name || ""} ${item.instance_id || ""} ${item.base_instance || ""}`.toLowerCase().includes(search);
 }
 
+function normalizeCollectionSort(value) {
+  // A stale or hand-written ?sort= must not reach the comparator.
+  return ["size-name", "name", "cost", "routes"].includes(value) ? value : "size-name";
+}
+
+function collectionObjectiveNumber(item, field) {
+  // The best BKS value of an item, restricted to the objective filter when one is set.
+  const objective = state.collectionFilters.objective_function;
+  const values = (item.objective_availability || [])
+    .filter((entry) => !objective || entry?.objective_function === objective)
+    .map((entry) => Number(entry?.[field]))
+    .filter(Number.isFinite);
+  return values.length > 0 ? minOf(values) : null;
+}
+
 function compareCollectionItems(left, right) {
   const sort = state.collectionFilters.sort;
-  if (sort === "name") return left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
-  if (sort === "cost") return publicCatalogObjectiveNumber(left, "cost") - publicCatalogObjectiveNumber(right, "cost") || left.num_customers - right.num_customers;
-  if (sort === "routes") return publicCatalogObjectiveNumber(left, "num_routes") - publicCatalogObjectiveNumber(right, "num_routes") || left.num_customers - right.num_customers;
-  return left.num_customers - right.num_customers || left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  const byName = left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
+  if (sort === "name") return byName;
+  if (sort === "cost" || sort === "routes") {
+    // Items without a BKS (null) sort last; ties fall back to size, then name.
+    const field = sort === "cost" ? "cost" : "num_routes";
+    return (
+      compareCatalogNumber(collectionObjectiveNumber(left, field), collectionObjectiveNumber(right, field), 1) ||
+      left.num_customers - right.num_customers ||
+      byName
+    );
+  }
+  return left.num_customers - right.num_customers || byName;
 }
 
 function filteredCollectionItems(payload) {
@@ -1814,7 +1837,7 @@ function renderCatalogIndex(payload) {
     renderCatalogIndex(payload);
   });
   sortSelect?.addEventListener("change", (event) => {
-    state.collectionFilters.sort = event.target.value;
+    state.collectionFilters.sort = normalizeCollectionSort(event.target.value);
     syncCollectionFilterUrl();
     renderCatalogIndex(payload);
   });
