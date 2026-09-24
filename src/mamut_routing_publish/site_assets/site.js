@@ -2999,6 +2999,7 @@ function timelineCountsHeadline(counts, options = {}) {
     counts.instances_removed && `−${counts.instances_removed} instance${counts.instances_removed > 1 ? "s" : ""}`,
     counts.bks_improved && `${counts.bks_improved} BKS improved`,
     counts.bks_regressed && `${counts.bks_regressed} BKS regressed`,
+    counts.bks_repriced && `${counts.bks_repriced} BKS re-priced (checker contract)`,
     counts.bks_added && `+${counts.bks_added} BKS`,
     counts.bks_removed && `−${counts.bks_removed} BKS`,
   ].filter(Boolean);
@@ -3086,6 +3087,7 @@ function renderChangeRowBks(change) {
   if (change.kind === "added") cls = "change-add";
   else if (change.kind === "removed") cls = "change-remove";
   else if (change.kind === "improved") cls = "change-improve";
+  else if (change.kind === "repriced") cls = "change-reprice";
   else cls = "change-regress";
 
   const variant = change.metric_variant ? ` · ${escapeHtml(change.metric_variant)}` : "";
@@ -3110,7 +3112,7 @@ function renderChangeRowBks(change) {
     const v = change.prev || {};
     return `<li class="${cls}">− ${head} · <span class="change-from">${valueHtml(v)}</span></li>`;
   }
-  // improved / regressed
+  // improved / regressed / repriced (same routes, new checker contract)
   const prev = change.prev || {};
   const next = change.new || {};
   const deltaParts = [];
@@ -3164,11 +3166,12 @@ function renderInstanceChangeSection(changes) {
 }
 
 function renderBksChangeSection(changes) {
-  const buckets = { added: [], removed: [], improved: [], regressed: [] };
+  const buckets = { added: [], removed: [], improved: [], regressed: [], repriced: [] };
   for (const c of changes) {
     if (buckets[c.kind]) buckets[c.kind].push(c);
   }
-  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed`;
+  const repricedSummary = buckets.repriced.length ? ` / ${buckets.repriced.length} re-priced` : "";
+  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed${repricedSummary}`;
   const groupBy = (list) => {
     const map = new Map();
     for (const c of list) {
@@ -3186,7 +3189,7 @@ function renderBksChangeSection(changes) {
     return `<details class="change-subsection"><summary>${escapeHtml(label)} · ${sign}${list.length}</summary>${groups}</details>`;
   };
   const body = changes.length
-    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
+    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Re-priced (checker contract, routes unchanged)", buckets.repriced, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
     : `<p class="meta-line">No BKS-level changes.</p>`;
   return `<details class="change-section"><summary>${escapeHtml(summary)}</summary>${body}</details>`;
 }

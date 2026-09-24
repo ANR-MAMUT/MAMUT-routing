@@ -21,6 +21,8 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -29,6 +31,7 @@ import warnings
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mamut_routing_lib.checker import canonical_route_order
 from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
 from mamut_routing_lib.artifacts import (
     AnyBenchmarkInstance,
@@ -360,6 +363,12 @@ class BKSPageEntry(BaseModel):
     # OptimalityMetadata model in mamut-routing-lib), passed through verbatim
     # so the site can badge proven-optimal solutions.
     optimality: dict[str, Any] | None = None
+    # ``metadata.repriced`` (previous cost, checker, contract, date) when a
+    # checker-contract change re-priced the unchanged routes.
+    repriced: dict[str, Any] | None = None
+    # Fingerprint of the canonical route list, for the history diff only (not
+    # published): same routes + different cost = re-priced, not improved.
+    routes_sha256: str | None = Field(default=None, exclude=True)
 
 
 class InstancePageSummary(BaseModel):
@@ -435,7 +444,8 @@ class BksChange(BaseModel):
     num_customers: int
     instance_name: str
     objective_function: ObjectiveFunction
-    kind: Literal["added", "removed", "improved", "regressed"]
+    #: ``repriced``: same routes, cost changed by a checker-contract change.
+    kind: Literal["added", "removed", "improved", "regressed", "repriced"]
     prev: BksValue | None = None
     new: BksValue | None = None
     cost_delta: int | float | None = None
@@ -455,6 +465,7 @@ class ChangeCounts(BaseModel):
     bks_removed: int = 0
     bks_improved: int = 0
     bks_regressed: int = 0
+    bks_repriced: int = 0
 
 
 class SnapshotChangeLog(BaseModel):
@@ -1648,6 +1659,7 @@ def _build_bks_entries(
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
         optimality_value = bks.metadata.get("optimality") if isinstance(bks.metadata, dict) else None
+        repriced_value = bks.metadata.get("repriced") if isinstance(bks.metadata, dict) else None
         td_schedules = None
         route_functions_path = None
         route_geometry_path = None
@@ -1706,6 +1718,8 @@ def _build_bks_entries(
                 route_geometry_bks_sha256=route_geometry_bks_sha256,
                 route_geometry_metric=route_geometry_metric,
                 optimality=optimality_value,
+                repriced=repriced_value if isinstance(repriced_value, dict) else None,
+                routes_sha256=routes_fingerprint(bks.routes),
             )
         )
     return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
@@ -2956,8 +2970,20 @@ def _inventory_path(state_dir: Path, snapshot_id: str) -> Path:
     return state_dir / SNAPSHOTS_DIR_NAME / f"{snapshot_id}.inventory.json"
 
 
+def routes_fingerprint(routes: list[list[int]]) -> str:
+    """sha256 of the canonical route list (order-insensitive, like the BKS store)."""
+    canonical = canonical_route_order([list(route) for route in routes])
+    return hashlib.sha256(json.dumps(canonical, separators=(",", ":")).encode("ascii")).hexdigest()
+
+
 def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
-    """Build the diff-source-of-truth inventory for the current snapshot."""
+    """Build the diff-source-of-truth inventory for the current snapshot.
+
+    Besides the displayed values each BKS records ``routes_sha256`` and, when
+    the BKS carries a ``metadata.repriced`` block, ``repriced_from`` (its
+    previous cost): together they let the next diff tell a re-priced BKS
+    (same routes, new checker contract) from an improvement.
+    """
     instances: dict[str, dict] = {}
     for item in resolved_items:
         bks: dict[str, dict] = {}
@@ -2967,12 +2993,17 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
                 if entry.objective_function is ObjectiveFunction.HIERARCHICAL_VEHICLE_COST and entry.validated_num_routes is not None
                 else entry.num_routes
             )
-            bks[entry.objective_function.value] = {
+            record = {
                 "cost": entry.cost,
                 "num_routes": num_routes,
                 "authors": entry.authors,
                 "method": entry.method,
             }
+            if entry.routes_sha256 is not None:
+                record["routes_sha256"] = entry.routes_sha256
+            if entry.repriced is not None and entry.repriced.get("previous_cost") is not None:
+                record["repriced_from"] = entry.repriced["previous_cost"]
+            bks[entry.objective_function.value] = record
         metric_variant = item.locator.metric_variant.value if item.locator.metric_variant is not None else None
         instances[item.instance_id] = {
             "problem_type": item.locator.problem_type.value,
@@ -3048,7 +3079,7 @@ def _bks_change_from_inventory(
     record: dict,
     objective_function_value: str,
     *,
-    kind: Literal["added", "removed", "improved", "regressed"],
+    kind: Literal["added", "removed", "improved", "regressed", "repriced"],
     prev: BksValue | None,
     new: BksValue | None,
     cost_delta: int | float | None = None,
@@ -3089,11 +3120,17 @@ def _classify_bks_pair(
     objective_function_value: str,
     prev_record: dict,
     new_record: dict,
-) -> tuple[Literal["improved", "regressed"] | None, int | float | None, float | None, int | None, float | None]:
+) -> tuple[
+    Literal["improved", "regressed", "repriced"] | None, int | float | None, float | None, int | None, float | None
+]:
     """Return (kind, cost_delta, cost_pct, routes_delta, routes_pct) for a BKS pair.
 
     kind is None when the pair is exactly equal (no change). All deltas are
     new − prev so a negative delta == improvement when sense matches.
+
+    A changed cost on unchanged routes is ``repriced``: the new BKS names the
+    old cost in its ``repriced_from`` marker, or both inventories fingerprint
+    the same routes. Exact comparisons only, no tolerance.
     """
     prev_cost = prev_record.get("cost")
     new_cost = new_record.get("cost")
@@ -3115,6 +3152,15 @@ def _classify_bks_pair(
     else:
         routes_delta = new_routes - prev_routes
         routes_pct = (routes_delta / prev_routes * 100.0) if prev_routes not in (0, 0.0) else None
+
+    if prev_cost is not None and new_cost is not None and new_cost != prev_cost:
+        prev_fingerprint = prev_record.get("routes_sha256")
+        new_fingerprint = new_record.get("routes_sha256")
+        same_routes = prev_fingerprint is not None and prev_fingerprint == new_fingerprint
+        routes_differ = prev_fingerprint is not None and new_fingerprint is not None and not same_routes
+        marker = new_record.get("repriced_from")
+        if same_routes or (not routes_differ and marker is not None and marker == prev_cost):
+            return ("repriced", cost_delta, cost_pct, routes_delta, routes_pct)
 
     objective = ObjectiveFunction(objective_function_value)
     if objective is ObjectiveFunction.HIERARCHICAL_VEHICLE_COST:
@@ -3269,6 +3315,7 @@ def _compute_change_log(
         bks_removed=sum(1 for c in bks_changes if c.kind == "removed"),
         bks_improved=sum(1 for c in bks_changes if c.kind == "improved"),
         bks_regressed=sum(1 for c in bks_changes if c.kind == "regressed"),
+        bks_repriced=sum(1 for c in bks_changes if c.kind == "repriced"),
     )
 
     return SnapshotChangeLog(
