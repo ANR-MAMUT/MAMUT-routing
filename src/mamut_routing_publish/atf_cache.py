@@ -14,9 +14,17 @@ Two structural facts keep the cache small and correct:
   (same ``atf_sha256``), so the cache stores ONE file per (benchmark,
   instance name), shared by both problem types.
 - Materialization is deterministic and pinned by the instance's recorded
-  ``atf_sha256``; a cached file whose recorded-name exists is trusted
-  as-is (regeneration would produce the same bytes), so rebuilds are
-  incremental.
+  ``atf_sha256``, so rebuilds are incremental: an existing entry is reused
+  when its uncompressed bytes hash to that pin. The hash is streamed on a
+  thread pool (zlib and hashlib release the GIL) and costs about 25 s for
+  the full 2 GB cache on 8 threads -- far below one regeneration. An entry
+  that fails (a stale pin after a family rebuild, a truncated or corrupt
+  gzip) is removed and regenerated, and counted as ``invalidated``.
+- Writes are atomic (``save_instance_atfs`` writes a ``*.partial`` sibling
+  and renames it), so an interrupted build never leaves a truncated entry
+  and a staging cache hard-linked from the live one never truncates the
+  live file. Leftover ``*.partial`` files from a killed build are removed
+  on the next run and never seeded into a staging cache.
 
 Above the size cap the viewer simply has no sidecar link (a 28-82 MB
 download per arc click is no favour to anyone) and schedule tables are
@@ -27,11 +35,18 @@ from __future__ import annotations
 
 import os
 import warnings
+import zlib
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mamut_routing_lib.td import TD_IGP_MODEL, TD_ROAD_MODEL, load_td_instance, save_instance_atfs
+from mamut_routing_lib.td import (
+    TD_IGP_MODEL,
+    TD_ROAD_MODEL,
+    load_td_instance,
+    save_instance_atfs,
+)
+from mamut_routing_lib.td.artifacts import atf_file_sha256
 
 ATF_CACHE_RELATIVE = Path("dist") / "atf-cache"
 DEFAULT_MAX_CUSTOMERS = 400
@@ -41,6 +56,8 @@ _SCAN_READ_THREADS = 8
 
 #: td models whose ATFs are materialized on load (no committed sidecar).
 MATERIALIZED_TD_MODELS = frozenset({TD_IGP_MODEL, TD_ROAD_MODEL})
+#: Suffix of the temp file an atomic sidecar write renames into place.
+PARTIAL_SUFFIX = ".partial"
 
 
 def resolve_atf_jobs(jobs: int | None = None, task_count: int | None = None) -> int:
@@ -88,23 +105,56 @@ def _read_bytes_or_none(path: Path) -> bytes | None:
 
 
 def _materialize_one(instance_path_str: str, cache_path_str: str) -> str:
-    """Worker: full load (materializes + verifies both sha256) then write."""
+    """Worker: full load (materializes + verifies both sha256) then an atomic write."""
     loaded = load_td_instance(instance_path_str)
     save_instance_atfs(loaded.atfs, Path(cache_path_str))
     return cache_path_str
+
+
+def cached_entry_problem(cache_path: Path, expected_sha256: str | None) -> str | None:
+    """Why a cache entry cannot be reused (``None`` when it can).
+
+    With a pin the uncompressed bytes must hash to it; without one (an
+    unpinned instance) the gzip must at least read to the end, which still
+    catches truncation.
+    """
+    try:
+        digest = atf_file_sha256(cache_path)
+    except (OSError, EOFError, zlib.error) as error:
+        return f"unreadable ({error.__class__.__name__}: {error})"
+    if expected_sha256 is not None and digest != expected_sha256:
+        return f"sha256 {digest} does not match the instance pin {expected_sha256}"
+    return None
+
+
+def remove_partial_files(cache_dir: Path) -> int:
+    """Delete ``*.partial`` leftovers of interrupted atomic writes; returns the count."""
+    if not cache_dir.is_dir():
+        return 0
+    removed = 0
+    for partial in cache_dir.rglob(f"*{PARTIAL_SUFFIX}"):
+        if partial.is_file():
+            partial.unlink(missing_ok=True)
+            removed += 1
+    return removed
 
 
 @dataclass
 class ATFCacheSummary:
     materialized: list[str] = field(default_factory=list)
     reused: list[str] = field(default_factory=list)
+    #: Existing entries that failed verification (also in ``materialized``).
+    invalidated: list[str] = field(default_factory=list)
     skipped_over_cap: int = 0
+    removed_partials: int = 0
 
     def as_dict(self) -> dict:
         return {
             "materialized": len(self.materialized),
             "reused": len(self.reused),
+            "invalidated": len(self.invalidated),
             "skipped_over_cap": self.skipped_over_cap,
+            "removed_partials": self.removed_partials,
         }
 
 
@@ -119,7 +169,8 @@ def materialize_atf_cache(
     """Materialize sidecars for every materialized-model instance with n <= max_customers.
 
     Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
-    one cache entry. Existing cache files are reused (deterministic content).
+    one cache entry. Existing cache files are reused when they hash to the
+    instance's ``atf_sha256`` pin, and regenerated otherwise.
 
     ``jobs`` pins the worker count (default: cores - 2). ``cache_dir``
     overrides the default ``<repo>/dist/atf-cache`` target for staging
@@ -137,8 +188,11 @@ def materialize_atf_cache(
 
         hardlink_tree(seed_from, resolved_cache_dir)
 
-    summary = ATFCacheSummary()
+    summary = ATFCacheSummary(removed_partials=remove_partial_files(resolved_cache_dir))
     tasks: dict[str, str] = {}  # cache path -> instance path (first variant found)
+    #: Existing entries to verify: cache path -> (instance path, pin).
+    candidates: dict[str, tuple[str, str | None]] = {}
+    pins: dict[str, str | None] = {}
     over_cap: set[str] = set()
     benchmarks_root = output_repo_dir / "benchmarks"
     # Problem-type-first satellites plus the TD trees of family-first
@@ -158,7 +212,6 @@ def materialize_atf_cache(
     # Reading is I/O bound (and slow on a cold checkout), so it runs on a small
     # thread pool; ``map`` preserves order, so the reduction below still walks
     # the files in exactly the scan order and picks exactly the same variants.
-    reused_keys: set[str] = set()
     with ThreadPoolExecutor(max_workers=_SCAN_READ_THREADS) as readers:
         for instance_path, raw in zip(scan_paths, readers.map(_read_bytes_or_none, scan_paths, chunksize=32)):
             if raw is None:
@@ -184,13 +237,39 @@ def materialize_atf_cache(
                 resolved_cache_dir, str(payload["benchmark_name"]), str(payload["instance_name"])
             )
             key = str(cache_path)
-            if key in tasks or key in reused_keys:
+            pin = td_block.get("atf_sha256")
+            pin = str(pin) if pin else None
+            if key in pins:
+                if pin != pins[key]:
+                    warnings.warn(
+                        f"TD twins disagree on atf_sha256 for {key} ({pins[key]} vs {pin} in {instance_path}); "
+                        "the cache keeps the first, pages of the other lose their schedule table",
+                        stacklevel=2,
+                    )
                 continue
+            pins[key] = pin
             if cache_path.is_file():
-                reused_keys.add(key)
-                summary.reused.append(key)
+                candidates[key] = (str(instance_path), pin)
                 continue
             tasks[key] = str(instance_path)
+
+    if candidates:
+        # Hash every reused entry against its pin. CPU bound in zlib and
+        # hashlib, which both release the GIL, so threads scale.
+        with ThreadPoolExecutor(max_workers=resolve_atf_jobs(jobs, len(candidates))) as verifiers:
+            problems = verifiers.map(
+                lambda key: cached_entry_problem(Path(key), candidates[key][1]), list(candidates)
+            )
+            for key, problem in zip(list(candidates), problems):
+                if problem is None:
+                    summary.reused.append(key)
+                    continue
+                warnings.warn(f"Regenerating ATF cache entry {key}: {problem}", stacklevel=2)
+                # Unlink, do not truncate: the entry may be a hard link into
+                # the live cache a staging build was seeded from.
+                Path(key).unlink(missing_ok=True)
+                summary.invalidated.append(key)
+                tasks[key] = candidates[key][0]
 
     if tasks:
         with ProcessPoolExecutor(max_workers=resolve_atf_jobs(jobs, len(tasks))) as pool:
