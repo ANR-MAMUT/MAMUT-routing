@@ -44,6 +44,17 @@ class DocsBuildError(RuntimeError):
     """The MkDocs build failed (configuration error or strict-mode warnings)."""
 
 
+class _BuildDiagnostics(logging.Handler):
+    """Retain warnings for the failure message, including in quiet builds."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(f"{record.levelname}: {record.getMessage()}")
+
+
 @dataclass
 class DocsBuildSummary:
     site_dir: Path
@@ -128,6 +139,8 @@ def build_docs_site(
     site_dir.parent.mkdir(parents=True, exist_ok=True)
 
     mkdocs_logger = logging.getLogger("mkdocs")
+    diagnostics = _BuildDiagnostics()
+    mkdocs_logger.addHandler(diagnostics)
     previous_propagate = mkdocs_logger.propagate
     quiet_handler: logging.Handler | None = None
     if quiet:
@@ -148,8 +161,11 @@ def build_docs_site(
             config = load_config(config_file=str(config_path), site_dir=str(site_dir), strict=strict)
             build(config)
     except MkDocsException as error:
-        raise DocsBuildError(f"mkdocs build failed: {error}") from error
+        details = "".join(f"\n{message}" for message in diagnostics.messages)
+        raise DocsBuildError(f"mkdocs build failed: {error}{details}") from error
     finally:
+        mkdocs_logger.removeHandler(diagnostics)
+        diagnostics.close()
         mkdocs_logger.propagate = previous_propagate
         if quiet_handler is not None:
             mkdocs_logger.removeHandler(quiet_handler)
