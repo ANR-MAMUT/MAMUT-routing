@@ -1,6 +1,6 @@
 # Authors, Supervision, and Contributors
 
-This page records the authorship, scientific supervision, project context, and contributor policy for MAMUT-routing. The citation order is Adrien Pichon, Florian Rascoussier, Romain Billot, Lina Fahed, Alexandru-Liviu Olteanu, Marc Sevaux and Christine Solnon. Machine-readable metadata is maintained in [CITATION.cff](CITATION.cff).
+This page records the authorship, scientific supervision, project context, and contributor policy for MAMUT-routing. The citation order is Adrien Pichon, Florian Rascoussier, Romain Billot, Lina Fahed, Alexandru-Liviu Olteanu, Marc Sevaux and Christine Solnon. Machine-readable metadata is maintained in [CITATION.cff](https://github.com/ANR-MAMUT/MAMUT-routing/blob/main/CITATION.cff).
 
 ## Lead authors and maintainers
 

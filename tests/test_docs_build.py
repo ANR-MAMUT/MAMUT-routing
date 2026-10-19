@@ -50,6 +50,8 @@ def test_build_writes_expected_pages(built_docs: Path) -> None:
     assert "--benchmarks-dir" in cli_page
     checker_page = (built_docs / "reference/api/lib/td/checker/index.html").read_text(encoding="utf-8")
     assert "check_td_solution" in checker_page
+    authors_page = (built_docs / "about/authors/index.html").read_text(encoding="utf-8")
+    assert 'href="https://github.com/ANR-MAMUT/MAMUT-routing/blob/main/CITATION.cff"' in authors_page
 
 
 def test_build_only_writes_inside_site_dir(built_docs: Path) -> None:
@@ -90,8 +92,24 @@ def _broken_docs_repo(tmp_path: Path) -> Path:
 def test_strict_build_fails_on_broken_link_regardless_of_quiet(tmp_path: Path, quiet: bool) -> None:
     # --quiet must silence the console only; strict mode still counts the warning.
     repo = _broken_docs_repo(tmp_path)
-    with pytest.raises(DocsBuildError, match="strict"):
+    with pytest.raises(DocsBuildError, match="strict") as raised:
         build_docs_site(repo, tmp_path / "out", strict=True, quiet=quiet)
+    assert "index.md" in str(raised.value)
+    assert "missing.md" in str(raised.value)
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_site_docs_cli_reports_broken_link(tmp_path: Path, quiet: bool) -> None:
+    repo = _broken_docs_repo(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        ["site", "docs", "--output-repo-dir", str(repo), "--site-output-dir", str(tmp_path / "out")]
+        + (["--quiet"] if quiet else []),
+    )
+    assert result.exit_code == 1
+    assert "strict mode" in result.output
+    assert "index.md" in result.output
+    assert "missing.md" in result.output
 
 
 def test_non_strict_build_tolerates_broken_link(tmp_path: Path) -> None:
