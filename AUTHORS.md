@@ -1,13 +1,13 @@
 # Authors, Supervision, and Contributors
 
-This page records the authorship, scientific supervision, project context, and contributor policy for MAMUT-routing.
+This page records the authorship, scientific supervision, project context, and contributor policy for MAMUT-routing. The citation order is Adrien Pichon, Florian Rascoussier, Romain Billot, Lina Fahed, Alexandru-Liviu Olteanu, Marc Sevaux and Christine Solnon. Machine-readable metadata is maintained in [CITATION.cff](CITATION.cff).
 
-## Original Authors and Maintainers
+## Lead authors and maintainers
 
-Original authors and maintainers of MAMUT-routing given in alphabetical order of last name:
+The original lead authors and maintainers of MAMUT-routing are listed in alphabetical order of last name:
 
 - **Adrien Pichon**, aka Anzury: [GitHub](https://github.com/Anzury), [ORCID](https://orcid.org/0009-0005-8630-3962), [LinkedIn](https://www.linkedin.com/in/adrien-p-9332a4217/)
-- **Florian Rascoussier**, aka Onyr: [GitHub](https://github.com/0nyr), [ORCID](https://orcid.org/0009-0005-3253-9814), [LinkedIn](https://www.linkedin.com/in/florian-rascoussier-onyr/)
+- **Florian Rascoussier**, aka [Onyr](https://onyr.net): [GitHub](https://github.com/0nyr), [ORCID](https://orcid.org/0009-0005-3253-9814), [LinkedIn](https://www.linkedin.com/in/florian-rascoussier-onyr/)
 
 Both authors contributed equally to all aspects of the project which is a collaborative effort bringing together curated benchmark data, tooling, conventions, workbench, and website development.
 
@@ -15,13 +15,13 @@ Both authors contributed equally to all aspects of the project which is a collab
 
 MAMUT-routing is a collaboration between the original authors and is developed as part of [Adrien Pichon's](https://theses.fr/s395859) and [Florian Rascoussier's](https://theses.fr/s386454) PhD work.
 
-This work has been made possible under the scientific supervision of, in alphabetical order of last name:
+The following coauthors provide scientific supervision and follow the 2 lead authors in citation order, alphabetically by last name:
 
-- [Romain Billot](https://www.imt-atlantique.fr/en/person/romain-billot)
-- [Lina Fahed](https://www.imt-atlantique.fr/en/person/lina-fahed)
-- [Alexandru-Liviu Olteanu](http://www-labsticc.univ-ubs.fr/~olteanu/)
-- [Marc Sevaux](http://www-labsticc.univ-ubs.fr/~sevaux/)
-- [Christine Solnon](http://perso.citi.insa-lyon.fr/csolnon/)
+- [Romain Billot](https://www.imt-atlantique.fr/en/person/romain-billot) ([ORCID](https://orcid.org/0000-0002-2614-3822))
+- [Lina Fahed](https://www.imt-atlantique.fr/en/person/lina-fahed) ([ORCID](https://orcid.org/0000-0002-7207-0580))
+- [Alexandru-Liviu Olteanu](http://www-labsticc.univ-ubs.fr/~olteanu/) ([ORCID](https://orcid.org/0000-0002-0715-2168))
+- [Marc Sevaux](http://www-labsticc.univ-ubs.fr/~sevaux/) ([ORCID](https://orcid.org/0000-0003-3855-9072))
+- [Christine Solnon](http://perso.citi.insa-lyon.fr/csolnon/) ([ORCID](https://orcid.org/0000-0002-0919-496X))
 
 ## Other acknowledgments
 

@@ -2,6 +2,10 @@
 
 If you use `MAMUT-routing`, its benchmark artifacts, or accompanying tools such as the [`mamut-routing-lib` Python library and CLI](https://github.com/ANR-MAMUT/MAMUT-routing-lib), please cite the repository and identify the exact release or Git commit used in your experiments. Benchmark-family source publications should also be cited when applicable.
 
+## Authors
+
+The authors, in citation order, are Adrien Pichon, Florian Rascoussier, Romain Billot, Lina Fahed, Alexandru-Liviu Olteanu, Marc Sevaux and Christine Solnon. The 2 lead authors are ordered alphabetically by surname, followed by the scientific supervisors in alphabetical order. Their ORCID identifiers are recorded in [CITATION.cff](https://github.com/ANR-MAMUT/MAMUT-routing/blob/main/CITATION.cff).
+
 ## GitHub "Cite this repository"
 
 The repository provides a machine-readable [`CITATION.cff`](https://github.com/ANR-MAMUT/MAMUT-routing/blob/main/CITATION.cff) file. GitHub uses this file for its "Cite this repository" action in the repository sidebar and can produce ready-to-copy APA and BibTeX citations from the maintained project metadata.
@@ -19,6 +23,8 @@ For a citation that must identify an immutable archived state, use the Software 
 - Cite `MAMUT-routing` for the curated artifact tree, benchmark contracts, BKS provenance, validation tooling, and website publication.
 - Cite the original benchmark-family publication or data source when using a historical family distributed by MAMUT-routing.
 - Cite [`mamut-routing-lib`](https://github.com/ANR-MAMUT/MAMUT-routing-lib) separately when its Python API, CLI, loaders, or checkers are a material part of the experimental workflow.
+- Cite [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) when its generation or conversion tools are used.
+- Cite each benchmark satellite using its own `CITATION.cff`, alongside the original source publications when applicable.
 - Record the exact objective function and metric variant because different MAMUT-routing artifacts for the same base instance can intentionally represent different optimization contracts.
 
 ## Additional publication records

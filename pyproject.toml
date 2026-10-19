@@ -8,8 +8,13 @@ version = "0.1.0"
 description = "Snapshot, site, and release-archive generation toolkit for the MAMUT-routing benchmark repository."
 readme = "README.md"
 authors = [
-    { name = "Florian Rascoussier", email = "onyr.maintainer@gmail.com" },
     { name = "Adrien Pichon" },
+    { name = "Florian Rascoussier", email = "onyr.maintainer@gmail.com" },
+    { name = "Romain Billot" },
+    { name = "Lina Fahed" },
+    { name = "Alexandru-Liviu Olteanu" },
+    { name = "Marc Sevaux" },
+    { name = "Christine Solnon" },
 ]
 maintainers = [
     { name = "Florian Rascoussier", email = "onyr.maintainer@gmail.com" },
