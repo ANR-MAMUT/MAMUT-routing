@@ -216,3 +216,7 @@ family-specific terms. In particular, `Ortec2022` material is under
 under `ODbL 1.0`
 where applicable. See [NOTICE](NOTICE) and the `README.md`/`LICENSE` files in
 each benchmark family directory.
+
+## Academic citation
+
+The authors, in citation order, are Adrien Pichon, Florian Rascoussier, Romain Billot, Lina Fahed, Alexandru-Liviu Olteanu, Marc Sevaux and Christine Solnon. The 2 lead authors are ordered alphabetically by surname, followed by the scientific supervisors in alphabetical order. Cite this project using [CITATION.cff](CITATION.cff), which includes all authors' ORCID identifiers.
