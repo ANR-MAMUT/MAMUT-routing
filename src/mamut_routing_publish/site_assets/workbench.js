@@ -119,6 +119,7 @@ const {
   parseUploadedInstanceText,
   parseUploadedMetaText,
   parseUploadedSolutionText,
+  payloadSidecarHref,
   projectEnuInstanceCoordinates,
   resolvePreviewGeometry,
   routeHref,
@@ -164,6 +165,12 @@ const statsEl = document.getElementById("stats");
 const toastEl = document.getElementById("toast");
 const routeSelectorCard = document.getElementById("routeSelectorCard");
 const routeSelectorContainer = document.getElementById("routeSelectorContainer");
+const tripsBarEl = document.getElementById("tripsBar");
+// deck.gl is fetched only when an animation is first opened.
+const DECK_SRC = new URL("./vendor/deck.gl/dist.min.js", import.meta.url).href;
+// Animated paths are thinned harder than the static map: deck redraws every vertex
+// each frame (~60 fps at 500 k on Bogota's 509 routes, ~27 fps at 1.1 M).
+const TRIPS_VERTEX_BUDGET = 500000;
 
 // Basemaps. OpenStreetMap raster tiles are always available and need no key.
 // The CARTO Positron / Dark Matter basemaps are vector styles; they need the CARTO
@@ -270,6 +277,9 @@ const state = {
   // The last geometry handed to the map, so a view-only change (focus, slider, hide)
   // restyles through feature-state instead of rebuilding millions of points.
   mapData: { key: null, geometry: null },
+  // The open route animation (mamut-trips.js), if any.
+  animation: null,
+  animationLoading: false,
   view: {
     visualShouldFit: false,
   },
@@ -606,6 +616,7 @@ function visibleRouteIndices(routes, instanceData) {
 }
 
 function clearMapLayers() {
+  closeRouteAnimation();
   state.solutionLayers?.closePopup();
   state.solutionLayers?.clear();
   state.mapData = { key: null, geometry: null, pushed: false };
@@ -694,6 +705,7 @@ function buildRouteSelector(routes, instanceData) {
         <button type="button" data-route-action="show">Show all</button>
         <button type="button" data-route-action="hide">Hide all</button>
         <button type="button" data-route-action="reset">Reset routes</button>
+        <button type="button" data-route-action="animate"${map ? "" : " disabled"} aria-pressed="${state.animation ? "true" : "false"}">${state.animation ? "Stop animation" : "Animate"}</button>
       </div>
     </div>
     <label class="field route-search-field"><span>Find route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
@@ -722,6 +734,10 @@ function buildRouteSelector(routes, instanceData) {
   });
   routeSelectorContainer.querySelectorAll("[data-route-action]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.routeAction === "animate") {
+        void toggleRouteAnimation();
+        return;
+      }
       if (button.dataset.routeAction === "show") filtered.forEach((index) => state.hiddenRoutes.delete(index));
       if (button.dataset.routeAction === "hide") filtered.forEach((index) => state.hiddenRoutes.add(index));
       if (button.dataset.routeAction === "reset") {
@@ -956,6 +972,8 @@ function currentMapGeometry() {
   if (state.mapData.geometry && sameMapGeometryKey(key, state.mapData.key)) {
     return state.mapData.geometry;
   }
+  // A new solution or render mode: an open animation would show the old routes.
+  closeRouteAnimation();
   const geometry = buildVisualGeometry();
   if (geometry) {
     geometry.ranked = window.MamutMap.rankRouteLines(geometry.routeLines, { minTolerance: 0.5 });
@@ -1024,7 +1042,72 @@ function applyMapView() {
     depotColor: markerColors.depot,
     unassignedColor: markerColors.unassigned,
     dark: isDarkTheme(),
+    dim: state.animation ? 0.35 : 1,
   });
+  state.animation?.setView({ palette: window.MamutNocturne.routeColors(), visibleRoutes, focusedRoute: state.focusedRoute });
+}
+
+function closeRouteAnimation() {
+  const animation = state.animation;
+  state.animation = null;
+  animation?.close();
+}
+
+// Benchmarks publish a per-stop timeline (timeline.<Objective>.json) or, for TD
+// instances, td_schedules on the page; uploads have neither and animate at a
+// constant speed.
+async function routeTimelineForCurrentView() {
+  if (state.sourceKind !== "benchmark") return null;
+  const entry = state.benchmark.objectiveEntry;
+  if (entry?.timeline_path) {
+    try {
+      return await fetchJson(payloadSidecarHref(entry.timeline_path));
+    } catch (error) {
+      console.warn("Unable to load the route timeline; animating at constant speed.", error);
+      return null;
+    }
+  }
+  return window.MamutTrips.timelineFromTdSchedules(entry?.td_schedules);
+}
+
+async function toggleRouteAnimation() {
+  if (state.animation) {
+    closeRouteAnimation();
+    renderVisualState({ fitMap: false });
+    return;
+  }
+  const geometry = state.mapData.geometry;
+  if (!map || !geometry || state.animationLoading) return;
+  state.animationLoading = true;
+  const key = state.mapData.key;
+  try {
+    const timeline = await routeTimelineForCurrentView();
+    const visual = currentVisualState();
+    const animation = await window.MamutTrips.openAnimation(map, tripsBarEl, {
+      deckSrc: DECK_SRC,
+      routeLines: window.MamutMap.thinRouteLines(geometry.ranked, TRIPS_VERTEX_BUDGET).routeLines,
+      timeline,
+      palette: window.MamutNocturne.routeColors(),
+      visibleRoutes: visibleRouteIndices(visual.routes, visual.instanceData),
+      focusedRoute: state.focusedRoute,
+      onClose: () => {
+        state.animation = null;
+        renderVisualState({ fitMap: false });
+      },
+    });
+    if (animation && !sameMapGeometryKey(key, state.mapData.key)) {
+      // The solution changed while deck.gl was loading.
+      animation.close();
+      return;
+    }
+    state.animation = animation;
+  } catch (error) {
+    console.error(error);
+    showToast(`Route animation unavailable: ${error.message || error}`);
+  } finally {
+    state.animationLoading = false;
+    renderVisualState({ fitMap: false });
+  }
 }
 
 function fitMapToSolution() {

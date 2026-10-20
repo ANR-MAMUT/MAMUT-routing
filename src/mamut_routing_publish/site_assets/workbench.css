@@ -179,6 +179,105 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   margin-right: calc(var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap));
 }
 
+/* Route animation bar (mamut-trips.js), centred between the floating panels. */
+.trips-bar-host {
+  position: absolute;
+  left: calc(var(--wb-panel-inset) + var(--wb-left-panel-width) + var(--wb-panel-gap));
+  right: calc(var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap));
+  bottom: 58px;
+  z-index: 550;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.trips-bar-host[hidden] {
+  display: none;
+}
+
+.trips-bar,
+.trips-bar-host > .trips-note {
+  pointer-events: auto;
+  max-width: 760px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--div), var(--shadow);
+}
+
+.trips-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trips-controls button,
+.trips-controls select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--div);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.trips-play {
+  min-width: 58px;
+  color: var(--acc) !important;
+  border-color: var(--edge) !important;
+}
+
+.trips-speed {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Only the scrubber stretches; the other controls keep their natural width. */
+.trips-controls > :not(.trips-scrub) {
+  flex: none;
+}
+
+.trips-speed select {
+  min-width: 70px;
+}
+
+.trips-caption,
+.trips-served,
+.trips-note {
+  color: var(--mut);
+  font-size: 11px;
+}
+
+.trips-scrub {
+  flex: 1 1 auto;
+  min-width: 80px;
+  accent-color: var(--acc);
+}
+
+.trips-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.trips-served {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trips-close {
+  padding: 1px 8px !important;
+}
+
+.trips-note {
+  margin: 6px 0 0;
+}
+
 /* ── Floating panels ─────────────────────────────────────────────────────── */
 
 .wb-panel {
@@ -774,6 +873,10 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
     margin-right: 10px;
   }
 
+  .trips-bar-host {
+    right: var(--wb-panel-inset);
+  }
+
   .map-clear-btn {
     right: var(--wb-panel-inset);
   }
@@ -813,6 +916,12 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
 
   .wb-stage .maplibregl-ctrl-top-left .maplibregl-ctrl {
     margin-left: 10px;
+  }
+
+  .trips-bar-host {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
   }
 
   .wb-footer {

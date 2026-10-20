@@ -18,6 +18,9 @@ TOOLS_STATIC = REPO_ROOT / "MAMUT-routing-tools" / "src" / "mamut_routing_tools"
 SHARED_FILES = [
     "nocturne.js",
     "mamut-map.js",
+    "mamut-trips.js",
+    "vendor/deck.gl/dist.min.js",
+    "vendor/deck.gl/LICENSE",
     "vendor/maplibre-gl/maplibre-gl.js",
     "vendor/maplibre-gl/maplibre-gl.css",
     "vendor/maplibre-gl/LICENSE",

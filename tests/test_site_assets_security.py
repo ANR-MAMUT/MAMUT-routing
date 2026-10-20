@@ -29,6 +29,7 @@ ASSETS = Path(__file__).resolve().parents[1] / "src" / "mamut_routing_publish" /
 SITE_JS = ASSETS / "site.js"
 WORKBENCH_JS = ASSETS / "workbench.js"
 MAMUT_MAP_JS = ASSETS / "mamut-map.js"
+MAMUT_TRIPS_JS = ASSETS / "mamut-trips.js"
 HREF_FUNCTIONS = (
     "escapeHtml",
     "encodePathSegment",
@@ -109,7 +110,9 @@ def test_the_url_no_longer_chooses_the_payload_source() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [SITE_JS, WORKBENCH_JS, MAMUT_MAP_JS], ids=["site.js", "workbench.js", "mamut-map.js"]
+    "path",
+    [SITE_JS, WORKBENCH_JS, MAMUT_MAP_JS, MAMUT_TRIPS_JS],
+    ids=["site.js", "workbench.js", "mamut-map.js", "mamut-trips.js"],
 )
 def test_every_href_goes_through_a_safe_helper(path: Path) -> None:
     source = path.read_text(encoding="utf-8")

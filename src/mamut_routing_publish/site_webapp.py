@@ -300,6 +300,7 @@ def _render_workbench_shell_html(
     maplibre_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css")
     maplibre_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js")
     mamut_map_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "mamut-map.js")
+    mamut_trips_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "mamut-trips.js")
     # Only the workbench shell carries the key: it is the one page with a map.
     basemap_attr = (
         f' data-basemap-api-key="{html.escape(basemap_api_key, quote=True)}"' if basemap_api_key else ""
@@ -465,6 +466,7 @@ def _render_workbench_shell_html(
             </section>
         </aside>
 
+        <div id="tripsBar" class="trips-bar-host" hidden></div>
         <button id="clearBtn" type="button" class="map-clear-btn">Clear map</button>
         <div class="wb-footer"><span class="wb-footer-dot" aria-hidden="true"></span><p id="benchmarkRenderStatus">Historical benchmark families use straight-line rendering. Poryos2026 uses published road geometry when available.</p></div>
         <div id="toast" class="toast"></div>
@@ -472,6 +474,7 @@ def _render_workbench_shell_html(
 
     <script src="{maplibre_js_href}"></script>
     <script src="{mamut_map_js_href}"></script>
+    <script src="{mamut_trips_js_href}"></script>
     <script type="module" src="{js_href}"></script>
 </body>
 </html>
@@ -509,6 +512,7 @@ def generate_site_webapp(
         (source_assets_dir / "layout.js", site_output / "webapp" / "layout.js"),
         (source_assets_dir / "nocturne.js", site_output / "webapp" / "nocturne.js"),
         (source_assets_dir / "mamut-map.js", site_output / "webapp" / "mamut-map.js"),
+        (source_assets_dir / "mamut-trips.js", site_output / "webapp" / "mamut-trips.js"),
         (source_assets_dir / "nocturne-tokens.css", site_output / "webapp" / "nocturne-tokens.css"),
     ]
     asset_paths: list[Path] = []
