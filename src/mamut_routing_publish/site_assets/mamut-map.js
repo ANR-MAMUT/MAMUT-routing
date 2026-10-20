@@ -394,6 +394,20 @@
     });
   }
 
+  /* Several hover handlers share the canvas cursor; each claims "pointer" for itself
+     so one handler finding nothing does not clear another's pointer. */
+  const cursorClaims = new WeakMap();
+  function claimCursor(map, owner, wanted) {
+    let claims = cursorClaims.get(map);
+    if (!claims) {
+      claims = new Set();
+      cursorClaims.set(map, claims);
+    }
+    if (wanted) claims.add(owner);
+    else claims.delete(owner);
+    map.getCanvas().style.cursor = claims.size > 0 ? "pointer" : "";
+  }
+
   function emptyCollection() {
     return { type: "FeatureCollection", features: [] };
   }
@@ -586,6 +600,9 @@
   function createSolutionLayers(map, options = {}) {
     const nodeRadius = options.nodeRadius ?? 5;
     const depotRadius = options.depotRadius ?? 7;
+    const nodeStrokeWidth = options.nodeStrokeWidth ?? 1;
+    const depotStrokeWidth = options.depotStrokeWidth ?? 2;
+    const nodeFillOpacity = options.nodeFillOpacity ?? 0.85;
     const interaction = options.interaction || "click";
     const ids = {
       routes: "mamut-routes",
@@ -647,8 +664,8 @@
         paint: {
           "circle-radius": nodeRadius,
           "circle-color": ["to-color", ["coalesce", ["feature-state", "c"], "#888888"]],
-          "circle-opacity": ["*", 0.85, ["coalesce", ["feature-state", "o"], 1]],
-          "circle-stroke-width": 1,
+          "circle-opacity": ["*", nodeFillOpacity, ["coalesce", ["feature-state", "o"], 1]],
+          "circle-stroke-width": nodeStrokeWidth,
           "circle-stroke-color": ["to-color", ["coalesce", ["feature-state", "c"], "#888888"]],
           "circle-stroke-opacity": ["coalesce", ["feature-state", "o"], 1],
         },
@@ -660,8 +677,8 @@
         paint: {
           "circle-radius": depotRadius,
           "circle-color": ["to-color", ["coalesce", ["feature-state", "c"], "#888888"]],
-          "circle-opacity": 0.85,
-          "circle-stroke-width": 2,
+          "circle-opacity": nodeFillOpacity,
+          "circle-stroke-width": depotStrokeWidth,
           "circle-stroke-color": ["to-color", ["coalesce", ["feature-state", "c"], "#888888"]],
         },
       });
@@ -749,11 +766,16 @@
         return [feature.id, { c: palette[routeIndex % palette.length], w: style.w, o: style.o }];
       });
       const customerOpacity = typeof view.customerOpacity === "function" ? view.customerOpacity : () => 1;
+      // A string, or a function of the node for frontends that colour unrouted
+      // customers by their origin.
+      const unassignedColor = typeof view.unassignedColor === "function"
+        ? view.unassignedColor
+        : () => view.unassignedColor || "#888888";
       const nodeStates = model.nodes.map((node) => {
         const routeIndex = Number.isInteger(node.routeIndex) ? node.routeIndex : undefined;
         const opacity = clamp01(customerOpacity(routeIndex));
         model.nodeOpacity.set(node.index, opacity);
-        const color = routeIndex === undefined ? view.unassignedColor || "#888888" : palette[routeIndex % palette.length];
+        const color = routeIndex === undefined ? unassignedColor(node) : palette[routeIndex % palette.length];
         return [node.index, { c: color, o: opacity }];
       });
       if (!installed) return;
@@ -821,7 +843,7 @@
       requestAnimationFrame(() => {
         framePending = false;
         const info = pick(event.point);
-        map.getCanvas().style.cursor = info ? "pointer" : "";
+        claimCursor(map, ids.routes, Boolean(info));
         if (interaction !== "hover") return;
         const key = info ? `${info.kind}:${info.nodeIndex ?? ""}:${info.routeIndex ?? ""}` : null;
         if (key === hoverKey) {
@@ -859,6 +881,54 @@
     return { setData, applyView, clear, pick, bounds, popup, layerIds: ids, closePopup: () => popup.remove() };
   }
 
+  /* Text-only tooltips (hover) or popups (click) for a frontend's own layers: the
+     topmost feature under the pointer in `layerIds` is handed to `describe`, which
+     returns a DOM node or null. */
+  function bindLayerTooltip(map, layerIds, describe, options = {}) {
+    const interaction = options.interaction || "hover";
+    const popup = new global.maplibregl.Popup({
+      closeButton: interaction === "click",
+      closeOnClick: interaction === "click",
+      maxWidth: "320px",
+      offset: 8,
+      className: "mamut-popup",
+    });
+    const owner = layerIds.join(",");
+    const topFeature = (point) => {
+      const layers = layerIds.filter((layerId) => map.getLayer(layerId) && map.getLayoutProperty(layerId, "visibility") !== "none");
+      if (!layers.length) return null;
+      const box = [[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]];
+      return map.queryRenderedFeatures(box, { layers })[0] || null;
+    };
+    let shownId = null;
+    map.on("mousemove", (event) => {
+      const feature = topFeature(event.point);
+      claimCursor(map, owner, Boolean(feature));
+      if (interaction !== "hover") return;
+      const key = feature ? `${feature.layer.id}:${feature.id}` : null;
+      if (key === shownId) return;
+      shownId = key;
+      const content = feature ? describe(feature) : null;
+      if (!content) {
+        popup.remove();
+        return;
+      }
+      popup.setLngLat(feature.geometry.type === "Point" ? feature.geometry.coordinates : event.lngLat).setDOMContent(content).addTo(map);
+    });
+    map.on("mouseout", () => {
+      shownId = null;
+      if (interaction === "hover") popup.remove();
+    });
+    if (interaction === "click") {
+      map.on("click", (event) => {
+        const feature = topFeature(event.point);
+        const content = feature ? describe(feature) : null;
+        if (content) popup.setLngLat(event.lngLat).setDOMContent(content).addTo(map);
+      });
+    }
+    return { popup, refresh: () => { shownId = null; } };
+  }
+
   /* Fit the map to bounds, clear of the floating panels. */
   function fitToBounds(map, bounds, panelElements = [], options = {}) {
     if (!bounds) return;
@@ -881,6 +951,7 @@
     CARTO_ATTRIBUTION,
     BASEMAPS,
     availableBasemaps,
+    bindLayerTooltip,
     boundsOf,
     buildRouteFeatures,
     cartoStyleUrl,
