@@ -297,13 +297,9 @@ def _render_workbench_shell_html(
     nocturne_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "nocturne.js")
     font_href = _relative_path(route_dir, output_repo_dir / "webapp" / "fonts" / "InterVariable.woff2")
     favicon_href = _relative_path(route_dir, output_repo_dir / "webapp" / "icons" / "favicon.svg")
-    leaflet_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.css")
-    leaflet_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "leaflet" / "leaflet.js")
     maplibre_css_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css")
     maplibre_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js")
-    maplibre_leaflet_js_href = _relative_path(
-        route_dir, output_repo_dir / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js"
-    )
+    mamut_map_js_href = _relative_path(route_dir, output_repo_dir / "webapp" / "mamut-map.js")
     # Only the workbench shell carries the key: it is the one page with a map.
     basemap_attr = (
         f' data-basemap-api-key="{html.escape(basemap_api_key, quote=True)}"' if basemap_api_key else ""
@@ -324,7 +320,6 @@ def _render_workbench_shell_html(
     {LAYOUT_INIT_SCRIPT}
     <link rel="icon" type="image/svg+xml" href="{favicon_href}" />
     <link rel="preload" href="{font_href}" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="{leaflet_css_href}" />
     <link rel="stylesheet" href="{maplibre_css_href}" />
     <link rel="stylesheet" href="{css_href}" />
 </head>
@@ -475,9 +470,8 @@ def _render_workbench_shell_html(
         <div id="toast" class="toast"></div>
     </main>
 
-    <script src="{leaflet_js_href}"></script>
     <script src="{maplibre_js_href}"></script>
-    <script src="{maplibre_leaflet_js_href}"></script>
+    <script src="{mamut_map_js_href}"></script>
     <script type="module" src="{js_href}"></script>
 </body>
 </html>
@@ -514,6 +508,7 @@ def generate_site_webapp(
         (source_assets_dir / "workbench.js", site_output / "webapp" / "workbench.js"),
         (source_assets_dir / "layout.js", site_output / "webapp" / "layout.js"),
         (source_assets_dir / "nocturne.js", site_output / "webapp" / "nocturne.js"),
+        (source_assets_dir / "mamut-map.js", site_output / "webapp" / "mamut-map.js"),
         (source_assets_dir / "nocturne-tokens.css", site_output / "webapp" / "nocturne-tokens.css"),
     ]
     asset_paths: list[Path] = []
