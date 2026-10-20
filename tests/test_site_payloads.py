@@ -416,10 +416,10 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    # 7 css/js bundles (incl. the shared nocturne tokens/runtime) + 4 icons + 8 logos
-    # + 1 font + 16 vendored files (Leaflet 9, MapLibre GL 3, maplibre-gl-leaflet 2,
-    # deck.gl 2) + the vendor README.
-    assert webapp_summary.asset_files_written == 36
+    # 8 css/js bundles (incl. the shared nocturne tokens/runtime and the map kit)
+    # + 4 icons + 8 logos + 1 font + 5 vendored files (MapLibre GL 3, deck.gl 2)
+    # + the vendor README.
+    assert webapp_summary.asset_files_written == 27
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -447,11 +447,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "workbench.css").exists()
     assert (site_output / "webapp" / "workbench.js").exists()
     assert (site_output / "webapp" / "fonts" / "InterVariable.woff2").exists()
-    assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.js").exists()
-    assert (site_output / "webapp" / "vendor" / "leaflet" / "leaflet.css").exists()
     assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js").exists()
     assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css").exists()
-    assert (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js").exists()
+    assert not (site_output / "webapp" / "vendor" / "leaflet").exists()
+    assert not (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet").exists()
+    assert (site_output / "webapp" / "mamut-map.js").exists()
     assert (site_output / "webapp" / "vendor" / "deck.gl" / "dist.min.js").exists()
     assert (site_output / "webapp" / "vendor" / "deck.gl" / "LICENSE").exists()
 
@@ -485,17 +485,16 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert 'id="benchmarkGeometryFilter"' in workbench_html
     assert 'id="benchmarkSortDirection"' in workbench_html
     assert 'id="map"' in workbench_html
-    # Nocturne reskin: Leaflet and fonts are self-hosted.
-    assert "vendor/leaflet/leaflet.js" in workbench_html
-    assert "vendor/leaflet/leaflet.css" in workbench_html
+    # Nocturne reskin: MapLibre GL and fonts are self-hosted; Leaflet is gone.
+    assert "leaflet" not in workbench_html
     assert "vendor/maplibre-gl/maplibre-gl.js" in workbench_html
     assert "vendor/maplibre-gl/maplibre-gl.css" in workbench_html
-    assert "vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js" in workbench_html
-    # Script order matters: Leaflet, then MapLibre GL, then the bridge, then the app.
+    # deck.gl is loaded on demand by the route animation, never by the shell.
+    assert "vendor/deck.gl" not in workbench_html
+    # Script order matters: MapLibre GL, then the shared map kit, then the app.
     assert (
-        workbench_html.index("vendor/leaflet/leaflet.js")
-        < workbench_html.index("vendor/maplibre-gl/maplibre-gl.js")
-        < workbench_html.index("vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js")
+        workbench_html.index("vendor/maplibre-gl/maplibre-gl.js")
+        < workbench_html.index("webapp/mamut-map.js")
         < workbench_html.index("webapp/workbench.js")
     )
     # No basemap key was given: the page must not carry the attribute at all.
@@ -541,8 +540,12 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert '<summary>Filters' not in workbench_js
     assert 'usesRoadMetric(payload.summary) ? "full" : "faded"' in site_js
     assert 'class="route-view-opacity" type="range" min="0" max="0.8"' in workbench_js
-    assert "addArrowsToPolyline(polyline, color, opacity)" in workbench_js
-    assert "const hasSeparableLegs = rawSegments.length > 1;" in workbench_js
+    # View changes restyle the MapLibre layers through feature-state; geometry is
+    # only rebuilt when the solution or the render mode changes.
+    assert "state.solutionLayers.applyView({" in workbench_js
+    assert "const MAP_ROUTE_POINT_BUDGET = 1000000;" in workbench_js
+    assert "addArrowsToPolyline" not in workbench_js
+    assert 'map.on("zoomend"' not in workbench_js
     assert "visibleLimit" not in workbench_js
     assert "selectedRoutes" not in workbench_js
     assert "route-pager" not in workbench_js

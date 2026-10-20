@@ -606,8 +606,7 @@
       nodeOpacity: new Map(),
     };
     let installed = false;
-    let pendingData = null;
-    let pendingView = null;
+    let dataDirty = false;
     let lastView = null;
     let imageKey = null;
 
@@ -684,10 +683,8 @@
         }
       });
       installed = true;
-      if (pendingData) setData(pendingData);
-      if (pendingView) applyView(pendingView);
-      pendingData = null;
-      pendingView = null;
+      if (dataDirty) pushData();
+      if (lastView) applyView(lastView);
     }
 
     function refreshImages(view) {
@@ -706,11 +703,9 @@
       put("mamut-depot-star", starImage(view.depotColor || "#888888", outline));
     }
 
+    /* The model is updated at once, so bounds() and pick() are right even before the
+       map style has loaded; only the writes to MapLibre wait for install(). */
     function setData(data) {
-      if (!installed) {
-        pendingData = data;
-        return;
-      }
       const routeLines = Array.isArray(data.routeLines) ? data.routeLines : [];
       model.routeFeatures = buildRouteFeatures(routeLines);
       model.nodes = (data.nodes || []).filter((node) => usablePoint(node.coord));
@@ -718,6 +713,13 @@
       model.depot = data.depot && usablePoint(data.depot.coord) ? data.depot : null;
       model.routeOpacity.clear();
       model.nodeOpacity.clear();
+      dataDirty = true;
+      if (installed) pushData();
+      if (lastView) applyView(lastView);
+    }
+
+    function pushData() {
+      dataDirty = false;
       [ids.routes, ids.nodes, ids.depot].forEach((sourceId) => map.removeFeatureState({ source: sourceId }));
       map.getSource(ids.routes).setData({ type: "FeatureCollection", features: model.routeFeatures });
       map.getSource(ids.nodes).setData({
@@ -735,31 +737,29 @@
           features: [{ type: "Feature", id: 0, properties: { n: model.depot.index }, geometry: { type: "Point", coordinates: [Number(model.depot.coord[0]), Number(model.depot.coord[1])] } }],
         }
         : emptyCollection());
-      if (lastView) applyView(lastView);
     }
 
     function applyView(view) {
       lastView = view;
-      if (!installed) {
-        pendingView = view;
-        return;
-      }
-      refreshImages(view);
       const palette = view.palette && view.palette.length ? view.palette : ["#888888"];
-      for (const feature of model.routeFeatures) {
+      const routeStates = model.routeFeatures.map((feature) => {
         const routeIndex = feature.properties.r;
         const style = routeFeatureStyle(routeIndex, feature.properties.leg, view);
         model.routeOpacity.set(feature.id, style.o);
-        map.setFeatureState({ source: ids.routes, id: feature.id }, { c: palette[routeIndex % palette.length], w: style.w, o: style.o });
-      }
+        return [feature.id, { c: palette[routeIndex % palette.length], w: style.w, o: style.o }];
+      });
       const customerOpacity = typeof view.customerOpacity === "function" ? view.customerOpacity : () => 1;
-      for (const node of model.nodes) {
+      const nodeStates = model.nodes.map((node) => {
         const routeIndex = Number.isInteger(node.routeIndex) ? node.routeIndex : undefined;
         const opacity = clamp01(customerOpacity(routeIndex));
         model.nodeOpacity.set(node.index, opacity);
         const color = routeIndex === undefined ? view.unassignedColor || "#888888" : palette[routeIndex % palette.length];
-        map.setFeatureState({ source: ids.nodes, id: node.index }, { c: color, o: opacity });
-      }
+        return [node.index, { c: color, o: opacity }];
+      });
+      if (!installed) return;
+      refreshImages(view);
+      routeStates.forEach(([id, state]) => map.setFeatureState({ source: ids.routes, id }, state));
+      nodeStates.forEach(([id, state]) => map.setFeatureState({ source: ids.nodes, id }, state));
       if (model.depot) {
         map.setFeatureState({ source: ids.depot, id: 0 }, { c: view.depotColor || "#888888" });
       }

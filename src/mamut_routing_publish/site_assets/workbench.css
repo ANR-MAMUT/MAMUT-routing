@@ -59,54 +59,124 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   background: var(--svg);
 }
 
-/* Leaflet chrome, retuned to the Nocturne surface. */
-.leaflet-control-zoom a,
-.leaflet-control-layers {
-  background: var(--panel) !important;
-  color: var(--ink) !important;
-  border: none !important;
-  box-shadow: 0 0 0 1px var(--div) !important;
+/* MapLibre chrome, retuned to the Nocturne surface. */
+.maplibregl-map {
+  font-family: "Inter", system-ui, sans-serif;
 }
 
-.leaflet-control-zoom a:hover {
-  color: var(--acc) !important;
+.maplibregl-ctrl-group,
+.mamut-basemap-control {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--div);
 }
 
-.leaflet-control-attribution {
-  background: var(--panel) !important;
-  color: var(--mut) !important;
-  font-size: 10px !important;
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--div);
 }
 
-.leaflet-control-attribution a {
-  color: var(--mut) !important;
+.maplibregl-ctrl-group button:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--acc) 14%, var(--panel));
 }
 
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
-  background: var(--panel) !important;
-  color: var(--ink) !important;
-  box-shadow: 0 0 0 1px var(--edge), var(--shadow) !important;
+/* The control icons are dark SVG backgrounds; invert them on the dark surface. */
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon,
+[data-theme="dark"] .maplibregl-ctrl-attrib-button {
+  filter: invert(1) hue-rotate(180deg);
 }
 
-.leaflet-container {
-  font-family: "Inter", system-ui, sans-serif !important;
+.mamut-basemap-control label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 8px;
+  font-size: 12px;
 }
 
-/* Keep Leaflet controls beside the floating panels instead of over them. The
-   10px adjustment accounts for Leaflet's own control margin. */
-.wb-stage .leaflet-top.leaflet-left {
-  top: 6px;
-  left: calc(
-    var(--wb-panel-inset) + var(--wb-left-panel-width) + var(--wb-panel-gap) - 10px
-  );
+.mamut-basemap-caption {
+  color: var(--mut);
 }
 
-.wb-stage .leaflet-top.leaflet-right {
-  top: 6px;
-  right: calc(
-    var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap) - 10px
-  );
+.mamut-basemap-control select {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--div);
+  border-radius: 4px;
+  font: inherit;
+  padding: 2px 4px;
+}
+
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  background: var(--panel);
+  color: var(--mut);
+  font-size: 10px;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--mut);
+}
+
+.maplibregl-popup-content {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--edge), var(--shadow);
+  border-radius: 8px;
+  padding: 10px 14px 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.maplibregl-popup-close-button {
+  color: var(--mut);
+}
+
+.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--panel);
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--panel);
+}
+
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--panel);
+}
+
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--panel);
+}
+
+.map-unavailable {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 360px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--mut);
+  box-shadow: 0 0 0 1px var(--div);
+  text-align: center;
+}
+
+/* Keep map controls beside the floating panels instead of over them. Only the
+   controls move, never the corner containers: the top-left corner also hosts the
+   route-animation canvas, which must stay aligned with the map. */
+.wb-stage .maplibregl-ctrl-top-left .maplibregl-ctrl {
+  margin-top: 16px;
+  margin-left: calc(var(--wb-panel-inset) + var(--wb-left-panel-width) + var(--wb-panel-gap));
+}
+
+.wb-stage .maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin-top: 16px;
+  margin-right: calc(var(--wb-panel-inset) + var(--wb-right-panel-width) + var(--wb-panel-gap));
 }
 
 /* ── Floating panels ─────────────────────────────────────────────────────── */
@@ -502,14 +572,6 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   margin-bottom: 8px;
 }
 
-/* Depot star marker: a divIcon wrapping an inline SVG, so it must not inherit
-   any box styling from Leaflet's marker defaults. */
-.depot-star-marker {
-  background: none;
-  border: none;
-  line-height: 0;
-}
-
 .route-page-list {
   display: flex;
   flex-direction: column;
@@ -708,8 +770,8 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   .splitter-right { display: none; }
   [data-right-collapsed="true"] .wb-panel-right { display: none; }
 
-  .wb-stage .leaflet-top.leaflet-right {
-    right: 0;
+  .wb-stage .maplibregl-ctrl-top-right .maplibregl-ctrl {
+    margin-right: 10px;
   }
 
   .map-clear-btn {
@@ -743,13 +805,14 @@ body[data-page-kind="workbench-app"] *::-webkit-scrollbar-thumb {
   [data-left-collapsed="true"] .wb-panel-left > :not(.panel-rail) { display: revert; }
   [data-left-collapsed="true"] .wb-panel-left .panel-rail { display: none; }
 
-  .wb-stage .leaflet-top.leaflet-left,
-  .wb-stage .leaflet-top.leaflet-right {
-    top: calc(55% + 10px);
+  /* Below the top-sheet panel; margins, not corner offsets (see above). */
+  .wb-stage .maplibregl-ctrl-top-left .maplibregl-ctrl,
+  .wb-stage .maplibregl-ctrl-top-right .maplibregl-ctrl {
+    margin-top: calc(55vh + 10px);
   }
 
-  .wb-stage .leaflet-top.leaflet-left {
-    left: 0;
+  .wb-stage .maplibregl-ctrl-top-left .maplibregl-ctrl {
+    margin-left: 10px;
   }
 
   .wb-footer {
