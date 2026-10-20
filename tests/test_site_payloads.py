@@ -417,9 +417,9 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
 
     webapp_summary = generate_site_webapp(output_repo_dir)
     # 7 css/js bundles (incl. the shared nocturne tokens/runtime) + 4 icons + 8 logos
-    # + 1 font + 14 vendored files (Leaflet 9, MapLibre GL 3, maplibre-gl-leaflet 2)
-    # + the vendor README.
-    assert webapp_summary.asset_files_written == 34
+    # + 1 font + 16 vendored files (Leaflet 9, MapLibre GL 3, maplibre-gl-leaflet 2,
+    # deck.gl 2) + the vendor README.
+    assert webapp_summary.asset_files_written == 36
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -452,6 +452,8 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.js").exists()
     assert (site_output / "webapp" / "vendor" / "maplibre-gl" / "maplibre-gl.css").exists()
     assert (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet" / "leaflet-maplibre-gl.js").exists()
+    assert (site_output / "webapp" / "vendor" / "deck.gl" / "dist.min.js").exists()
+    assert (site_output / "webapp" / "vendor" / "deck.gl" / "LICENSE").exists()
 
     root_html = (site_output / "index.html").read_text(encoding="utf-8")
     # Static-only: no payload-mode / API-prefix attributes a page could follow elsewhere.
