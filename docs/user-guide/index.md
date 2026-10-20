@@ -36,7 +36,8 @@ checker-validated, kept across restarts and comparable. Each run records the sha
 validated on: after the instance is regenerated with **Replace existing** (without it, a different configuration
 that yields the same name is saved as `<name>-2`), its old runs are flagged stale, hidden from rendering and
 comparison, and no longer counted. Set `MAMUT_BASEMAP_API_KEY` for the CARTO vector basemaps (the key is visible
-to the browser by design).
+to the browser by design). **Animate**, next to a displayed run's route list, plays its vehicles on the map with the
+checker's timing on the free-flow `fastest` arc costs; the public workbench offers the same for published BKS.
 
 ## Generate instances
 

@@ -5,6 +5,28 @@ per-snapshot data deltas (families, instances and BKS added, removed, improved) 
 [History](https://mamut-routing.univ-ubs.fr/history/) page; each satellite keeps its own `CHANGELOG.md`; the lib and
 the tools have their own release notes.
 
+## Unreleased — MapLibre workbench map and route animation (test branch `test/maplibre-trips-animation`)
+
+### Website
+
+- **The workbench map is MapLibre GL; Leaflet and the maplibre-gl-leaflet bridge are gone.**
+  - Routes, line-placed direction arrows, customers and the depot star are styled through feature-state, so focus,
+    the fade sliders and hide/show never rebuild geometry. On Bogotá n = 4000, a slider tick went from about 0.9 s
+    to about 1 ms. This closes audit finding C-workbench-geometry-05.
+  - Huge solutions are thinned to a 1 M-point budget with an exact, one-pass ranked Douglas–Peucker before they
+    reach MapLibre.
+  - Popups are text-only.
+- **Route animation.** **Animate** plays a BKS's vehicles with deck.gl 9.4.0 `TripsLayer`, vendored and loaded on
+  demand. Times come from:
+  - new per-BKS `timeline.<Objective>.json` payloads (VRPTW: the checker's schedule; CVRP: the free-flow
+    `fastest` clock);
+  - `td_schedules` for TD instances;
+  - a labelled constant 25 km/h otherwise.
+- `site.js` exports `payloadSidecarHref` (formerly `routeFunctionsHref`).
+- The map code is shared byte for byte with the tools GUI (`mamut-map.js`, `mamut-trips.js`, the vendored
+  MapLibre and deck.gl). `tests/test_shared_frontend_assets.py` keeps the copies equal.
+- Pins the tools test branch (MapLibre GUI, `/timeline`, `arc_starts`).
+
 ## Unreleased — 2026-09-24 codebase audit fixes
 
 Fixes the two critical and eleven high findings of the 2026-09-24 audit, with the medium and low findings that sat
