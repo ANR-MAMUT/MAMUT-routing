@@ -2667,8 +2667,10 @@ function formatScheduleTime(value) {
   return value.toFixed(2);
 }
 
-function routeFunctionsHref(routeFunctionsPath) {
-  const normalized = routeFunctionsPath.startsWith("/") ? routeFunctionsPath : `/${routeFunctionsPath}`;
+// A JSON file published next to an instance page (route functions, timelines),
+// addressed by its route-relative payload path.
+function payloadSidecarHref(payloadPath) {
+  const normalized = payloadPath.startsWith("/") ? payloadPath : `/${payloadPath}`;
   return relativeFromCurrent(`${resolvePayloadStaticRoot()}${normalized}`, { directory: false });
 }
 
@@ -2852,7 +2854,7 @@ async function renderInstancePage(payload, options = {}) {
 
     if (selectedEntry?.route_functions_path && routeFunctionsStatus === "idle") {
       routeFunctionsStatus = "loading";
-      fetchJsonMemo(routeFunctionsHref(selectedEntry.route_functions_path))
+      fetchJsonMemo(payloadSidecarHref(selectedEntry.route_functions_path))
         .then((data) => {
           routeFunctionsData = data;
           routeFunctionsStatus = "ready";
@@ -4252,6 +4254,7 @@ export {
   parseUploadedMetaText,
   projectEnuInstanceCoordinates,
   parseUploadedSolutionText,
+  payloadSidecarHref,
   relativeFromCurrent,
   renderVrpExportChips,
   resolvePreviewGeometry,

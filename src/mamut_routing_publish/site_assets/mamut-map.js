@@ -759,11 +759,13 @@
     function applyView(view) {
       lastView = view;
       const palette = view.palette && view.palette.length ? view.palette : ["#888888"];
+      // `dim` steps the static routes back, e.g. while vehicles animate on top.
+      const dim = clamp01(view.dim ?? 1);
       const routeStates = model.routeFeatures.map((feature) => {
         const routeIndex = feature.properties.r;
         const style = routeFeatureStyle(routeIndex, feature.properties.leg, view);
         model.routeOpacity.set(feature.id, style.o);
-        return [feature.id, { c: palette[routeIndex % palette.length], w: style.w, o: style.o }];
+        return [feature.id, { c: palette[routeIndex % palette.length], w: style.w, o: style.o * dim }];
       });
       const customerOpacity = typeof view.customerOpacity === "function" ? view.customerOpacity : () => 1;
       // A string, or a function of the node for frontends that colour unrouted

@@ -416,10 +416,10 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert history_detail_payload["affected_objective_functions"] == ["HierarchicalVehicleCost", "MonoCost"]
 
     webapp_summary = generate_site_webapp(output_repo_dir)
-    # 8 css/js bundles (incl. the shared nocturne tokens/runtime and the map kit)
-    # + 4 icons + 8 logos + 1 font + 5 vendored files (MapLibre GL 3, deck.gl 2)
-    # + the vendor README.
-    assert webapp_summary.asset_files_written == 27
+    # 9 css/js bundles (incl. the shared nocturne tokens/runtime, the map kit and the
+    # route animation) + 4 icons + 8 logos + 1 font + 5 vendored files (MapLibre GL 3,
+    # deck.gl 2) + the vendor README.
+    assert webapp_summary.asset_files_written == 28
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -452,6 +452,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert not (site_output / "webapp" / "vendor" / "leaflet").exists()
     assert not (site_output / "webapp" / "vendor" / "maplibre-gl-leaflet").exists()
     assert (site_output / "webapp" / "mamut-map.js").exists()
+    assert (site_output / "webapp" / "mamut-trips.js").exists()
     assert (site_output / "webapp" / "vendor" / "deck.gl" / "dist.min.js").exists()
     assert (site_output / "webapp" / "vendor" / "deck.gl" / "LICENSE").exists()
 
@@ -491,12 +492,14 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "vendor/maplibre-gl/maplibre-gl.css" in workbench_html
     # deck.gl is loaded on demand by the route animation, never by the shell.
     assert "vendor/deck.gl" not in workbench_html
-    # Script order matters: MapLibre GL, then the shared map kit, then the app.
+    # Script order matters: MapLibre GL, the shared map kit and animation, then the app.
     assert (
         workbench_html.index("vendor/maplibre-gl/maplibre-gl.js")
         < workbench_html.index("webapp/mamut-map.js")
+        < workbench_html.index("webapp/mamut-trips.js")
         < workbench_html.index("webapp/workbench.js")
     )
+    assert 'id="tripsBar" class="trips-bar-host" hidden' in workbench_html
     # No basemap key was given: the page must not carry the attribute at all.
     assert "data-basemap-api-key" not in workbench_html
     assert "unpkg.com" not in workbench_html
