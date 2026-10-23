@@ -37,4 +37,6 @@ This work is part of the ANR-MAMUT project, [ANR-22-CE22-0016](https://anr.fr/Pr
 
 Contributions are welcome through pull requests or discussions on the [MAMUT-routing repository](https://github.com/ANR-MAMUT/MAMUT-routing).
 
-New contributors will be listed here.
+New contributors are listed below in alphabetical order of last name, with their GitHub username and ORCID identifier when available, as well as their list of contributions to the project.
+
+Touko Ursin ([GitHub](https://github.com/toukoursin), [LinkedIn](https://linkedin.com/in/touko-ursin/)) - New BKS in [MAMUT-routing-Mamut2026 #2](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026/pull/2)
