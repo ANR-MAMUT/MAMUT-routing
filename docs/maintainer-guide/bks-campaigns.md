@@ -16,49 +16,109 @@ maintainers' campaign plans are internal working notes.
   `mamut-routing list --benchmark-name <Family>` resolves everything.
 - **Not on the site VM.** It serves the site; solving there starves the server and its memory is small.
 
-## Driver pattern
+## With `mamut-tools bks-campaign`
 
-Call the library, not the CLI, so extra metadata reaches the BKS. Workers **solve and return**; one
-coordinator **stores**: the BKS store is an unlocked read/compare/write, so two processes writing the same file can
-let a worse candidate win the race (measured, not hypothetical). Consume every future so worker exceptions surface.
+The tools run the whole pattern from a TOML spec (the format is documented in
+`mamut_routing_tools.bks_campaign.spec`):
+
+```toml
+[campaign]
+name = "mamut2026-bks-4"
+out = "runs/mamut2026-bks-4"          # relative to the spec; refused inside a benchmark tree
+authors = "Your Name (handle)"        # credited in every BKS the harvest writes
+
+[select]
+benchmarks_dir = "../benchmarks"
+problem_types = ["CVRP"]
+families = ["Mamut2026"]
+metrics = ["euclidean"]
+min_n = 700
+
+[budget]                              # T(n) = clamp(per_customer_s * n, min_s, max_s) * time_scale
+per_customer_s = 21.6
+min_s = 7200
+max_s = 86400
+
+[[runs]]
+solver = "filo2"                      # external solvers come from the solvers config
+seeds = "1-5"
+
+[[runs]]
+solver = "lkh3"
+seeds = "1-5"
+
+[[runs]]
+solver = "pyvrp"
+kind = "pyvrp-polish"
+seeds = "3000-3003"
+budget_factor = 1.5
+warm_start = "best"                   # from the best archived run or the stored BKS
+
+[resources]
+workers = 90
+memory_gb = "auto"                    # 80 % of MemAvailable
+```
+
+```bash
+mamut-tools bks-campaign plan     campaign.toml --only toronto    # dry run: runs, core-hours, memory, refusals
+mamut-tools bks-campaign baseline campaign.toml                   # freeze the stored BKS (refuses to overwrite)
+mamut-tools bks-campaign run      campaign.toml                   # resumable; Ctrl-C once = drain, twice = abort
+mamut-tools bks-campaign harvest  campaign.toml --dry-run         # then without --dry-run: the only BKS writer
+mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, cross-solver.csv
+```
+
+- **Runs** are checked by the reference checker and archived as `runs/<key>.json` (schema version 1: instance and
+  its sha256, kind, solver, version, seed, budget, status, the checker's verdict and cost, routes, trajectory, the
+  solver's own cost and scale, warm start, provenance, host and CPU), winner or not. The key
+  `<instance_id>__<objective>__<kind>__seed<S>__t<T>` includes the budget; a run is done when its record exists, so
+  a killed run is simply redone. Solver logs and solution files stay in `raw/<key>/`.
+- **Workers never write BKS.** One task per spawned worker, admitted while the memory estimates fit the budget;
+  external solvers run in their own process group and are killed with their children on abort.
+- **Harvest** takes each instance's best valid run, skips runs whose instance file changed since and runs below
+  the published fleet lower bound, and offers the rest (those that beat the baseline, or all with `--offer-all`) to
+  the BKS store, one process per instance, with the spec's authors and the run's provenance. The store keeps the
+  incumbent on a tie.
+- Launch long campaigns as a user unit on shared machines
+  (`systemd-run --user --unit=<name> --collect mamut-tools bks-campaign run campaign.toml`): a resumable driver only
+  loses the runs in flight when the session goes.
+
+## Driver pattern (library)
+
+For a custom driver, call the library, not the CLI. Workers **solve and return**; one coordinator **stores**: the
+BKS store is an unlocked read/compare/write, so two processes writing the same file can let a worse candidate win
+the race (measured, not hypothetical). Consume every future so worker exceptions surface.
 
 ```python
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from mamut_routing_lib import BenchmarkSolution, discover_benchmark_instances, save_solution_as_bks_if_improved
-from mamut_routing_lib.enums import ObjectiveFunction
-from mamut_routing_lib.solvers.pyvrp import solve_instance
+from mamut_routing_lib import discover_benchmark_instances, run_solver, submit_bks
 
 BENCHMARKS = Path("benchmarks").resolve()     # the library never falls back to the working directory
 
-def run(item, seed, time_limit_s):
-    """Worker: solve and return; never writes a BKS."""
-    result = solve_instance(item.load(), time_limit_s=time_limit_s, seed=seed, instance_path=item.instance_path)
-    return item, seed, result
+def run(item, solver, seed, time_limit_s):
+    """Worker: solve, check and return; never writes a BKS."""
+    return item, run_solver(solver, item.instance_path, time_limit_s=time_limit_s, seed=seed)
 
 items = discover_benchmark_instances(BENCHMARKS, problem_types=["CVRP"], benchmark_names=["Mamut2026"])
-with ProcessPoolExecutor(max_workers=10) as pool:                       # one core per PyVRP run
-    futures = [pool.submit(run, item, seed, 300) for item in items for seed in (1, 2, 3)]
+with ProcessPoolExecutor(max_workers=10) as pool:                       # one core per run
+    futures = [pool.submit(run, item, solver, seed, 300)
+               for item in items for solver in ("pyvrp", "lkh3") for seed in (1, 2, 3)]
     for future in as_completed(futures):
-        item, seed, result = future.result()                            # re-raises a worker's exception
-        archive_run(item, seed, result)                                 # every run, winner or not
-        if not result.solver_is_feasible:
+        item, solved = future.result()                                  # re-raises a worker's exception
+        archive_run(item, solved.to_json())                             # every run, winner or not
+        if not solved.valid:
             continue
-        update = save_solution_as_bks_if_improved(                      # coordinator: the only writer
-            item.instance_path, ObjectiveFunction.MONO_COST,
-            BenchmarkSolution(instance_name=item.instance_name, routes=result.routes),
-            authors="...", metadata={"method": "pyvrp-ils-v2", "seed": seed, "time_limit_s": 300,
-                                     "solver_version": "0.13.4", "machine": "...", "campaign": "2026-09-bks-2"},
+        update = submit_bks(                                            # coordinator: the only writer
+            item.instance_path, solved.result.routes, authors="...",
+            metadata=solved.bks_metadata(campaign="2026-11-bks-4"),     # solver, version, seed, budget, machine
         )
-        print(item.instance_id, seed, update.action, update.candidate_cost)
+        print(item.instance_id, update.action, update.candidate_cost)
 ```
 
-`save_solution_as_bks_if_improved` hydrates slim collection instances (Mamut2026, Poryos2026) from their sidecars
-before checking (lib ≥ commit `74b8a54`); `solve_and_update_bks` does solve and store in one call but carries no
-extra metadata and would run the store inside each worker, which is exactly the race to avoid.
-
-Make the driver resumable (skip runs whose archive exists) and keep a ledger (`campaigns/<id>/ledger.csv`) with one
-row per run. Memory per worker is roughly 100 MB at n≈500 and 1.6 GB at n=4000.
+`submit_bks` (or `save_solution_as_bks_if_improved`) hydrates slim collection instances (Mamut2026, Poryos2026)
+from their sidecars before checking, and dispatches TD instances to the TD store. Make a custom driver resumable
+(skip runs whose archive exists) and keep a ledger with one row per run. Memory per PyVRP worker is roughly 100 MB
+at n≈500 and 1.6 GB at n=4000.
 
 ## After the campaign
 

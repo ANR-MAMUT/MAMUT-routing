@@ -14,7 +14,10 @@ benchmarks/ (data)  ──►  mamut_routing_lib (contract: models, checkers, BK
                                              dist/ ──► site.js renders every page client-side
 ```
 
-- The **lib** is a pure contract and runtime layer: no site logic, no solver besides the optional PyVRP wrapper.
+- The **lib** is a pure contract and runtime layer: no site logic. Its solver layer is a protocol and a registry
+  (`mamut_routing_lib.solvers`): the optional PyVRP wrapper, a KAYROS adapter (lazy import), and a standard-library
+  adapter that runs external executables (FILO2, HGS-CVRP, AILS-II, LKH-3, user-declared) from descriptors and a
+  user solvers config. No solver ships with the lib; every result goes through the reference checker.
 - The **tools** are the only place with compute: Overpass/Nominatim access, the road-graph engine (a faithful
   port of the former Julia pipeline), generation, traffic models, converters, the loopback FastAPI workbench.
 - The **publisher** turns the benchmark tree into `site-payloads/*.json` and thin HTML shells; `site.js` renders

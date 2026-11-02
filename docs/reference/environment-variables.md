@@ -6,6 +6,8 @@
 | `MAMUT_ROUTING_BENCHMARKS_ROOT` | lib, `mamut-routing` | Benchmarks root: the library's default before `MAMUT_ROUTING_ROOT/benchmarks`; the CLI's default for `--benchmarks-dir` (the CLI itself falls back to `./benchmarks`). |
 | `MAMUT_ROUTING_RELEASE_REPO` | `mamut-routing remote` | GitHub repository whose releases carry the archives (`--repo`). |
 | `MAMUT_ROUTING_GITHUB_TOKEN` | `mamut-routing remote` | Token for the GitHub API (`--token`), for rate limits or private releases. |
+| `MAMUT_ROUTING_SOLVERS_CONFIG` | lib, `mamut-routing`, `mamut-tools` | Solvers config TOML (external solver executables, extra solvers), after `--solvers-config` and before `$XDG_CONFIG_HOME/mamut-routing/solvers.toml`; an empty value disables the config. Never read from the working directory. |
+| `MAMUT_ROUTING_BKS_AUTHORS` | `mamut-routing solve --save-bks`, `bks submit`, `mamut-tools solve --update-bks` | Who is credited in a stored BKS when `--authors` is not given. |
 | `MAMUT_ROUTING_TEST_NETWORK` | lib tests | Set to `1` to run the opt-in network test. |
 | `MAMUT_BASEMAP_API_KEY` | `site build`, `site webapp`, `mamut-tools gui` | CARTO basemaps key written into the workbench page (visible to browsers by design; never commit it). |
 | `MAMUT_TOOLS_WORKSPACE` | `mamut-tools` | Workspace directory (after `--output-dir`, before `<repo>/.cache/mamut-tools` and `~/.cache/mamut-tools`). |

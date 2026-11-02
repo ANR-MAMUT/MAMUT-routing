@@ -25,7 +25,28 @@ per objective. Written only through the store functions, which guarantee:
   float ulp. A tie keeps the incumbent and is reported as `BKSUpdateResult(action="kept_existing", tie=True)`.
 
 Provenance fields are free but expected for campaigns: `method`, `seed`, `time_limit_s`, `solver_version`, `machine`,
-`campaign`.
+`campaign`. A BKS stored from a registry solve (`mamut-routing solve --save-bks`, `submit_bks(...,
+metadata=solved.bks_metadata())`, `mamut-tools bks-campaign harvest`) carries `solver`, `method`, `solver_version`,
+`seed`, `time_limit_s`, `wall_time`, `solver_cost` (the solver's own objective in instance units, informational),
+`cost_exact` (whether the solver worked on exactly the published costs or on rounded ones), `machine` (the CPU model)
+and, for external executables, `executable_sha256` and `input_sha256`. BKS files are published: they never record a
+hostname.
+
+## Solution files from other solvers
+
+`mamut-routing check`, `mamut-routing bks submit` and the tools workbench's import read:
+
+| Format | Shape |
+|---|---|
+| CVRPLIB `.sol` | `Route #1: 3 1 2` lines (`Route 1:` also accepted) and an optional `Cost <value>` line; costs in exponent form (`1.2345E7`, `1.23457e+06`) are read |
+| JSON | `{"routes": [[...]], "cost": ...}` (a solution or BKS file) or a bare array of routes |
+| LKH-3 `MTSP_SOLUTION_FILE` | a `<name>, Cost: <penalty>_<cost>` header and one `1 a b c 1 (#3)  Cost: x` line per vehicle; node 1 is the depot, a non-zero penalty is refused |
+
+Stop ids are mapped onto the library's (depot 0, customers 1..n): customers numbered 1..n with an optional 0 as a
+depot marker (CVRPLIB), or 0..n-1 when the file covers exactly those ids (`--ids one-based|zero-based` forces a
+reading). A file whose ids fit neither, visits a customer twice or misses one is refused, never reinterpreted. The
+declared cost is never trusted: the checker prices the routes, and a disagreeing declaration is reported (it usually
+means another metric variant or a rounded matrix).
 
 ## Objectives
 
