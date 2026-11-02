@@ -5,6 +5,33 @@ per-snapshot data deltas (families, instances and BKS added, removed, improved) 
 [History](https://mamut-routing.univ-ubs.fr/history/) page; each satellite keeps its own `CHANGELOG.md`; the lib and
 the tools have their own release notes.
 
+## Unreleased — solver integration (branch `feat/solver-integration`, stacked on the MapLibre test branch)
+
+### Library and tools (pinned: lib `feat/solver-integration`, tools `feat/solver-integration`)
+
+- **Solvers by name, behind one protocol.** `mamut_routing_lib.solvers` holds the protocol, a registry (built-ins,
+  the `mamut_routing.solvers` entry-point group, `register_solver`) and `run_solver`, which prices every result
+  with the reference checker. PyVRP and KAYROS are adapters; KAYROS results are now checked by the TD checker.
+- **External solvers.** FILO2, HGS-CVRP, AILS-II and LKH-3 run as executables declared in a user solvers config
+  (`~/.config/mamut-routing/solvers.toml`, `$MAMUT_ROUTING_SOLVERS_CONFIG`; any CVRPLIB-I/O solver can be added).
+  Inputs are scaled to integers exactly when the data allow (x1000 for Mamut2026/Poryos2026), conservatively for
+  time windows otherwise; solvers run in their own process group with a hard timeout.
+- **Solutions found elsewhere.** `mamut-routing check` and `mamut-routing bks submit` read CVRPLIB `.sol`, JSON
+  and LKH-3 solution files; `mamut-routing solvers list` shows what is available.
+- **Breaking: `mamut-routing solve --save-bks` is opt-in and needs `--authors`** (it wrote BKS by default, credited
+  to the maintainers); `mamut-tools solve --update-bks` needs `--authors` too; `solve_and_update_bks` requires
+  `authors=`. The `solve` COST column is the checker's cost (it showed PyVRP's x1000 objective on collection
+  instances).
+- **Workbench.** A Solver select (`GET /api/solvers`), solve jobs with any registered solver, runs that record
+  their solver, real cancellation of external solvers, LKH-3 solution import.
+- **`mamut-tools bks-campaign`**: spec-driven, resumable multi-solver campaigns with a frozen baseline, a
+  single-writer harvest and ledger / cross-solver reports -- the pattern of the Mamut2026 campaigns 2 and 3.
+
+### Documentation
+
+- Getting started (solve and BKS), solution formats, BKS campaigns, update a BKS, workbench API (the
+  `/api/workbench/solve` row was wrong), environment variables, developer and user guides.
+
 ## Unreleased — MapLibre workbench map and route animation (test branch `test/maplibre-trips-animation`)
 
 ### Website
