@@ -51,7 +51,8 @@ checker's timing on the free-flow `fastest` arc costs; the public workbench offe
 | `mamut-tools generate derive-vrptw` | The fastest-metric VRPTW twin of an existing CVRP base. |
 | `mamut-tools generate derive-td` | TDVRP + TDVRPTW twins: traffic overlay (`--model bpr|wave`, `--intensity light|moderate|heavy`, `--all` for the six) → arrival-time functions → time-window lift along the feasible anchor routes. All or nothing (exits 1 with the reason); existing twins are kept only if derived from the current inputs. |
 | `mamut-tools generate materialize-distances` | Rebuild the sha256-pinned distance sidecars of large published instances. |
-| `mamut-tools solve` | Solve a `.vrp.json` with PyVRP (or KAYROS for time-dependent Duration, `kayros` extra); prints the checker's cost; `--update-bks` offers the solution to the BKS store and prints its action (`created`, `replaced`, `kept_existing`, with `tie`). |
+| `mamut-tools solve` | Solve a `.vrp.json` with any registered solver (`--solver`: PyVRP by default, KAYROS for time-dependent Duration with the `kayros` extra, or an external executable such as LKH-3 or FILO2 from the solvers config); prints the checker's cost; `--update-bks --authors NAME` offers the solution to the BKS store and prints its action (`created`, `replaced`, `kept_existing`, with `tie`). |
+| `mamut-tools bks-campaign` | Multi-solver BKS campaigns from a TOML spec: `plan`, `baseline`, `run` (resumable), `harvest` (the single BKS writer), `report`, `status`. |
 | `mamut-tools convert blauth2024` | Convert the upstream vrptdt-benchmark into the canonical Blauth2024 family. |
 
 Batch family generation (many cities × sizes) is deliberately not a CLI command: campaigns are scripts that call

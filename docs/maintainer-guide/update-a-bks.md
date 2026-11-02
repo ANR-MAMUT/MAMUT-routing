@@ -14,12 +14,21 @@ When the TD checker contract changes, stored TD costs are re-priced instead: see
 
 ## Static families (CVRP, VRPTW)
 
-From the CLI, solve and let the library decide:
+From the CLI, solve and let the library decide (`--save-bks` is opt-in and needs `--authors`):
 
 ```bash
 uv run mamut-routing --benchmarks-dir benchmarks solve \
     --problem-type CVRP --benchmark-name Mamut2026 --instance-name mamut-lyon-n1000-k91-poi \
-    --time-limit-s 600 --seed 7 --save-bks
+    --time-limit-s 600 --seed 7 --save-bks --authors "Your Name (handle)"
+```
+
+`--solver` picks any registered solver (`mamut-routing solvers list`), including external executables such as
+LKH-3 or FILO2 declared in the solvers config. A solution file found elsewhere is checked and proposed with:
+
+```bash
+uv run mamut-routing check   path/to/instance.vrp.json found.sol
+uv run mamut-routing bks submit path/to/instance.vrp.json found.sol --authors "Your Name (handle)" \
+    --method "LKH-3" --solver-version 3.0.13 --seed 1 --time-limit-s 600 [--dry-run]
 ```
 
 From Python, with your own solution (any solver):
@@ -62,9 +71,10 @@ result = save_td_solution_as_bks_if_improved(instance_path, candidate, authors="
                                              objective_function=ObjectiveFunction.DURATION)
 ```
 
-Each objective has its own store file (`.bks.Duration.json`, `.bks.FleetCostDuration.json`). With the tools,
-`mamut-tools solve --solver kayros` solves the Duration objective; its `--update-bks` is wired for PyVRP only, so
-TD results go through the library call above.
+Each objective has its own store file (`.bks.Duration.json`, `.bks.FleetCostDuration.json`). KAYROS solves the
+Duration objective through the same registry: `mamut-routing solve --solver kayros ... --save-bks --authors ...` and
+`mamut-tools solve --solver kayros --update-bks --authors ...` re-check its routes with the TD checker and store them
+through the TD store; `mamut-routing bks submit` does the same for a TD solution file found elsewhere.
 
 ## Optimality proofs
 

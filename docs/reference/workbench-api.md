@@ -24,19 +24,20 @@ Handlers live in `mamut_routing_tools.gui.server`; job persistence in `gui.jobs`
 | GET | `/api/workbench/instances` | instances known to the workspace |
 | GET | `/instances-file` | serve an instance file from the workspace |
 | POST | `/api/workbench/instances/{instance_id}/export-vrp` | CVRPLIB `.vrp` export of a workspace instance |
-| POST | `/api/workbench/solve` | solve an instance (PyVRP, or KAYROS for TD) as a job |
+| POST | `/api/workbench/solve` | synchronous PyVRP solve of an inline instance (`vrp_json` / `vrp_text`); workspace instances are solved by `solve` jobs (`POST /api/jobs`) |
+| GET | `/api/solvers` | registered solvers with availability (reason, hint, version, capabilities); with `?instance_id=&metric=&objective_function=`, whether each can solve that variant (`supported`, `reasons`, `warnings`) |
 | POST | `/api/workbench/render-routes` | road-following route geometry for a solution (with `arc_starts`) |
 | GET | `/api/instances/{instance_id}/solutions` | checker-validated solution runs of an instance |
 | GET | `/api/instances/{instance_id}/map-data` | map payload (nodes with their POI metadata) |
 | POST | `/api/instances/{instance_id}/solutions/compare` | compare runs: objective, fleet, loads, route edges, customer grouping |
 | POST | `/api/instances/{instance_id}/solutions/{run_id}/render` | render one run on the road network (each route feature carries `arc_starts`, the first coordinate index of each arc) |
 | GET | `/api/instances/{instance_id}/solutions/{run_id}/timeline` | per-stop times of a run for the route animation: the checker's accounting on the instance's free-flow `fastest` arc costs (409 for a stale run) |
-| POST | `/api/instances/{instance_id}/solutions/import` | import an external solution as a validated run |
-| POST | `/api/jobs` | create a job |
+| POST | `/api/instances/{instance_id}/solutions/import` | import an external solution (CVRPLIB `.sol`, JSON routes, LKH-3 MTSP file) as a validated run |
+| POST | `/api/jobs` | create a job; a `solve` job's payload is `{instance_id, metric, objective_function, seed, time_limit, solver}` (`solver` defaults to `pyvrp`; an unknown or unavailable solver is refused with 400) |
 | GET | `/api/jobs` | list jobs |
 | GET | `/api/jobs/{job_id}` | job state |
 | GET | `/api/jobs/{job_id}/log` | append-only job log |
-| DELETE | `/api/jobs/{job_id}` | cooperative cancellation |
+| DELETE | `/api/jobs/{job_id}` | cancel: PyVRP stops at its next iteration, an external solver is killed with its process group, other jobs stop at their next checkpoint |
 | GET, PUT | `/api/preferences` | per-workspace UI preferences |
 
 Jobs are durable records under `<workspace>/state/jobs/` with logs under `state/logs/`; solution runs live under
