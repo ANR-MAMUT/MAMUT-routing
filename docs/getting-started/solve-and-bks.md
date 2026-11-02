@@ -59,7 +59,14 @@ executable = "/opt/LKH-3/LKH"
 
 [solvers.filo2]
 executable = "/opt/filo2/build/filo2"   # built with -DENABLE_TIMELIMIT=ON
+
+[solvers.hgs-cvrp]
+executable = "/opt/HGS-CVRP/build/hgs"  # vidalt/HGS-CVRP + the lib's full-matrix reader patch
 ```
+
+HGS-CVRP's search handles asymmetric distances, but its upstream CVRPLIB reader only computes Euclidean distances
+from coordinates. The lib ships a small reader patch (`git apply` it to HGS-CVRP 1a92795 and rebuild; `mamut-routing
+solvers list` prints its installed path) that reads an explicit full matrix and keeps the coordinates for SWAP*.
 
 ```bash
 uv run mamut-routing solve path/to/inst.vrp.json --solver lkh3 --time-limit-s 60 --keep-artifacts runs/
@@ -68,13 +75,15 @@ uv run mamut-routing solve path/to/inst.vrp.json --solver lkh3 --time-limit-s 60
 | Solver | Takes | Reads / writes |
 |---|---|---|
 | `lkh3` | CVRP and VRPTW, any metric (asymmetric matrices as `ACVRP`) | explicit integer matrix + parameter file / MTSP solution file |
-| `filo2`, `hgs-cvrp`, `ails2` | CVRP on euclidean variants (they compute distances from coordinates) | X-format `.vrp` / CVRPLIB `.sol` |
+| `hgs-cvrp` | CVRP, any metric (asymmetric included), with the lib's full-matrix reader patch applied to HGS-CVRP | decimal full matrix + coordinates (for SWAP*) / CVRPLIB `.sol` |
+| `filo2`, `ails2` | CVRP on euclidean variants (they compute distances from coordinates) | X-format `.vrp` / CVRPLIB `.sol` |
 
 Each run writes the solver's input into a scratch directory with the costs scaled to integers: exactly when the
 data allow (x1000 for the 3-decimal Mamut2026 / Poryos2026 matrices, so the solver's cost unscales exactly and is
 cross-checked), approximately otherwise -- conservatively for time windows, so a schedule the solver finds feasible
-is feasible on the published data. Coordinate solvers get coordinates in a unit that fits their limits (FILO2
-millimetres, HGS-CVRP metres, or decametres for cities wider than ~90 km). The solver runs in its own process group
+is feasible on the published data. HGS-CVRP computes in doubles and reads the published matrix as is (divided by
+10, exactly, when a distance exceeds its 1e5 limit, e.g. Bogotá `shortest`). Coordinate solvers get coordinates in a
+unit that fits their limits (FILO2 millimetres). The solver runs in its own process group
 with a hard timeout and is killed with its children on cancellation. Any other solver that reads and writes
 CVRPLIB-style files can be added to the config; see the [solution formats](../benchmarks/formats/solutions.md) page.
 Such a solver is assumed to need symmetric costs: the asymmetric `fastest` and `shortest` variants are refused for
