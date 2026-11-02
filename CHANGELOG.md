@@ -15,7 +15,9 @@ the tools have their own release notes.
 - **External solvers.** FILO2, HGS-CVRP, AILS-II and LKH-3 run as executables declared in a user solvers config
   (`~/.config/mamut-routing/solvers.toml`, `$MAMUT_ROUTING_SOLVERS_CONFIG`; any CVRPLIB-I/O solver can be added).
   Inputs are scaled to integers exactly when the data allow (x1000 for Mamut2026/Poryos2026), conservatively for
-  time windows otherwise; solvers run in their own process group with a hard timeout.
+  time windows otherwise; solvers run in their own process group with a hard timeout. Solvers that need symmetric
+  costs (FILO2, HGS-CVRP, AILS-II, and by default any solver declared in the config) refuse the asymmetric `fastest`
+  and `shortest` variants with the reason; LKH-3 gets them as `ACVRP`.
 - **Solutions found elsewhere.** `mamut-routing check` and `mamut-routing bks submit` read CVRPLIB `.sol`, JSON
   and LKH-3 solution files; `mamut-routing solvers list` shows what is available.
 - **Breaking: `mamut-routing solve --save-bks` is opt-in and needs `--authors`** (it wrote BKS by default, credited

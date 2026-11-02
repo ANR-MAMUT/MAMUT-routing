@@ -77,6 +77,10 @@ is feasible on the published data. Coordinate solvers get coordinates in a unit 
 millimetres, HGS-CVRP metres, or decametres for cities wider than ~90 km). The solver runs in its own process group
 with a hard timeout and is killed with its children on cancellation. Any other solver that reads and writes
 CVRPLIB-style files can be added to the config; see the [solution formats](../benchmarks/formats/solutions.md) page.
+Such a solver is assumed to need symmetric costs: the asymmetric `fastest` and `shortest` variants are refused for
+it, with the reason, unless its entry says `symmetric_only = false` (only declare that if it really reads an
+asymmetric `FULL_MATRIX`; the generic input file says `TYPE : CVRP` whatever the matrix). A solver that
+`extends` a built-in inherits the built-in's setting.
 
 ## Solutions found elsewhere
 
