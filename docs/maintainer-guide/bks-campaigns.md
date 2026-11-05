@@ -75,9 +75,10 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
 - **Workers never write BKS.** One task per spawned worker, admitted while the memory estimates fit the budget;
   external solvers run in their own process group and are killed with their children on abort.
 - **Harvest** takes each instance's best valid run, skips runs whose instance file changed since and runs below
-  the published fleet lower bound, and offers the rest (those that beat the baseline, or all with `--offer-all`) to
-  the BKS store, one process per instance, with the spec's authors and the run's provenance. The store keeps the
-  incumbent on a tie.
+  the published fleet lower bound, and offers the rest (all but those worse than the baseline by more than float
+  noise, or all with `--offer-all`) to the BKS store, one process per instance, with the spec's authors and the
+  run's provenance. Ties and near-ties are the store's call: it compares exact decimal costs and keeps the incumbent
+  on a tie.
 - Launch long campaigns as a user unit on shared machines
   (`systemd-run --user --unit=<name> --collect mamut-tools bks-campaign run campaign.toml`): a resumable driver only
   loses the runs in flight when the session goes.
