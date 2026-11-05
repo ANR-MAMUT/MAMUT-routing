@@ -251,12 +251,55 @@
     return deckPromise;
   }
 
+  /* Probed once: every probe is a WebGL context, and browsers cap live contexts (about
+     16) and drop the oldest -- possibly the map's own -- when a page opens too many. */
+  let webgl2 = null;
+
   function webgl2Available() {
-    try {
-      return Boolean(document.createElement("canvas").getContext("webgl2"));
-    } catch {
-      return false;
+    if (webgl2 === null) {
+      try {
+        const gl = document.createElement("canvas").getContext("webgl2");
+        webgl2 = Boolean(gl);
+        gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      } catch {
+        webgl2 = false;
+      }
     }
+    return webgl2;
+  }
+
+  /* deck.gl's MapLibreOverlay as a control we own. Its onRemove finalizes deck but leaves
+     its container in the controls corner and its WebGL context alive, so each animation
+     leaked one of each; and from that corner its canvas painted over popups and the map's
+     buttons. Its container goes right above the map canvas instead (still below markers,
+     popups and controls), and removal releases the context and the container. */
+  function mountOverlay(map, overlay) {
+    const placeholder = document.createElement("div");
+    placeholder.hidden = true;
+    let container = null;
+    const control = {
+      onAdd(target) {
+        container = overlay.onAdd(target);
+        const canvas = target.getCanvas();
+        canvas.parentNode.insertBefore(container, canvas.nextSibling);
+        return placeholder;
+      },
+      onRemove(target) {
+        const canvases = container ? [...container.querySelectorAll("canvas")] : [];
+        overlay.onRemove(target);
+        canvases.forEach((canvas) => {
+          canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+          canvas.width = 0;
+          canvas.height = 0;
+        });
+        container?.remove();
+        placeholder.remove();
+        container = null;
+      },
+      getDefaultPosition: () => "top-left",
+    };
+    map.addControl(control);
+    return control;
   }
 
   function element(tag, className, text) {
@@ -310,19 +353,44 @@
     return { play, speed, scrub, clock, served, note };
   }
 
+  /* Without WebGL2: a note in the bar's place, closed like an animation (its × button, or
+     the frontend's close when the instance or the solution changes). */
+  function unavailableNotice(host, options) {
+    let open = true;
+    const close = () => {
+      if (!open) return;
+      open = false;
+      host.replaceChildren();
+      host.hidden = true;
+    };
+    const bar = element("div", "trips-bar");
+    const controls = element("div", "trips-controls");
+    const note = element("p", "trips-note", "The route animation needs WebGL2, which this browser does not provide.");
+    const dismiss = element("button", "trips-close", "×");
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", "Close");
+    dismiss.addEventListener("click", () => {
+      close();
+      options.onClose?.();
+    });
+    controls.append(note, dismiss);
+    bar.append(controls);
+    host.replaceChildren(bar);
+    host.hidden = false;
+    return { setView() {}, close, playing: false, data: null, unavailable: true };
+  }
+
   /* Opens an animation on `map` with its playback bar in `host`.
      options: { deckSrc, routeLines, timeline, palette, visibleRoutes, focusedRoute,
-                onClose, autoplay } */
+                onClose, autoplay, clockLabels }
+     clockLabels: the frontend's wording for a clock when it knows better than the
+     defaults (why a TD BKS runs at constant speed, a clock borrowed from a sibling). */
   async function openAnimation(map, host, options) {
-    if (!webgl2Available()) {
-      host.hidden = false;
-      host.replaceChildren(element("p", "trips-note", "The route animation needs WebGL2, which this browser does not provide."));
-      return null;
-    }
+    if (!webgl2Available()) return unavailableNotice(host, options);
     const deck = await loadDeck(options.deckSrc);
     const data = buildTrips(options.routeLines, options.timeline, options);
     const overlay = new deck.MapLibreOverlay({ interleaved: false, layers: [] });
-    map.addControl(overlay);
+    const control = mountOverlay(map, overlay);
     const filterTrips = new deck.DataFilterExtension({ filterSize: 1 });
     const filterVisits = new deck.DataFilterExtension({ filterSize: 2 });
     const state = {
@@ -338,6 +406,8 @@
       colorVersion: 0,
       focusedRoute: null,
       disposed: false,
+      // Service starts of the visible routes' customers, sorted: what the counter counts.
+      shownServiceTimes: data.serviceTimes,
     };
     const trail = Math.max(60, data.span / 40);
 
@@ -353,6 +423,7 @@
       });
       state.visibilityVersion += 1;
       state.colorVersion += 1;
+      state.shownServiceTimes = data.visits.filter((visit) => state.visibility.get(visit.r) !== 0).map((visit) => visit.serviceStart);
       render();
     }
 
@@ -434,7 +505,8 @@
       ui.clock.textContent = formatClock(absolute);
       ui.scrub.value = String(state.t);
       ui.scrub.setAttribute("aria-valuetext", formatClock(absolute));
-      ui.served.textContent = `${servedCountAt(data.serviceTimes, state.t)}/${data.visits.length} served`;
+      const shown = state.shownServiceTimes;
+      ui.served.textContent = `${servedCountAt(shown, state.t)}/${shown.length} served`;
     }
 
     function render() {
@@ -476,8 +548,8 @@
       if (state.disposed) return;
       state.disposed = true;
       setPlaying(false);
-      // removeControl finalizes the overlay's deck instance.
-      map.removeControl(overlay);
+      // Finalizes deck, releases its WebGL context and removes its container (mountOverlay).
+      map.removeControl(control);
       host.replaceChildren();
       host.hidden = true;
     }
@@ -504,7 +576,8 @@
     const partial = data.fallbackRoutes > 0 && data.clock !== "schematic"
       ? ` ${data.fallbackRoutes} route(s) without a matching schedule run at constant speed.`
       : "";
-    ui.note.textContent = `${CLOCK_LABELS[data.clock] || CLOCK_LABELS[clockKey]}.${partial} Positions inside an arc are interpolated by distance.`;
+    const labels = { ...CLOCK_LABELS, ...(options.clockLabels || {}) };
+    ui.note.textContent = `${labels[data.clock] || labels[clockKey]}.${partial} Positions inside an arc are interpolated by distance.`;
     setView(options);
     updateText(true);
     const reducedMotion = global.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
