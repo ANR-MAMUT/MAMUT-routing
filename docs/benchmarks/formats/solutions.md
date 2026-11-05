@@ -44,7 +44,10 @@ hostname.
 
 Stop ids are mapped onto the library's (depot 0, customers 1..n): customers numbered 1..n with an optional 0 as a
 depot marker (CVRPLIB), or 0..n-1 when the file covers exactly those ids (`--ids one-based|zero-based` forces a
-reading). A file whose ids fit neither, visits a customer twice or misses one is refused, never reinterpreted. The
+reading; `check` says when it read a file as 0-based). Under 1..n a 0 inside a route is a return to the depot: the
+route is split there into two trips, as written. A file whose ids fit neither, visits a customer twice or misses one
+is refused, never reinterpreted. An objective that does not apply to the instance (`Duration` on CVRP, `MonoCost`
+on a TD instance) is a usage error. The
 declared cost is never trusted: the checker prices the routes, and a disagreeing declaration is reported (it usually
 means another metric variant or a rounded matrix).
 
@@ -52,8 +55,8 @@ means another metric variant or a rounded matrix).
 
 | Objective | Order | Families |
 |---|---|---|
-| `MonoCost` | total arc cost | CVRP, Dimacs2021, generated VRPTW |
-| `HierarchicalVehicleCost` | fewer routes first, then cost | Sintef2008, Ortec2022 |
+| `MonoCost` | total arc cost | CVRP, Dimacs2021, Ortec2022, generated VRPTW |
+| `HierarchicalVehicleCost` | fewer routes first, then cost | Sintef2008 |
 | `Duration` | total route duration (travel + waiting + service) | TD families |
 | `FleetCostDuration` | duration + `fleet_fixed_cost` × used vehicles | Blauth2024 |
 

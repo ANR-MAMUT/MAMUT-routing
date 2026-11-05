@@ -822,9 +822,12 @@
       return null;
     }
 
+    /* closeOnClick stays off: MapLibre would add a close listener each time the popup
+       opens, and the one left from the previous opening would close it again right after
+       the next feature click reopened it. A click on the empty map closes it below. */
     const popup = new global.maplibregl.Popup({
       closeButton: interaction === "click",
-      closeOnClick: interaction === "click",
+      closeOnClick: false,
       maxWidth: "300px",
       offset: 10,
       className: "mamut-popup",
@@ -866,6 +869,7 @@
       map.on("click", (event) => {
         const info = pick(event.point);
         if (info) showInfo(info, event.lngLat);
+        else popup.remove();
       });
     }
 
@@ -890,7 +894,7 @@
     const interaction = options.interaction || "hover";
     const popup = new global.maplibregl.Popup({
       closeButton: interaction === "click",
-      closeOnClick: interaction === "click",
+      closeOnClick: false, // see createSolutionLayers: closed by the click handler below
       maxWidth: "320px",
       offset: 8,
       className: "mamut-popup",
@@ -926,6 +930,7 @@
         const feature = topFeature(event.point);
         const content = feature ? describe(feature) : null;
         if (content) popup.setLngLat(event.lngLat).setDOMContent(content).addTo(map);
+        else popup.remove();
       });
     }
     return { popup, refresh: () => { shownId = null; } };

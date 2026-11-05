@@ -70,12 +70,16 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
 - **Runs** are checked by the reference checker and archived as `runs/<key>.json` (schema version 1: instance and
   its sha256, kind, solver, version, seed, budget, status, the checker's verdict and cost, routes, trajectory, the
   solver's own cost and scale, warm start, provenance, host and CPU), winner or not. The key
-  `<instance_id>__<objective>__<kind>__seed<S>__t<T>` includes the budget; a run is done when its record exists, so
-  a killed run is simply redone. Solver logs and solution files stay in `raw/<key>/`.
+  `<instance_id>__<objective>__<kind>__seed<S>__t<T>` includes the budget; a run is done when its record exists and
+  was made on the current instance file (a record of an older file is run again), so an aborted run is simply redone.
+  Solver logs and solution files stay in `raw/<key>/`.
 - **Workers never write BKS.** One task per spawned worker, admitted while the memory estimates fit the budget;
-  external solvers run in their own process group and are killed with their children on abort.
-- **Harvest** takes each instance's best valid run, skips runs whose instance file changed since and runs below
-  the published fleet lower bound, and offers the rest (all but those worse than the baseline by more than float
+  external solvers run in their own process group and are killed with their children on abort. A worker that dies
+  (the out-of-memory killer) costs only its own run: it is recorded as failed (`run --retry-failed` redoes it), its
+  orphaned solver is killed, and the other runs carry on.
+- **Harvest** sets aside the runs of an instance file that changed since, takes each instance's best remaining valid
+  run (fewer routes first under `HierarchicalVehicleCost`), skips runs below the published fleet lower bound, and
+  offers the rest (all but those worse than the baseline by more than float
   noise, or all with `--offer-all`) to the BKS store, one process per instance, with the spec's authors and the
   run's provenance. Ties and near-ties are the store's call: it compares exact decimal costs and keeps the incumbent
   on a tie.

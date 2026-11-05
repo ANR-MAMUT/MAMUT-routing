@@ -39,7 +39,7 @@ published BKS is kept; `kept_existing (tie)` when the cost is exactly equal, eve
 The stored BKS carries the solve's provenance: solver, version, seed, budget, wall time and the machine's CPU model.
 Two details that matter:
 
-- **Say which objective.** Sintef2008 and Ortec2022 store their BKS under `HierarchicalVehicleCost`; without
+- **Say which objective.** Sintef2008 stores its BKS under `HierarchicalVehicleCost`; without
   `--objective` the solve uses `MonoCost` (with a warning) and `--save-bks` *creates* a second file,
   `C101.bks.MonoCost.json`, instead of comparing with the published one. CVRP families are always `MonoCost`,
   time-dependent ones `Duration`.

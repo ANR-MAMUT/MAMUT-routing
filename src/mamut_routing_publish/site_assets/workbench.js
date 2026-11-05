@@ -124,6 +124,7 @@ const {
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
+  withPlanarDisplayFrame,
 } = siteHelpers;
 
 const tabVisualize = document.getElementById("tabVisualize");
@@ -972,7 +973,12 @@ function currentMapGeometry() {
   if (state.mapData.geometry && sameMapGeometryKey(key, state.mapData.key)) {
     return state.mapData.geometry;
   }
-  // A new solution or render mode: an open animation would show the old routes.
+  // A new solution or render mode: an open animation would show the old routes. Only
+  // the render mode changed (the same solution, now on roads or straight lines): it is
+  // reopened on the new geometry.
+  const previousKey = state.mapData.key;
+  const reopen = Boolean(state.animation) && Array.isArray(previousKey)
+    && key.slice(0, 5).every((value, index) => value === previousKey[index]);
   closeRouteAnimation();
   const geometry = buildVisualGeometry();
   if (geometry) {
@@ -980,6 +986,11 @@ function currentMapGeometry() {
     geometry.mapRouteLines = window.MamutMap.thinRouteLines(geometry.ranked, MAP_ROUTE_POINT_BUDGET).routeLines;
   }
   state.mapData = { key, geometry, pushed: false };
+  if (reopen && geometry) {
+    setTimeout(() => {
+      if (!state.animation && sameMapGeometryKey(key, state.mapData.key)) toggleRouteAnimation();
+    }, 0);
+  }
   return geometry;
 }
 
@@ -1070,6 +1081,21 @@ async function routeTimelineForCurrentView() {
   return window.MamutTrips.timelineFromTdSchedules(entry?.td_schedules);
 }
 
+// What the animation's note says when this page knows more than the clock name.
+function routeClockLabelsForCurrentView() {
+  if (state.sourceKind !== "benchmark") return {};
+  const summary = state.benchmark.payload?.summary || {};
+  const labels = {};
+  if (["TDVRP", "TDVRPTW"].includes(summary.problem_type) && !state.benchmark.objectiveEntry?.td_schedules?.length) {
+    // Large TD instances publish no schedule table (their arrival-time functions are not served).
+    labels.schematic = "Constant speed (25 km/h): this BKS's time-dependent schedule is not published at this instance size";
+  }
+  if (summary.metric_variant && summary.metric_variant !== "fastest") {
+    labels.free_flow_fastest = `Free-flow travel times of the fastest variant (this BKS is on the ${summary.metric_variant} metric); no service times`;
+  }
+  return labels;
+}
+
 async function toggleRouteAnimation() {
   if (state.animation) {
     closeRouteAnimation();
@@ -1090,6 +1116,7 @@ async function toggleRouteAnimation() {
       palette: window.MamutNocturne.routeColors(),
       visibleRoutes: visibleRouteIndices(visual.routes, visual.instanceData),
       focusedRoute: state.focusedRoute,
+      clockLabels: routeClockLabelsForCurrentView(),
       onClose: () => {
         state.animation = null;
         renderVisualState({ fitMap: false });
@@ -1143,7 +1170,9 @@ function describeMapFeature(info) {
   const routeLabel = Number.isInteger(info.routeIndex) ? `#${info.routeIndex + 1}` : "Unassigned";
   const lines = [`Demand: ${demand}`];
   if (!isDepot) lines.push(`Route: ${routeLabel}`);
-  lines.push(`Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+  const planar = visual.instanceData.planar ? visual.instanceData.planarCoordinates?.[index] : null;
+  if (planar) lines.push(`X/Y: ${Number(planar[0])}, ${Number(planar[1])}`);
+  else lines.push(`Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
   return popupContent(isDepot ? "Depot" : `Node ${index}`, lines);
 }
 
@@ -1185,6 +1214,7 @@ function updateStats(routeMode) {
     ["Source", state.sourceKind],
     ["Render", routeMode],
   ];
+  if (instanceData.planar) rows.push(["Coordinates", "planar x, y: drawn to scale, not at a place on the map"]);
   if (state.sourceKind === "benchmark") {
     rows.push(["Objective", visual.objectiveEntry?.objective_function || "n/a"]);
     rows.push(["Benchmark", visual.payload?.summary?.benchmark_name || "n/a"]);
@@ -1426,9 +1456,9 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
     if (payload?.payload_kind !== "instance_page") {
       throw new Error(`Route '${instanceRoute}' is not a benchmark instance page.`);
     }
-    const instanceData = projectEnuInstanceCoordinates(
+    const instanceData = withPlanarDisplayFrame(projectEnuInstanceCoordinates(
       await fetchJson(artifactHref(payload.artifact_links.vrp_json_path)),
-    );
+    ));
     const objectiveEntries = Array.isArray(payload.bks_entries) ? payload.bks_entries : [];
     const objectiveEntry = objectiveEntries.find((entry) => entry.objective_function === preferredObjective)
       || objectiveEntries[0]
