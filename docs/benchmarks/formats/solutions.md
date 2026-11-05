@@ -49,7 +49,14 @@ route is split there into two trips, as written. A file whose ids fit neither, v
 is refused, never reinterpreted. An objective that does not apply to the instance (`Duration` on CVRP, `MonoCost`
 on a TD instance) is a usage error. The
 declared cost is never trusted: the checker prices the routes, and a disagreeing declaration is reported (it usually
-means another metric variant or a rounded matrix).
+means another metric variant, a rounded matrix, or a solver's scaled integer units, which `check` names when the
+ratio is a power of ten).
+
+`mamut-routing solve --output-dir DIR` writes solutions in the JSON form above, with `cost` left to the checker and
+`metadata` holding `instance_id`, `instance_path`, `objective_function`, `validation`, `checker_cost`, `status` and
+`bks_metadata` (the provenance a BKS stored from the run would carry). `bks submit` copies that provenance into the
+BKS it stores; its own flags (`--method`, `--seed`, `--time-limit-s`, `--solver-version`) override it. The JSON
+printed by `mamut-tools solve` is also a valid solution file.
 
 ## Objectives
 

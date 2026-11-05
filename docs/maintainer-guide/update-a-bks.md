@@ -73,7 +73,7 @@ result = save_td_solution_as_bks_if_improved(instance_path, candidate, authors="
 
 Each objective has its own store file (`.bks.Duration.json`, `.bks.FleetCostDuration.json`). KAYROS solves the
 Duration objective through the same registry: `mamut-routing solve --solver kayros ... --save-bks --authors ...` and
-`mamut-tools solve --solver kayros --update-bks --authors ...` re-check its routes with the TD checker and store them
+`mamut-tools solve --solver kayros --save-bks --authors ...` re-check its routes with the TD checker and store them
 through the TD store; `mamut-routing bks submit` does the same for a TD solution file found elsewhere.
 
 ## Optimality proofs

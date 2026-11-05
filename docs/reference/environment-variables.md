@@ -7,7 +7,7 @@
 | `MAMUT_ROUTING_RELEASE_REPO` | `mamut-routing remote` | GitHub repository whose releases carry the archives (`--repo`). |
 | `MAMUT_ROUTING_GITHUB_TOKEN` | `mamut-routing remote` | Token for the GitHub API (`--token`), for rate limits or private releases. |
 | `MAMUT_ROUTING_SOLVERS_CONFIG` | lib, `mamut-routing`, `mamut-tools` | Solvers config TOML (external solver executables, extra solvers), after `--solvers-config` and before `$XDG_CONFIG_HOME/mamut-routing/solvers.toml`; an empty value disables the config. Never read from the working directory. |
-| `MAMUT_ROUTING_BKS_AUTHORS` | `mamut-routing solve --save-bks`, `bks submit`, `mamut-tools solve --update-bks` | Who is credited in a stored BKS when `--authors` is not given. |
+| `MAMUT_ROUTING_BKS_AUTHORS` | `mamut-routing solve --save-bks`, `bks submit`, `mamut-tools solve --save-bks` | Who is credited in a stored BKS when `--authors` is not given. |
 | `MAMUT_ROUTING_TEST_NETWORK` | lib tests | Set to `1` to run the opt-in network test. |
 | `MAMUT_TEST_SOLVERS_CONFIG` | lib tests | A solvers config pointing at real FILO2 / HGS-CVRP / AILS-II / LKH-3 builds: runs the opt-in `tests/test_external_binaries.py` (each unconfigured solver is skipped). |
 | `MAMUT_BASEMAP_API_KEY` | `site build`, `site webapp`, `mamut-tools gui` | CARTO basemaps key written into the workbench page (visible to browsers by design; never commit it). |

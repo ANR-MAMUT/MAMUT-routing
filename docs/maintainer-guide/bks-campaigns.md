@@ -77,12 +77,17 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
   external solvers run in their own process group and are killed with their children on abort. A worker that dies
   (the out-of-memory killer) costs only its own run: it is recorded as failed (`run --retry-failed` redoes it), its
   orphaned solver is killed, and the other runs carry on.
+- **Stopping.** The first Ctrl-C lets the running runs finish and starts no new one; a second aborts them. SIGTERM
+  (`kill`, `timeout`, systemd, a batch scheduler before its SIGKILL) aborts at once. Aborted runs leave no record, so
+  the next `run` redoes them.
 - **Harvest** sets aside the runs of an instance file that changed since, takes each instance's best remaining valid
   run (fewer routes first under `HierarchicalVehicleCost`), skips runs below the published fleet lower bound, and
   offers the rest (all but those worse than the baseline by more than float
   noise, or all with `--offer-all`) to the BKS store, one process per instance, with the spec's authors and the
   run's provenance. Ties and near-ties are the store's call: it compares exact decimal costs and keeps the incumbent
-  on a tie.
+  on a tie. Every harvest is kept as `harvests/NNNN-<time>.json` (`harvest.json` is the latest), and the ledger's
+  `bks_action` is what the store did with each run in any harvest: a run that created a BKS still says `created`
+  (with `bks_action_at`) after a later harvest kept it.
 - Launch long campaigns as a user unit on shared machines
   (`systemd-run --user --unit=<name> --collect mamut-tools bks-campaign run campaign.toml`): a resumable driver only
   loses the runs in flight when the session goes.

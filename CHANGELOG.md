@@ -29,6 +29,21 @@ the tools have their own release notes.
   their solver, real cancellation of external solvers, LKH-3 solution import.
 - **`mamut-tools bks-campaign`**: spec-driven, resumable multi-solver campaigns with a frozen baseline, a
   single-writer harvest and ledger / cross-solver reports -- the pattern of the Mamut2026 campaigns 2 and 3.
+- **Ease of use.**
+  - `solve --output-dir` keeps every solution, and `bks submit` stores one later with its provenance.
+  - The `solve` table gains a GAP column (to the stored BKS).
+  - Both CLIs accept `--time-limit-s`/`--time-limit` and `--save-bks`/`--update-bks`.
+  - `mamut-routing solvers init` writes a commented starter solvers config, and `solvers list` is shorter.
+  - An error in one config table disables only that solver, with a "did you mean". Values are type-checked,
+    `extends` works in any order, and relative paths are read from the config's folder.
+  - Campaigns keep every harvest, and SIGTERM aborts a campaign run at once.
+  - The workbench refuses unsupported solver/variant pairs at submission and shows Animate on the Solve and Runs
+    tabs.
+  - Workbench instances generated before the Mamut2026 -> Poryos2026 rename open again.
+
+### Website
+
+- The route animation's time slider no longer jumps under the pointer while playback runs.
 
 ### Documentation
 
