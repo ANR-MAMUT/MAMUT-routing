@@ -349,6 +349,15 @@
     play.addEventListener("click", handlers.togglePlay);
     speed.addEventListener("change", () => handlers.setSpeed(Number(speed.value)));
     scrub.addEventListener("input", () => handlers.seek(Number(scrub.value)));
+    // While the thumb is held, playback must not move it out from under the pointer. The release
+    // can happen anywhere on the page, so it is listened for on the window.
+    scrub.addEventListener("pointerdown", () => {
+      handlers.scrubbing(true);
+      const release = () => handlers.scrubbing(false);
+      global.addEventListener("pointerup", release, { once: true });
+      global.addEventListener("pointercancel", release, { once: true });
+    });
+    scrub.addEventListener("change", () => handlers.scrubbing(false));
     close.addEventListener("click", handlers.close);
     return { play, speed, scrub, clock, served, note };
   }
@@ -399,6 +408,7 @@
       playing: false,
       lastFrame: null,
       lastText: 0,
+      scrubbing: false,
       frame: null,
       visibility: new Map(),
       visibilityVersion: 0,
@@ -503,7 +513,7 @@
       state.lastText = now;
       const absolute = data.origin + state.t;
       ui.clock.textContent = formatClock(absolute);
-      ui.scrub.value = String(state.t);
+      if (!state.scrubbing) ui.scrub.value = String(state.t);
       ui.scrub.setAttribute("aria-valuetext", formatClock(absolute));
       const shown = state.shownServiceTimes;
       ui.served.textContent = `${servedCountAt(shown, state.t)}/${shown.length} served`;
@@ -517,7 +527,7 @@
 
     function tick(now) {
       if (!state.playing || state.disposed) return;
-      if (state.lastFrame !== null) {
+      if (state.lastFrame !== null && !state.scrubbing) {
         state.t = Math.min(data.span, state.t + ((now - state.lastFrame) / 1000) * state.speed);
       }
       state.lastFrame = now;
@@ -564,6 +574,10 @@
         state.lastFrame = null;
         render();
         updateText(true);
+      },
+      scrubbing: (held) => {
+        state.scrubbing = held;
+        state.lastFrame = null;  // resume from the dropped position, not with the held time added
       },
       close: () => {
         dispose();

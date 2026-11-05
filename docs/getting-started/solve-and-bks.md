@@ -19,12 +19,23 @@ uv run mamut-routing --benchmarks-dir benchmarks solve \
 ```
 
 Nothing is written unless asked. The COST column is the checker's cost (not the solver's own objective, which PyVRP
-computes in milli-units on collection instances). A solution the checker rejects is an `infeasible` row with the
-checker's reason; a failing instance becomes an `error` row and the batch goes on. Instances the solver cannot take
+computes in milli-units on collection instances), and GAP its distance to the BKS stored before the solve (`no BKS`
+when there is none; under `HierarchicalVehicleCost` a different route count shows as `+1 veh`). A solution the
+checker rejects is an `infeasible` row with the checker's reason; a failing instance becomes an `error` row and the batch goes on. Instances the solver cannot take
 are skipped in scans and are error rows for explicit paths: time-dependent instances for static solvers, road-network
 metrics for solvers that compute distances from coordinates, and collection instances whose pinned distances
 sidecar is missing. Ctrl-C stops every running solve. The exit status is 0 when every solved instance is feasible
-and checker-valid, 1 otherwise, 2 on a usage error.
+and checker-valid, 1 otherwise, 2 on a usage error. `mamut-tools solve` takes the same flags (`--time-limit-s`,
+`--save-bks`; `--time-limit` and `--update-bks` work in both).
+
+To keep the routes, add `--output-dir DIR` (`-o`): each solution is written to
+`DIR/<instance-id>.<solver>-seed<seed>.json` with the checker's verdict and the run's provenance. `check` reads these
+files, and `bks submit` stores one later with its provenance (solver, version, seed, budget):
+
+```bash
+uv run mamut-routing solve path/to/inst.vrp.json --time-limit-s 60 -o runs/
+uv run mamut-routing bks submit path/to/inst.vrp.json runs/<instance-id>.pyvrp-seed42.json --authors "Your Name (handle)"
+```
 
 To store improvements, add `--save-bks` and say who is credited (`--authors`, or `$MAMUT_ROUTING_BKS_AUTHORS`):
 
@@ -49,7 +60,9 @@ Two details that matter:
 ## External solvers
 
 Executables are declared in `~/.config/mamut-routing/solvers.toml` (or the file named by
-`$MAMUT_ROUTING_SOLVERS_CONFIG` or `--solvers-config`; never one in the working directory):
+`$MAMUT_ROUTING_SOLVERS_CONFIG` or `--solvers-config`; never one in the working directory).
+`uv run mamut-routing solvers init` writes a commented starter there, one table per built-in solver with its build
+notes; uncomment the ones you have built and set their paths:
 
 ```toml
 schema_version = 1
@@ -63,6 +76,11 @@ executable = "/opt/filo2/build/filo2"   # built with -DENABLE_TIMELIMIT=ON
 [solvers.hgs-cvrp]
 executable = "/opt/HGS-CVRP/build/hgs"  # vidalt/HGS-CVRP + the lib's full-matrix reader patch
 ```
+
+Relative paths are read from the config file's folder; a bare executable name is looked up on PATH. Unknown keys and
+mistyped values (`fleet_limit = "false"`, quoted) are errors, with a suggestion for a near-miss key. An error in one
+`[solvers.<name>]` table disables that solver only: `solvers list` shows it as unavailable with the error, and the
+other solvers keep working. `extends` may name a table defined anywhere in the file.
 
 HGS-CVRP's search handles asymmetric distances, but its upstream CVRPLIB reader only computes Euclidean distances
 from coordinates. The lib ships a small reader patch (`git apply` it to HGS-CVRP 1a92795 and rebuild; `mamut-routing
@@ -101,7 +119,10 @@ uv run mamut-routing bks submit path/to/inst.vrp.json found.sol \
 
 `check` and `bks submit` read CVRPLIB `.sol` files, JSON routes and LKH-3 MTSP solution files, static and
 time-dependent instances alike. The objective defaults to the one the family publishes. `--dry-run` reports
-`would_create`, `would_replace` or `would_keep` without writing.
+`would_create`, `would_replace` or `would_keep` without writing (`stored_invalid` when the stored BKS itself fails
+the checker). `--meta KEY=VALUE` adds provenance, but not the fields the store writes (`authors`, `date`,
+`validated_cost`, ...). When a declared cost is the checker's times a power of ten, `check` says it is probably in the
+solver's scaled integer units.
 
 ## From Python, with any solver
 
