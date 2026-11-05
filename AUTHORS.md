@@ -37,4 +37,10 @@ This work is part of the ANR-MAMUT project, [ANR-22-CE22-0016](https://anr.fr/Pr
 
 Contributions are welcome through pull requests or discussions on the [MAMUT-routing repository](https://github.com/ANR-MAMUT/MAMUT-routing).
 
-New contributors will be listed here.
+New contributors are listed below in alphabetical order of last name, with their GitHub username and ORCID identifier when available, as well as their list of contributions to the project.
+
+Farah Abdallah ([GitHub](https://github.com/farahomarabdallah2004-create)) - Improved Rifki-10 (60 customers) Duration BKS in [MAMUT-routing-TDVRPTW-Rifki2020 #2](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/issues/2).
+
+Touko Ursin ([GitHub](https://github.com/toukoursin), [LinkedIn](https://linkedin.com/in/touko-ursin/)) - New BKS in [MAMUT-routing-Mamut2026 #2](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026/pull/2)
+
+vizzito ([GitHub](https://github.com/vizzito)) - Improved Poryos2026 Lyon n1000 hyb CVRP/fastest BKS in [MAMUT-routing-Poryos2026 #2](https://github.com/ANR-MAMUT/MAMUT-routing-Poryos2026/issues/2).
