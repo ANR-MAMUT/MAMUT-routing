@@ -15,7 +15,8 @@ benchmarks/ (data)  ──►  mamut_routing_lib (contract: models, checkers, BK
 ```
 
 - The **lib** is a pure contract and runtime layer: no site logic. Its solver layer is a protocol and a registry
-  (`mamut_routing_lib.solvers`): the optional PyVRP wrapper, a KAYROS adapter (lazy import), and a standard-library
+  (`mamut_routing_lib.solvers`): the optional PyVRP wrapper, a KAYROS adapter (the package runs in a child Python process, so that a stop request can
+  end a search that has no stop hook), and a standard-library
   adapter that runs external executables (FILO2, HGS-CVRP, AILS-II, LKH-3, user-declared) from descriptors and a
   user solvers config. No solver ships with the lib; every result goes through the reference checker.
 - The **tools** are the only place with compute: Overpass/Nominatim access, the road-graph engine (a faithful
@@ -32,7 +33,7 @@ git clone git@github.com:ANR-MAMUT/MAMUT-routing.git && cd MAMUT-routing
 git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools     # tooling, incl. the nested lib uv installs
 uv sync                                                              # dev + docs groups
 uv run pytest                                                        # publisher + lib suites
-uv run --project MAMUT-routing-tools pytest                          # tools suite
+uv run --directory MAMUT-routing-tools pytest                        # tools suite (--project would run the line above again)
 uv run mkdocs serve                                                  # this documentation, live reload
 ```
 

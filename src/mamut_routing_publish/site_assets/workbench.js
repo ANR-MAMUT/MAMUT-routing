@@ -706,7 +706,7 @@ function buildRouteSelector(routes, instanceData) {
         <button type="button" data-route-action="show">Show all</button>
         <button type="button" data-route-action="hide">Hide all</button>
         <button type="button" data-route-action="reset">Reset routes</button>
-        <button type="button" data-route-action="animate"${map ? "" : " disabled"} aria-pressed="${state.animation ? "true" : "false"}">${state.animation ? "Stop animation" : "Animate"}</button>
+        <button type="button" data-route-action="animate"${map ? "" : " disabled"} aria-pressed="${animationPlaying() ? "true" : "false"}">${animationPlaying() ? "Stop animation" : "Animate"}</button>
       </div>
     </div>
     <label class="field route-search-field"><span>Find route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
@@ -977,7 +977,7 @@ function currentMapGeometry() {
   // the render mode changed (the same solution, now on roads or straight lines): it is
   // reopened on the new geometry.
   const previousKey = state.mapData.key;
-  const reopen = Boolean(state.animation) && Array.isArray(previousKey)
+  const reopen = animationPlaying() && Array.isArray(previousKey)
     && key.slice(0, 5).every((value, index) => value === previousKey[index]);
   closeRouteAnimation();
   const geometry = buildVisualGeometry();
@@ -1053,9 +1053,15 @@ function applyMapView() {
     depotColor: markerColors.depot,
     unassignedColor: markerColors.unassigned,
     dark: isDarkTheme(),
-    dim: state.animation ? 0.35 : 1,
+    dim: animationPlaying() ? 0.35 : 1,
   });
   state.animation?.setView({ palette: window.MamutNocturne.routeColors(), visibleRoutes, focusedRoute: state.focusedRoute });
+}
+
+/* state.animation also holds the "needs WebGL2" notice, so that it closes with the solution;
+   only a real animation dims the routes and turns the button into "Stop animation". */
+function animationPlaying() {
+  return Boolean(state.animation && !state.animation.unavailable);
 }
 
 function closeRouteAnimation() {

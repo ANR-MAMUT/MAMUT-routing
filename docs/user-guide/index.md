@@ -37,7 +37,9 @@ validated on: after the instance is regenerated with **Replace existing** (witho
 that yields the same name is saved as `<name>-2`), its old runs are flagged stale, hidden from rendering and
 comparison, and no longer counted. Set `MAMUT_BASEMAP_API_KEY` for the CARTO vector basemaps (the key is visible
 to the browser by design). **Animate**, next to a displayed run's route list, plays its vehicles on the map with the
-checker's timing on the free-flow `fastest` arc costs; the public workbench offers the same for published BKS.
+checker's timing on the free-flow `fastest` arc costs (a run those times cannot clock, such as one solved on another
+metric that misses a window under them, plays at constant speed, and the bar says so); the public workbench offers
+the same for published BKS.
 
 ## Generate instances
 

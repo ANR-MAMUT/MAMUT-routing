@@ -40,13 +40,35 @@ the tools have their own release notes.
   - The workbench refuses unsupported solver/variant pairs at submission and shows Animate on the Solve and Runs
     tabs.
   - Workbench instances generated before the Mamut2026 -> Poryos2026 rename open again.
+- **Fixes from the branch review (2026-11-12).**
+  - KAYROS runs in a child Python process: a stop request (Ctrl-C, a GUI cancel) was ignored once the search
+    stopped improving, until the time limit. A stopped solve keeps its last incumbent.
+  - A failed external run reports the solver's last output lines instead of only "no solution file".
+  - LKH-3 `extra_args` reach the parameter file also when the command is wrapped (`taskset`, a launcher).
+  - A loose `progress_pattern` can no longer end a working solve; `check` exits 2 on JSON that is not a solution
+    (`null`, a number) instead of printing a traceback.
+  - One solve reads the distance matrix once (it was three times with `--save-bks`):
+    `submit_bks(..., checkable=solved.checkable)`, `load_checkable`.
+  - Campaigns: `warm_start = "best"` runs start last, from the campaign's own results (they started first, from
+    the stored BKS); a harvest records what it wrote even when a store call fails or it is interrupted; the orphan
+    kill after a dead worker only touches that worker's processes.
+  - Workbench: displaying a saved run refreshes the solver list for its metric; a run the `fastest` times cannot
+    clock animates at constant speed, with the reason, instead of failing; the solver-support cache no longer
+    keeps whole instances in memory.
 
 ### Website
 
 - The route animation's time slider no longer jumps under the pointer while playback runs.
+- Blauth2024 instances are drawn on their cities again: they publish real longitudes and latitudes without
+  `reference_lla`, and the planar display frame (new with MapLibre) took them for a plane and drew them around
+  (0, 0). They declare their coordinates (`metadata.coordinates_convention`), which now decides.
+- The "needs WebGL2" notice no longer dims the routes or shows "Stop animation"; a scrubber drag no longer leaves a
+  listener (and the closed animation's data) behind.
 
 ### Documentation
 
+- The tools test command is `uv run --directory MAMUT-routing-tools pytest`: with `--project`, as documented,
+  pytest still collected from the repository root and ran the publisher and lib suites a second time.
 - Getting started (solve and BKS), solution formats, BKS campaigns, update a BKS, workbench API (the
   `/api/workbench/solve` row was wrong), environment variables, developer and user guides.
 

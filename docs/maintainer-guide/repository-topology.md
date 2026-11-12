@@ -66,7 +66,7 @@ Two layouts, both discovered by `discover_benchmark_instances` in the lib:
 ```bash
 uv sync                      # publisher + dev + docs groups, editable lib and tools
 uv run pytest                # tests/ and MAMUT-routing-lib/tests
-uv run --project MAMUT-routing-tools pytest
+uv run --directory MAMUT-routing-tools pytest   # the tools' own tests (pytest collects from the directory it runs in)
 uv lock                      # after any dependency change; uv.lock is tracked
 ```
 

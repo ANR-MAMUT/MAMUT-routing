@@ -1094,7 +1094,6 @@ def test_compute_change_log_tiny_cost_diff_is_an_improvement() -> None:
 
 def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tmp_path: Path) -> None:
     """End-to-end: first run is initial; second run with mutated state shows real diffs."""
-    from mamut_routing_lib.json_utils import load_json_from_file
 
     output_repo_dir = tmp_path / "MAMUT-routing"
     _, generated_vrptw = build_fixture_site_inputs(output_repo_dir)
@@ -1225,7 +1224,6 @@ def test_routes_fingerprint_ignores_route_order_only() -> None:
 
 
 def test_generate_site_payloads_reports_a_repriced_bks(tmp_path: Path) -> None:
-    from mamut_routing_lib.json_utils import load_json_from_file
 
     output_repo_dir = tmp_path / "MAMUT-routing"
     _, generated_vrptw = build_fixture_site_inputs(output_repo_dir)

@@ -24,7 +24,8 @@ when there is none; under `HierarchicalVehicleCost` a different route count show
 checker rejects is an `infeasible` row with the checker's reason; a failing instance becomes an `error` row and the batch goes on. Instances the solver cannot take
 are skipped in scans and are error rows for explicit paths: time-dependent instances for static solvers, road-network
 metrics for solvers that compute distances from coordinates, and collection instances whose pinned distances
-sidecar is missing. Ctrl-C stops every running solve. The exit status is 0 when every solved instance is feasible
+sidecar is missing. Ctrl-C stops every running solve (external solvers and KAYROS run in processes of their own and are
+killed; a stopped KAYROS solve keeps its last incumbent). The exit status is 0 when every solved instance is feasible
 and checker-valid, 1 otherwise, 2 on a usage error. `mamut-tools solve` takes the same flags (`--time-limit-s`,
 `--save-bks`; `--time-limit` and `--update-bks` work in both).
 
@@ -102,7 +103,10 @@ cross-checked), approximately otherwise -- conservatively for time windows, so a
 is feasible on the published data. HGS-CVRP computes in doubles and reads the published matrix as is (divided by
 10, exactly, when a distance exceeds its 1e5 limit, e.g. Bogotá `shortest`). Coordinate solvers get coordinates in a
 unit that fits their limits (FILO2 millimetres). The solver runs in its own process group
-with a hard timeout and is killed with its children on cancellation. Any other solver that reads and writes
+with a hard timeout and is killed with its children on cancellation. A run that ends without a solution file reports
+the last lines the solver printed (an unpatched HGS-CVRP rejecting the matrix, a missing library), since the scratch
+directory is gone by then. For LKH-3, `extra_args = ["RUNS = 10"]` adds lines to its parameter file, also when the
+command is wrapped (`argv = ["taskset", "-c", "0", "{executable}", "{params}"]`). Any other solver that reads and writes
 CVRPLIB-style files can be added to the config; see the [solution formats](../benchmarks/formats/solutions.md) page.
 Such a solver is assumed to need symmetric costs: the asymmetric `fastest` and `shortest` variants are refused for
 it, with the reason, unless its entry says `symmetric_only = false` (only declare that if it really reads an
@@ -132,9 +136,13 @@ from mamut_routing_lib import run_solver, submit_bks
 solved = run_solver("pyvrp", item.instance_path, time_limit_s=60, seed=42)
 if solved.valid:
     update = submit_bks(item.instance_path, solved.result.routes,
-                        authors="Your Name (handle)", metadata=solved.bks_metadata(campaign="my-campaign"))
+                        authors="Your Name (handle)", metadata=solved.bks_metadata(campaign="my-campaign"),
+                        checkable=solved.checkable)   # optional: the instance the check already loaded
     print(update.action, update.path, update.candidate_cost)
 ```
+
+A solve reads a large distance matrix once, for the solver's input and the check; `checkable=` spares the store its
+own read. `load_checkable(instance, path)` returns the same object for solutions found elsewhere.
 
 Routes found by your own code go through `submit_bks(instance_path, routes, authors=..., metadata=...)` directly
 (or `save_solution_as_bks_if_improved`, as before). The helpers load the instance (hydrating collection instances),

@@ -351,19 +351,30 @@
     scrub.addEventListener("input", () => handlers.seek(Number(scrub.value)));
     // While the thumb is held, playback must not move it out from under the pointer. The release
     // can happen anywhere on the page, so it is listened for on the window.
+    // Only one of pointerup / pointercancel ends a drag: both listeners go together, or the
+    // other would stay on the window and keep this animation's data alive after it is closed.
+    let endScrub = null;
     scrub.addEventListener("pointerdown", () => {
+      endScrub?.();
+      const release = () => {
+        global.removeEventListener("pointerup", release);
+        global.removeEventListener("pointercancel", release);
+        endScrub = null;
+        handlers.scrubbing(false);
+      };
+      endScrub = release;
       handlers.scrubbing(true);
-      const release = () => handlers.scrubbing(false);
-      global.addEventListener("pointerup", release, { once: true });
-      global.addEventListener("pointercancel", release, { once: true });
+      global.addEventListener("pointerup", release);
+      global.addEventListener("pointercancel", release);
     });
     scrub.addEventListener("change", () => handlers.scrubbing(false));
     close.addEventListener("click", handlers.close);
-    return { play, speed, scrub, clock, served, note };
+    return { play, speed, scrub, clock, served, note, detach: () => endScrub?.() };
   }
 
   /* Without WebGL2: a note in the bar's place, closed like an animation (its × button, or
-     the frontend's close when the instance or the solution changes). */
+     the frontend's close when the instance or the solution changes). It is not one, though:
+     `unavailable` tells the frontend not to dim the routes or show "Stop animation". */
   function unavailableNotice(host, options) {
     let open = true;
     const close = () => {
@@ -558,6 +569,7 @@
       if (state.disposed) return;
       state.disposed = true;
       setPlaying(false);
+      ui.detach();  // closed in the middle of a drag: nothing of this animation stays on the window
       // Finalizes deck, releases its WebGL context and removes its container (mountOverlay).
       map.removeControl(control);
       host.replaceChildren();
