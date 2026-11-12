@@ -52,7 +52,7 @@ solver = "pyvrp"
 kind = "pyvrp-polish"
 seeds = "3000-3003"
 budget_factor = 1.5
-warm_start = "best"                   # from the best archived run or the stored BKS
+warm_start = "best"                   # from the best archived run or the stored BKS, when the run starts
 
 [resources]
 workers = 90
@@ -73,10 +73,16 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
   `<instance_id>__<objective>__<kind>__seed<S>__t<T>` includes the budget; a run is done when its record exists and
   was made on the current instance file (a record of an older file is run again), so an aborted run is simply redone.
   Solver logs and solution files stay in `raw/<key>/`.
+- **Warm starts run last.** A `warm_start = "best"` entry is planned after every other run, and each of its runs
+  starts only once the other runs of its instance and objective have finished: it looks its start routes up at that
+  moment (the best valid archived run, else the stored BKS), so one `run` of a fresh campaign polishes the campaign's
+  own results, not the BKS of before it. With nothing valid to start from it is recorded as failed
+  (`run --retry-failed`). It is keyed like any run: to polish again after adding runs, add a seed.
 - **Workers never write BKS.** One task per spawned worker, admitted while the memory estimates fit the budget;
   external solvers run in their own process group and are killed with their children on abort. A worker that dies
   (the out-of-memory killer) costs only its own run: it is recorded as failed (`run --retry-failed` redoes it), its
-  orphaned solver is killed, and the other runs carry on.
+  orphaned solver is killed, and the other runs carry on. Only that worker's processes are killed: they carry its
+  run key in their environment (`MAMUT_BKS_CAMPAIGN_RUN`), so a shell following `raw/<key>/solver.log` is left alone.
 - **Stopping.** The first Ctrl-C lets the running runs finish and starts no new one; a second aborts them. SIGTERM
   (`kill`, `timeout`, systemd, a batch scheduler before its SIGKILL) aborts at once. Aborted runs leave no record, so
   the next `run` redoes them.
@@ -87,7 +93,8 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
   run's provenance. Ties and near-ties are the store's call: it compares exact decimal costs and keeps the incumbent
   on a tie. Every harvest is kept as `harvests/NNNN-<time>.json` (`harvest.json` is the latest), and the ledger's
   `bks_action` is what the store did with each run in any harvest: a run that created a BKS still says `created`
-  (with `bks_action_at`) after a later harvest kept it.
+  (with `bks_action_at`) after a later harvest kept it. A store error (a read-only file, a full disk) fails its
+  instance only (`error` in the results), and a harvest that is interrupted still records what it wrote before.
 - Launch long campaigns as a user unit on shared machines
   (`systemd-run --user --unit=<name> --collect mamut-tools bks-campaign run campaign.toml`): a resumable driver only
   loses the runs in flight when the session goes.

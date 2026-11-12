@@ -31,7 +31,7 @@ Handlers live in `mamut_routing_tools.gui.server`; job persistence in `gui.jobs`
 | GET | `/api/instances/{instance_id}/map-data` | map payload (nodes with their POI metadata) |
 | POST | `/api/instances/{instance_id}/solutions/compare` | compare runs: objective, fleet, loads, route edges, customer grouping |
 | POST | `/api/instances/{instance_id}/solutions/{run_id}/render` | render one run on the road network (each route feature carries `arc_starts`, the first coordinate index of each arc) |
-| GET | `/api/instances/{instance_id}/solutions/{run_id}/timeline` | per-stop times of a run for the route animation: the checker's accounting on the instance's free-flow `fastest` arc costs (409 for a stale run) |
+| GET | `/api/instances/{instance_id}/solutions/{run_id}/timeline` | per-stop times of a run for the route animation: the checker's accounting on the instance's free-flow `fastest` arc costs, with the `clock` they are (`checker`, `free_flow_fastest`). When they cannot clock the run, `clock` is `schematic`, `routes` is empty and `note` says why: the animation runs at constant speed (409 for a stale run) |
 | POST | `/api/instances/{instance_id}/solutions/import` | import an external solution (CVRPLIB `.sol`, JSON routes, LKH-3 MTSP file) as a validated run |
 | POST | `/api/jobs` | create a job; a `solve` job's payload is `{instance_id, metric, objective_function, seed, time_limit, solver}` (`solver` defaults to `pyvrp`; an unknown or unavailable solver, or one that cannot take the selected variant, is refused with 400 and the reasons) |
 | GET | `/api/jobs` | list jobs |

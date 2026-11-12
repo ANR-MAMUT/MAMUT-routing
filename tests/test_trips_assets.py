@@ -134,3 +134,109 @@ return { clock: [T.formatClock(0), T.formatClock(3725.9), T.formatClock(86400 + 
 def test_animation_module_never_injects_html() -> None:
     source = MAMUT_TRIPS_JS.read_text(encoding="utf-8")
     assert "innerHTML" not in source and "insertAdjacentHTML" not in source
+
+
+# A DOM, a map and a deck.gl just large enough for openAnimation: no layout, no WebGL.
+_BROWSER = r"""
+const fs = require("fs");
+const vm = require("vm");
+class El {
+  constructor(tag) { this.tagName = tag; this.children = []; this.listeners = {}; this.attrs = {}; this.hidden = false; }
+  append(...nodes) { this.children.push(...nodes); }
+  appendChild(node) { this.children.push(node); return node; }
+  replaceChildren(...nodes) { this.children = nodes; }
+  setAttribute(key, value) { this.attrs[key] = value; }
+  addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  fire(type) { (this.listeners[type] || []).forEach((listener) => listener({})); }
+  querySelectorAll() { return []; }
+  remove() {}
+  getContext(kind) { return WEBGL2 && kind === "webgl2" ? { getExtension: () => null } : null; }
+  find(className) {
+    if (this.className === className) return this;
+    for (const child of this.children) { const found = child.find?.(className); if (found) return found; }
+    return null;
+  }
+}
+let onWindow = [];  // [type, listener] pairs, as addEventListener keys them
+const context = vm.createContext({
+  console,
+  document: { createElement: (tag) => new El(tag), head: new El("head") },
+  performance: { now: () => 0 },
+  requestAnimationFrame: () => 1,
+  cancelAnimationFrame: () => {},
+  addEventListener: (type, listener) => { onWindow.push([type, listener]); },
+  removeEventListener: (type, listener) => { onWindow = onWindow.filter((pair) => pair[0] !== type || pair[1] !== listener); },
+  deck: {
+    TripsLayer: class {}, ScatterplotLayer: class {}, DataFilterExtension: class {},
+    MapLibreOverlay: class { onAdd() { return new El("div"); } onRemove() {} setProps() {} },
+  },
+});
+vm.runInContext(fs.readFileSync(TRIPS_JS, "utf8"), context);
+const map = {
+  addControl(control) { control.onAdd(this); },
+  removeControl(control) { control.onRemove(this); },
+  getCanvas: () => ({ parentNode: { insertBefore() {} }, nextSibling: null }),
+};
+const routeLine = { routeIndex: 0, sequence: [0, 1, 0], segments: [[[0, 0], [0.001, 0]], [[0.001, 0], [0, 0]]] };
+const open = (host, extra = {}) => context.MamutTrips.openAnimation(map, host, {
+  deckSrc: "deck.js", routeLines: [routeLine], timeline: null, palette: ["#ff0000"], visibleRoutes: new Set([0]),
+  autoplay: false, ...extra,
+});
+"""
+
+
+def _browser(body: str, *, webgl2: bool = True) -> object:
+    script = (
+        f"const WEBGL2 = {json.dumps(webgl2)};\nconst TRIPS_JS = {json.dumps(str(MAMUT_TRIPS_JS))};\n{_BROWSER}\n"
+        f"(async () => {{ {body} }})().then((result) => console.log(JSON.stringify(result)));"
+    )
+    completed = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
+@node
+def test_a_scrubber_drag_leaves_nothing_on_the_window() -> None:
+    """Only one of pointerup / pointercancel ends a drag; the other listener must not stay behind,
+    holding a closed animation's trips."""
+    assert _browser(
+        """
+const host = new El("div");
+const animation = await open(host);
+const scrub = host.find("trips-scrub");
+const counts = [];
+scrub.fire("pointerdown");
+counts.push(onWindow.length);                                  // a drag is on: listening for both ends
+onWindow.filter(([type]) => type === "pointerup").forEach(([, listener]) => listener({}));
+counts.push(onWindow.length);                                  // released: both listeners gone
+scrub.fire("pointerdown");
+scrub.fire("pointerdown");                                     // a second pointer: still one drag
+counts.push(onWindow.length);
+animation.close();                                             // closed in the middle of a drag
+counts.push(onWindow.length);
+return counts;
+"""
+    ) == [2, 0, 2, 0]
+
+
+@node
+def test_without_webgl2_the_notice_is_not_an_animation() -> None:
+    """The frontends keep the handle to close the notice, but must not treat it as a running animation."""
+    assert _browser(
+        """
+const host = new El("div");
+let closed = 0;
+const notice = await open(host, { onClose: () => { closed += 1; } });
+const text = host.find("trips-note").textContent;
+host.find("trips-close").fire("click");
+return { unavailable: notice.unavailable, playing: notice.playing, text, closed, hidden: host.hidden };
+""",
+        webgl2=False,
+    ) == {
+        "unavailable": True,
+        "playing": False,
+        "text": "The route animation needs WebGL2, which this browser does not provide.",
+        "closed": 1,
+        "hidden": True,
+    }
+    assert _browser("const animation = await open(new El('div')); return animation.unavailable === undefined;") is True

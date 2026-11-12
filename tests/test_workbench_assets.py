@@ -100,3 +100,15 @@ def test_route_rendering_controls_replace_unused_filters() -> None:
     assert 'state.routeView.renderMode = event.target.value' in source
     assert '<summary>Filters' not in source
     assert 'data-route-filter=' not in source
+
+
+def test_the_webgl2_notice_does_not_count_as_a_running_animation() -> None:
+    """state.animation also holds the "needs WebGL2" notice (so that it closes with the solution):
+    dimming the routes, the button label and the reopen-on-rerender follow animationPlaying()."""
+    source = WORKBENCH_JS.read_text(encoding="utf-8")
+    assert "return Boolean(state.animation && !state.animation.unavailable);" in source
+    assert "dim: animationPlaying() ? 0.35 : 1," in source
+    assert '${animationPlaying() ? "Stop animation" : "Animate"}' in source
+    assert "const reopen = animationPlaying() &&" in source
+    for stale in ("dim: state.animation ?", 'state.animation ? "Stop animation"', "reopen = Boolean(state.animation)"):
+        assert stale not in source

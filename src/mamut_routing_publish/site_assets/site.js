@@ -3603,9 +3603,12 @@ function isPlanarInstance(payload) {
   const coordinates = Array.isArray(payload?.coordinates) ? payload.coordinates : [];
   const outOfRange = coordinates.some((point) => Array.isArray(point)
     && (Math.abs(Number(point[0])) > 180 || Math.abs(Number(point[1])) > MERCATOR_MAX_LATITUDE));
-  // Collection instances with a place carry reference_lla (ENU metres); the others
-  // (Solomon, Gehring-Homberger, the TD families) publish planar x, y.
-  const collectionWithoutPlace = !payload?.reference_lla && Boolean(payload?.benchmark_name || payload?.instance_origin);
+  // Collection instances with a place carry reference_lla (ENU metres). Of the others, Solomon,
+  // Gehring-Homberger and most TD families publish planar x, y; Blauth2024 publishes real
+  // longitudes and latitudes and declares it (metadata.coordinates_convention): it stays on its city.
+  const declaresLonLat = /wgs\s*84|longitude/i.test(String(payload?.metadata?.coordinates_convention || ""));
+  const collectionWithoutPlace = !payload?.reference_lla && !declaresLonLat
+    && Boolean(payload?.benchmark_name || payload?.instance_origin);
   return outOfRange || collectionWithoutPlace;
 }
 
