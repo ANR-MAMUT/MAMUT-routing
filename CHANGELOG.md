@@ -67,6 +67,9 @@ the tools have their own release notes.
 
 ### Documentation
 
+- Getting started has a sixth tutorial, "Tour the tools" (`docs/getting-started/tour-the-tools.md`): one pass from a
+  city download to a generated instance solved under three metrics and under traffic, exported, and opened in the
+  workbench GUI.
 - The tools test command is `uv run --directory MAMUT-routing-tools pytest`: with `--project`, as documented,
   pytest still collected from the repository root and ran the publisher and lib suites a second time.
 - Getting started (solve and BKS), solution formats, BKS campaigns, update a BKS, workbench API (the
