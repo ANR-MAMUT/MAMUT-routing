@@ -39,7 +39,11 @@ Contributions are welcome through pull requests or discussions on the [MAMUT-rou
 
 New contributors are listed below in alphabetical order of last name, with their GitHub username and ORCID identifier when available, as well as their list of contributions to the project.
 
-Farah Abdallah ([GitHub](https://github.com/farahomarabdallah2004-create)) - Improved Rifki-10 (60 customers) Duration BKS in [MAMUT-routing-TDVRPTW-Rifki2020 #2](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/issues/2).
+Farah Abdallah ([GitHub](https://github.com/Farah-Omar-Abdallah)) - Improved Rifki-10 (60 customers) Duration BKS ([verification record](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/blob/main/contributions/2026-11-04-issue-2.json)) and Rifki-11 (60 customers) Duration BKS in [MAMUT-routing-TDVRPTW-Rifki2020 #3](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/pull/3), as a team with Bana Mohammad and Leen Qawas.
+
+Bana Mohammad ([LinkedIn](https://www.linkedin.com/in/banamohammad)) - Improved Rifki-10 (60 customers) Duration BKS ([verification record](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/blob/main/contributions/2026-11-04-issue-2.json)) and Rifki-11 (60 customers) Duration BKS in [MAMUT-routing-TDVRPTW-Rifki2020 #3](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/pull/3), as a team with Farah Abdallah and Leen Qawas.
+
+Leen Qawas ([LinkedIn](https://www.linkedin.com/in/leen-qawass-42a733222)) - Improved Rifki-10 (60 customers) Duration BKS ([verification record](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/blob/main/contributions/2026-11-04-issue-2.json)) and Rifki-11 (60 customers) Duration BKS in [MAMUT-routing-TDVRPTW-Rifki2020 #3](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020/pull/3), as a team with Farah Abdallah and Bana Mohammad.
 
 Touko Ursin ([GitHub](https://github.com/toukoursin), [LinkedIn](https://linkedin.com/in/touko-ursin/)) - New BKS in [MAMUT-routing-Mamut2026 #2](https://github.com/ANR-MAMUT/MAMUT-routing-Mamut2026/pull/2)
 
