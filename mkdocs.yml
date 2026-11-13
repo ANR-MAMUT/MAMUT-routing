@@ -152,6 +152,7 @@ nav:
       - 3. Load and check: getting-started/load-and-check.md
       - 4. Solve and propose a BKS: getting-started/solve-and-bks.md
       - 5. Export to CVRPLIB .vrp: getting-started/export-vrp.md
+      - 6. Tour the tools: getting-started/tour-the-tools.md
   - User guide:
       - user-guide/index.md
       - FAQ: user-guide/faq.md

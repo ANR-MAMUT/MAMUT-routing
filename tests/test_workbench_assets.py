@@ -16,6 +16,8 @@ WORKBENCH_JS = (
     / "workbench.js"
 )
 
+MAMUT_MAP_JS = WORKBENCH_JS.with_name("mamut-map.js")
+
 node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 
@@ -62,55 +64,31 @@ def test_customer_route_controls_and_popup_are_present() -> None:
     assert 'class="route-view-customers" type="checkbox"' in source
     assert "Fade/hide customers with routes" in source
     assert "state.routeView.customersFollowRoutes = event.target.checked" in source
-    assert 'const routeDetail = isDepot ? "" : `<br/>Route: ${routeLabel}`;' in source
-
-
-@node
-def test_carto_basemap_helpers_build_keyed_urls() -> None:
-    helpers = "\n".join(_extract_function(name) for name in ("cartoStyleUrl", "withBasemapKey"))
-    script = f"""
-{helpers}
-console.log(JSON.stringify({{
-  style: cartoStyleUrl("positron-gl-style", "k_1-2"),
-  styleEncoded: cartoStyleUrl("dark-matter-gl-style", "a b"),
-  tiles: withBasemapKey("https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt", "k_1"),
-  glyphs: withBasemapKey("https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans/0-255.pbf", "k_1"),
-  alreadyKeyed: withBasemapKey("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=other", "k_1"),
-  otherHost: withBasemapKey("https://tile.openstreetmap.org/1/2/3.png", "k_1"),
-  lookalike: withBasemapKey("https://basemaps.cartocdn.com.evil.example/x", "k_1"),
-  noKey: withBasemapKey("https://tiles.basemaps.cartocdn.com/x", ""),
-  relative: withBasemapKey("/local/asset.json", "k_1"),
-}}));
-"""
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {
-        "style": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=k_1-2",
-        "styleEncoded": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=a%20b",
-        "tiles": {"url": "https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt?key=k_1"},
-        "glyphs": {"url": "https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans/0-255.pbf?key=k_1"},
-        "alreadyKeyed": {"url": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=other"},
-        "otherHost": {"url": "https://tile.openstreetmap.org/1/2/3.png"},
-        "lookalike": {"url": "https://basemaps.cartocdn.com.evil.example/x"},
-        "noKey": {"url": "https://tiles.basemaps.cartocdn.com/x"},
-        "relative": {"url": "/local/asset.json"},
-    }
+    # Popups are DOM text nodes, never HTML strings.
+    assert "if (!isDepot) lines.push(`Route: ${routeLabel}`);" in source
+    assert "container.appendChild(document.createTextNode(line));" in source
+    assert "bindPopup" not in source
 
 
 def test_basemaps_are_keyed_vector_carto_with_osm_fallback_and_linked_attribution() -> None:
+    # The basemap code now lives in the shared map kit; the CARTO helpers are
+    # exercised in node by tests/test_map_assets.py.
     source = WORKBENCH_JS.read_text(encoding="utf-8")
-    # No unkeyed CARTO raster tile template may survive: it draws a watermark.
-    assert "basemaps.cartocdn.com/light_all" not in source
-    assert "basemaps.cartocdn.com/dark_all" not in source
-    assert "rastertiles" not in source
-    assert "{s}.tile.openstreetmap.org" not in source
+    kit = MAMUT_MAP_JS.read_text(encoding="utf-8")
+    for text in (source, kit):
+        # No unkeyed CARTO raster tile template may survive: it draws a watermark.
+        assert "basemaps.cartocdn.com/light_all" not in text
+        assert "basemaps.cartocdn.com/dark_all" not in text
+        assert "rastertiles" not in text
+        assert "{s}.tile.openstreetmap.org" not in text
     assert 'const basemapApiKey = body.dataset.basemapApiKey || "";' in source
-    assert 'cartoVectorLayer("positron-gl-style", basemapApiKey)' in source
-    assert 'cartoVectorLayer("dark-matter-gl-style", basemapApiKey)' in source
-    assert "transformRequest: (url) => withBasemapKey(url, key)" in source
-    assert 'href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' in source
-    assert 'href="https://carto.com/attributions">CARTO</a>' in source
-    assert "const baseLayers = { OpenStreetMap: osmBaseLayer };" in source
+    assert "apiKey: basemapApiKey," in source
+    assert not re.search(r"\bL\.[a-zA-Z]", source) and "leaflet" not in source.lower()
+    assert '{ id: "positron", label: "Positron", carto: "positron-gl-style" }' in kit
+    assert '{ id: "dark-matter", label: "Dark Matter", carto: "dark-matter-gl-style" }' in kit
+    assert "transformRequest: (url) => withBasemapKey(url, apiKey)" in kit
+    assert 'href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' in kit
+    assert 'href="https://carto.com/attributions">CARTO</a>' in kit
 
 
 def test_route_rendering_controls_replace_unused_filters() -> None:
@@ -122,3 +100,15 @@ def test_route_rendering_controls_replace_unused_filters() -> None:
     assert 'state.routeView.renderMode = event.target.value' in source
     assert '<summary>Filters' not in source
     assert 'data-route-filter=' not in source
+
+
+def test_the_webgl2_notice_does_not_count_as_a_running_animation() -> None:
+    """state.animation also holds the "needs WebGL2" notice (so that it closes with the solution):
+    dimming the routes, the button label and the reopen-on-rerender follow animationPlaying()."""
+    source = WORKBENCH_JS.read_text(encoding="utf-8")
+    assert "return Boolean(state.animation && !state.animation.unavailable);" in source
+    assert "dim: animationPlaying() ? 0.35 : 1," in source
+    assert '${animationPlaying() ? "Stop animation" : "Animate"}' in source
+    assert "const reopen = animationPlaying() &&" in source
+    for stale in ("dim: state.animation ?", 'state.animation ? "Stop animation"', "reopen = Boolean(state.animation)"):
+        assert stale not in source

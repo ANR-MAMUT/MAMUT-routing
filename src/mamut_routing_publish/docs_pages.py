@@ -89,7 +89,7 @@ API_REFERENCE_PACKAGES = (
         "mamut_routing_tools",
         "tools",
         "MAMUT-routing-tools/src/mamut_routing_tools",
-        ("family", "generation", "roadgraph", "osm", "geometry", "conversion", "td", "campaign", "workspace", "geo"),
+        ("family", "generation", "roadgraph", "osm", "geometry", "conversion", "td", "campaign", "bks_campaign", "workspace", "geo"),
         False,
     ),
     (

@@ -22,5 +22,4 @@ Defaults and options:
 The full contract is on the [CVRPLIB export](../benchmarks/formats/cvrplib-export.md) page. On the website, the
 `.vrp ↓` chip of any static instance does the same in the browser.
 
-That is the end of the tutorials. Continue with the [User guide](../user-guide/index.md) to generate your own
-instances with `mamut-tools`, or with the [Benchmarks](../benchmarks/index.md) section for the formats.
+Next: [Tour the tools](tour-the-tools.md), to generate, solve and view an instance of your own with `mamut-tools`.

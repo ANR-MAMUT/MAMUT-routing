@@ -54,6 +54,12 @@ from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
 from .route_geometry import ROUTE_GEOMETRY_CACHE_DIR, route_geometry_ref_for_bks
+from .route_timeline import (
+    RouteTimelinePayload,
+    build_route_timeline,
+    clear_route_timeline_memo,
+    route_timeline_filename,
+)
 
 
 SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
@@ -355,6 +361,10 @@ class BKSPageEntry(BaseModel):
     license_url: str | None = None
     td_schedules: list[TDRouteSchedule] | None = None
     route_functions_path: str | None = None
+    # Per-stop schedule for the workbench animation (route_timeline.py); absent for
+    # TD BKS, whose schedule is ``td_schedules`` above.
+    timeline_path: str | None = None
+    timeline_clock: str | None = None
     route_geometry_path: str | None = None
     route_geometry_sha256: str | None = None
     route_geometry_bks_sha256: str | None = None
@@ -757,6 +767,7 @@ class _ResolvedSiteInstance(BaseModel):
     source_problem_routes: dict[str, str] = Field(default_factory=dict)
     bks_entries: list[BKSPageEntry] = Field(default_factory=list)
     td_route_functions: list[TDRouteFunctionsPayload] = Field(default_factory=list)
+    route_timelines: list[RouteTimelinePayload] = Field(default_factory=list)
     coordinate_exports: bool = False
 
 
@@ -1261,6 +1272,7 @@ def _reset_resolution_memos() -> None:
     """
     _TD_ATFS_MEMO.clear()
     _GEO_META_VIEWS.clear()
+    clear_route_timeline_memo()
 
 
 def _build_artifact_links(
@@ -1651,9 +1663,11 @@ def _build_bks_entries(
     td_atfs=None,
     route_path: str | None = None,
     route_geometry_cache_dir: Path | None = None,
-) -> tuple[list[BKSPageEntry], list[TDRouteFunctionsPayload]]:
+    timeline_instance=None,
+) -> tuple[list[BKSPageEntry], list[TDRouteFunctionsPayload], list[RouteTimelinePayload]]:
     entries: list[BKSPageEntry] = []
     function_payloads: list[TDRouteFunctionsPayload] = []
+    timeline_payloads: list[RouteTimelinePayload] = []
     for bks_path in (bks_paths if bks_paths is not None else _discover_bks_paths(instance_path)):
         bks = load_bks(bks_path)
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
@@ -1699,6 +1713,14 @@ def _build_bks_entries(
                     )
             except Exception as exc:
                 warnings.warn(f"Unable to derive the TD schedule for {bks_path}: {exc}", stacklevel=2)
+        timeline_path = None
+        timeline_clock = None
+        if timeline_instance is not None and route_path is not None:
+            timeline = build_route_timeline(timeline_instance, instance_path, bks.routes, bks.objective_function, route_path)
+            if timeline is not None:
+                timeline_path = f"{route_path}{route_timeline_filename(bks.objective_function)}"
+                timeline_clock = timeline.clock
+                timeline_payloads.append(timeline)
         entries.append(
             BKSPageEntry(
                 objective_function=bks.objective_function,
@@ -1713,6 +1735,8 @@ def _build_bks_entries(
                 license_url=license_url_value,
                 td_schedules=td_schedules,
                 route_functions_path=route_functions_path,
+                timeline_path=timeline_path,
+                timeline_clock=timeline_clock,
                 route_geometry_path=route_geometry_path,
                 route_geometry_sha256=route_geometry_sha256,
                 route_geometry_bks_sha256=route_geometry_bks_sha256,
@@ -1722,7 +1746,11 @@ def _build_bks_entries(
                 routes_sha256=routes_fingerprint(bks.routes),
             )
         )
-    return sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)), function_payloads
+    return (
+        sorted(entries, key=lambda entry: _objective_sort_key(entry.objective_function)),
+        function_payloads,
+        timeline_payloads,
+    )
 
 
 def _resolve_instance(
@@ -1881,7 +1909,13 @@ def _resolve_instance(
                 "Run `mamut-routing-publish site materialize-atf`, or `site build` without --skip-atf-cache.",
                 stacklevel=2,
             )
-    bks_entries, td_route_functions = _build_bks_entries(
+    # Workbench instances only (geographic collections); TD pages carry td_schedules.
+    animates_static_routes = (
+        is_collection
+        and discovered_item.place_slug is not None
+        and problem_type in (ProblemType.CVRP, ProblemType.VRPTW)
+    )
+    bks_entries, td_route_functions, route_timelines = _build_bks_entries(
         output_repo_dir,
         discovered_item.instance_path,
         bks_paths,
@@ -1889,6 +1923,7 @@ def _resolve_instance(
         td_atfs=td_atfs,
         route_path=route_path,
         route_geometry_cache_dir=route_geometry_cache_dir,
+        timeline_instance=instance if animates_static_routes else None,
     )
     route_geometry_entries = [entry for entry in bks_entries if entry.route_geometry_path is not None]
     if route_geometry_entries:
@@ -1947,6 +1982,7 @@ def _resolve_instance(
         source_problem_routes=source_problem_routes,
         bks_entries=bks_entries,
         td_route_functions=td_route_functions,
+        route_timelines=route_timelines,
     )
 
 
@@ -4282,6 +4318,12 @@ def generate_site_payloads(
                 )
                 save_json_to_file(functions_payload.model_dump(mode="json"), functions_path)
                 written_paths.append(functions_path)
+            for timeline_payload in resolved.route_timelines:
+                timeline_file = _route_payload_path(site_output, resolved.route_path, payload_root).with_name(
+                    route_timeline_filename(timeline_payload.objective_function)
+                )
+                save_json_to_file(timeline_payload.model_dump(mode="json"), timeline_file)
+                written_paths.append(timeline_file)
             instance_pages_written += 1
             task.update(detail=resolved.display_name)
 
