@@ -39,7 +39,7 @@ def _strict_bks_files() -> list[Path]:
 STRICT_BKS = _strict_bks_files()
 
 
-@pytest.mark.skipif(not STRICT_BKS, reason="no relaxation twins (benchmark satellites not checked out)")
+@pytest.mark.skipif(not STRICT_BKS, reason="no relaxation twins (benchmark family repositories not checked out)")
 def test_no_relaxation_bks_is_worse_than_its_restriction() -> None:
     inverted: list[str] = []
     structural: list[str] = []

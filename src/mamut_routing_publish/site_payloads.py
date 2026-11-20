@@ -36,14 +36,16 @@ from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
 from mamut_routing_lib.artifacts import (
     AnyBenchmarkInstance,
     DiscoveredBenchmarkInstance,
+    LayoutInfo,
     discover_benchmark_instances,
     load_bks,
+    parse_collection_layout,
 )
 from mamut_routing_lib.enums import BenchmarkName, MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.geo import load_instance_geo
 from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
-from mamut_routing_lib.sidecars import find_collection_root
+from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME, find_collection_root, load_collection_marker
 from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
@@ -1149,40 +1151,68 @@ def _discover_bks_paths(instance_path: Path) -> list[Path]:
     return sorted(instance_path.parent.glob(f"{base_name}.bks.*.json"))
 
 
+def _site_metric_variant(
+    metric_variant: MetricVariant | None,
+    place_slug: str | None,
+    base_instance_name: str | None,
+) -> MetricVariant | None:
+    """The metric facet the site files an instance under.
+
+    TD instances of a layout-1 collection (Poryos2026 shape) have no metric
+    slot on disk (the time dependence is the metric). The site presents them
+    under the fastest facet, which is the metric their pinned road paths
+    follow, so catalogs and URLs keep the v1 drill-down. Classic families
+    (layout 2) have neither a metric nor a place and keep ``None``.
+    """
+    if metric_variant is None and place_slug is not None and base_instance_name is not None:
+        return MetricVariant.FASTEST
+    return metric_variant
+
+
 def _artifact_path_to_route_path(output_repo_dir: Path, artifact_path_str: str) -> str | None:
+    """Site route of the instance file a metadata path names; ``None`` when it names no ``.vrp.json``.
+
+    The path is repo-relative (``benchmarks/<Family>/...``) or relative to the
+    benchmarks root (``<Family>/...``). It is parsed with the library's
+    collection layout under the ``layout_version`` of the family's marker.
+    Without a marker on disk (a family that is not checked out) the version
+    follows from the depth of the path, as layout 1 and layout 2 paths never
+    have the same number of parts. A path in the problem-type-first layout
+    (``<ProblemType>/<Family>/...``, read up to mamut-routing-lib 0.12) or any
+    other unsupported shape raises ``ValueError``.
+    """
     if not artifact_path_str.endswith(".vrp.json"):
         return None
 
-    benchmarks_root = output_repo_dir / "benchmarks"
     relative_path = Path(artifact_path_str)
     if relative_path.parts[:1] == ("benchmarks",):
         relative_path = Path(*relative_path.parts[1:])
 
     parts = relative_path.parts
-    if len(parts) == 4:
-        problem_type = ProblemType(parts[0])
-        benchmark_name = BenchmarkName(parts[1])
-        size_bucket = parts[2]
-        instance_identifier = Path(parts[3]).stem.removesuffix(".vrp")
-        return _instance_route_path(problem_type, benchmark_name, instance_identifier, size_bucket)
-
-    if len(parts) == 7:
-        problem_type = ProblemType(parts[0])
-        benchmark_name = BenchmarkName(parts[1])
-        metric_variant = MetricVariant(parts[2])
-        place_slug = parts[3]
-        size_bucket = parts[4]
-        instance_identifier = parts[5]
-        return _instance_route_path(
-            problem_type,
-            benchmark_name,
-            instance_identifier,
-            size_bucket,
-            metric_variant=metric_variant,
-            place_slug=place_slug,
+    if len(parts) < 2 or parts[0] in {item.value for item in ProblemType}:
+        raise ValueError(
+            f"Unsupported artifact path for route derivation: {artifact_path_str} "
+            "(expected benchmarks/<Family>/<ProblemType>/...)"
         )
-
-    raise ValueError(f"Unsupported artifact path for route derivation: {artifact_path_str}")
+    family_root = output_repo_dir / "benchmarks" / parts[0]
+    marker_path = family_root / COLLECTION_MARKER_FILENAME
+    if marker_path.is_file():
+        marker = load_collection_marker(marker_path)
+        family, layout_version = marker.family, marker.layout_version
+    else:
+        family, layout_version = parts[0], (1 if len(parts) == 7 else 2)
+    inner_path = Path(*parts[1:])
+    layout: LayoutInfo = parse_collection_layout(inner_path, family_root / inner_path, family, layout_version)
+    # The same route rule as ``_resolve_instance`` applies to a discovered instance.
+    return _instance_route_path(
+        layout.problem_type,
+        _normalize_benchmark_name(layout.benchmark_name),
+        layout.instance_name,
+        f"n={layout.num_customers}",
+        metric_variant=_site_metric_variant(layout.metric_variant, layout.place_slug, layout.base_instance_name),
+        place_slug=layout.place_slug,
+        subset=layout.subset,
+    )
 
 
 def _resolve_atf_sidecar(
@@ -1770,19 +1800,22 @@ def _resolve_instance(
     size_bucket = f"n={bucket_n}"
     instance_identifier = instance.instance_name
     subset_segment = getattr(discovered_item, "subset", None)
-    # Family-first collections (Poryos2026 v2). TD collection instances have no
-    # metric path slot on disk (the time dependence is the metric); the site
-    # keeps presenting them under the fastest facet, which is the metric their
-    # pinned road paths follow, so catalogs and URLs keep the v1 drill-down.
+    # Every family is a marker-rooted collection, but only the layout-1 ones
+    # (Poryos2026 shape: place, size, base instance) get the collection
+    # treatment below: identity-based cross-links, shared geo sidecar, ODbL
+    # default licence. Classic families (layout 2) have no base instance and
+    # keep the plain-instance path, as they did in the problem-type-first layout.
     collection_root = (
         find_collection_root(discovered_item.instance_path)
         if getattr(discovered_item, "base_instance_name", None) is not None
         else None
     )
     is_collection = collection_root is not None
-    effective_metric_variant = discovered_item.metric_variant
-    if is_collection and effective_metric_variant is None and discovered_item.place_slug is not None:
-        effective_metric_variant = MetricVariant.FASTEST
+    effective_metric_variant = (
+        _site_metric_variant(discovered_item.metric_variant, discovered_item.place_slug, discovered_item.base_instance_name)
+        if is_collection
+        else discovered_item.metric_variant
+    )
     route_path = _instance_route_path(
         problem_type,
         benchmark_name,
@@ -1841,7 +1874,14 @@ def _resolve_instance(
             if isinstance(traffic, dict):
                 traffic_model = traffic.get("model")
                 traffic_intensity = traffic.get("intensity")
-    if is_collection and discovered_item.place_slug is not None and discovered_item.base_instance_name is not None:
+    if (
+        is_collection
+        # Explicit metadata links win: before every family became a collection,
+        # an instance carrying structured metadata was never inside one.
+        and not has_structured_metadata(instance)
+        and discovered_item.place_slug is not None
+        and discovered_item.base_instance_name is not None
+    ):
         sibling_variant_routes, derived_problem_routes, source_problem_routes = _collection_related_routes(
             collection_root,
             benchmark_name,
@@ -2262,13 +2302,9 @@ _STANDALONE_URL_RE = re.compile(r"^https?://\S+$")
 
 
 def _license_file_path(output_repo_dir: Path, problem_type: ProblemType, benchmark_name: BenchmarkName) -> Path:
-    family_path = output_repo_dir / "benchmarks" / problem_type.value / benchmark_name.value / "LICENSE"
-    if family_path.is_file():
-        return family_path
-    # Collection layout (Poryos2026): one LICENSE at benchmarks/<Benchmark>/
-    # covers every problem-type layer stored as benchmarks/<Benchmark>/<PT>/.
-    collection_path = output_repo_dir / "benchmarks" / benchmark_name.value / "LICENSE"
-    return collection_path if collection_path.is_file() else family_path
+    # Every family is a collection: one LICENSE at benchmarks/<Benchmark>/ covers
+    # every problem-type layer stored as benchmarks/<Benchmark>/<PT>/.
+    return output_repo_dir / "benchmarks" / benchmark_name.value / "LICENSE"
 
 
 def _markdown_link_for_url(url: str) -> str:

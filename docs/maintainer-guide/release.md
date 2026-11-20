@@ -29,9 +29,7 @@ bump the tools' nested lib pointer and their dependency floor, then the tools, t
 
 ## 3. Data archives
 
-Check out every satellite first (`git submodule update --init`, then `git submodule status` shows no `-` or `+`):
-the archives are built from the working tree, so an empty satellite directory is silently missing from the
-release and a satellite off its pinned commit ships data the tag does not record.
+Check out every family repository first (`git submodule update --init`, then `git submodule status` shows no `-` or `+`): the archives are built from the working tree, so an empty family directory is silently missing from the release and a family off its pinned commit ships data the tag does not record.
 
 ```bash
 uv run mamut-routing-publish release build \
@@ -39,15 +37,7 @@ uv run mamut-routing-publish release build \
     --download-base-url https://github.com/ANR-MAMUT/MAMUT-routing/releases/download/vX.Y.Z
 ```
 
-Writes `dist-release/<ProblemType>-<Family>-snapshot-<id>.zip` for each classic family,
-`dist-release/<Family>-snapshot-<id>.zip` for each family-first collection (the whole `benchmarks/<Family>/` tree:
-every problem type, the shared `sidecars/`, the marker), both deterministic (fixed timestamps, mode 0644, deflate
-level 9, sha256 streamed while writing, `.git` gitfiles skipped), and `snapshot-manifest.json`
-(`ReleaseArchiveManifest`: snapshot id, published at, source commit, release tag, one `ReleaseArchiveAsset` per
-archive with its download URL, sha256, size, scope `problem_family` or `family_collection`). Guards: an asset over
-1.5 GiB warns, over 2 GiB fails (GitHub's limit), at most 1000 assets per release. `--jobs` parallelises compression.
-Files a satellite ships as sha256 pins instead of bytes (Mamut2026's POI-tier distance matrices, Blauth2024's
-n=1000/2000 ATF sidecars) are pins in the archive too; say so in the release notes.
+Writes `dist-release/<Family>-snapshot-<id>.zip` for each family collection (the whole `benchmarks/<Family>/` tree with every problem type, the shared `sidecars/` and the marker), deterministic (fixed timestamps, mode 0644, deflate level 9, sha256 streamed while writing, `.git` gitfiles skipped), and `snapshot-manifest.json` (`ReleaseArchiveManifest`: snapshot id, published at, source commit, release tag, one `ReleaseArchiveAsset` per archive with its download URL, sha256, size, scope `family_collection`). Guards: an asset over 1.5 GiB warns, over 2 GiB fails (GitHub's limit), at most 1000 assets per release. `--jobs` parallelises compression. Files a family ships as sha256 pins instead of bytes (Mamut2026's POI-tier distance matrices, Blauth2024's n=1000/2000 ATF sidecars) are pins in the archive too; say so in the release notes.
 
 Upload every archive and the manifest as assets of the GitHub release. Verify from a clean machine:
 

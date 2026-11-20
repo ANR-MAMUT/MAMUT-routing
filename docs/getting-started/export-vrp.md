@@ -4,7 +4,7 @@ Solvers that read the classic TSPLIB-derived CVRPLIB text instead of `.vrp.json`
 the CLI, the workbench and the website.
 
 ```bash
-uv run mamut-routing export vrp benchmarks/VRPTW/Sintef2008/n=25/C101.vrp.json          # writes C101.vrp next to it
+uv run mamut-routing export vrp benchmarks/Sintef2008/VRPTW/n=25/C101.vrp.json          # writes C101.vrp next to it
 uv run mamut-routing --benchmarks-dir benchmarks export vrp \
     --problem-type VRPTW --benchmark-name Sintef2008 --output-dir ./vrp-out             # a whole family, mirrored
 ```

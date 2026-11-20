@@ -1,4 +1,4 @@
-"""Generated documentation pages: single-sourcing, satellite fallback, nav stability."""
+"""Generated documentation pages: single-sourcing, fallback for a family that is not checked out, nav stability."""
 
 from __future__ import annotations
 
@@ -27,10 +27,14 @@ from mamut_routing_publish.site_payloads import PROJECT_PAGE_SOURCES
 def _fixture_repo(tmp_path: Path, *, families_markdown: str) -> Path:
     repo = tmp_path / "MAMUT-routing"
     (repo / "src" / "mamut_routing_publish" / "site_assets" / "texts").mkdir(parents=True)
+    # Every family is a submodule mounted at benchmarks/<Family>/, one repository per family.
     (repo / ".gitmodules").write_text(
-        """[submodule "benchmarks/TDVRPTW/Ari2018"]
-\tpath = benchmarks/TDVRPTW/Ari2018
-\turl = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018.git
+        """[submodule "benchmarks/Ari2018"]
+\tpath = benchmarks/Ari2018
+\turl = git@github.com:ANR-MAMUT/MAMUT-routing-Ari2018.git
+[submodule "benchmarks/Sintef2008"]
+\tpath = benchmarks/Sintef2008
+\turl = git@github.com:ANR-MAMUT/MAMUT-routing-Sintef2008.git
 [submodule "benchmarks/Poryos2026"]
 \tpath = benchmarks/Poryos2026
 \turl = git@github.com:ANR-MAMUT/MAMUT-routing-Poryos2026.git
@@ -41,12 +45,12 @@ def _fixture_repo(tmp_path: Path, *, families_markdown: str) -> Path:
         encoding="utf-8",
     )
     (repo / "AUTHORS.md").write_text("# Authors\n\nSomeone.\n", encoding="utf-8")
-    (repo / "benchmarks" / "VRPTW" / "Sintef2008").mkdir(parents=True)
-    (repo / "benchmarks" / "VRPTW" / "Sintef2008" / "README.md").write_text(
+    (repo / "benchmarks" / "Sintef2008").mkdir(parents=True)
+    (repo / "benchmarks" / "Sintef2008" / "README.md").write_text(
         "# Sintef2008\n\nSee [LICENSE](LICENSE) and ![plot](img/plot.png).\n\n## Format\n\n```text\n# not a heading\n```\n",
         encoding="utf-8",
     )
-    (repo / "benchmarks" / "TDVRPTW" / "Ari2018").mkdir(parents=True)  # empty: uninitialised satellite
+    (repo / "benchmarks" / "Ari2018").mkdir(parents=True)  # empty: uninitialised submodule
     (repo / "benchmarks" / "Poryos2026").mkdir(parents=True)
     (repo / "benchmarks" / "Poryos2026" / "README.md").write_text(
         "# Poryos2026 collection\n\nLayout in [CVRP](CVRP/).\n", encoding="utf-8"
@@ -71,6 +75,10 @@ Detail.
 ### `Ari2018` (TDVRPTW)
 
 Ari context paragraph.
+
+### `Ari2018` (TDVRP)
+
+Ari TDVRP context paragraph.
 
 ### `Poryos2026` (CVRP)
 
@@ -111,31 +119,48 @@ def test_github_url_forms() -> None:
 
 def test_github_bases_for_submodule_and_in_repo_paths(tmp_path: Path, families_report: Path) -> None:
     repo = _fixture_repo(tmp_path, families_markdown="")
-    assert parse_gitmodules(repo)["benchmarks/TDVRPTW/Ari2018"] == f"{GITHUB_ORG_URL}/MAMUT-routing-TDVRPTW-Ari2018"
-    browse, blob, raw = github_bases_for_path(repo, "benchmarks/TDVRPTW/Ari2018")
-    assert browse == f"{GITHUB_ORG_URL}/MAMUT-routing-TDVRPTW-Ari2018"
-    assert blob == f"{GITHUB_ORG_URL}/MAMUT-routing-TDVRPTW-Ari2018/blob/main"
-    assert raw == "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018/main"
-    browse, blob, _raw = github_bases_for_path(repo, "benchmarks/VRPTW/Sintef2008")
-    assert browse == f"{MAIN_REPO_URL}/tree/main/benchmarks/VRPTW/Sintef2008"
-    assert blob == f"{MAIN_REPO_URL}/blob/main/benchmarks/VRPTW/Sintef2008"
+    assert parse_gitmodules(repo)["benchmarks/Ari2018"] == f"{GITHUB_ORG_URL}/MAMUT-routing-Ari2018"
+    browse, blob, raw = github_bases_for_path(repo, "benchmarks/Ari2018")
+    assert browse == f"{GITHUB_ORG_URL}/MAMUT-routing-Ari2018"
+    assert blob == f"{GITHUB_ORG_URL}/MAMUT-routing-Ari2018/blob/main"
+    assert raw == "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing-Ari2018/main"
+    # A directory inside a family repository maps to the same path inside it.
+    browse, blob, _raw = github_bases_for_path(repo, "benchmarks/Sintef2008/VRPTW/n=100")
+    assert browse == f"{GITHUB_ORG_URL}/MAMUT-routing-Sintef2008/tree/main/VRPTW/n=100"
+    assert blob == f"{GITHUB_ORG_URL}/MAMUT-routing-Sintef2008/blob/main/VRPTW/n=100"
+    # Anything that is not a submodule stays in the main repository.
+    browse, blob, _raw = github_bases_for_path(repo, "docs/benchmarks")
+    assert browse == f"{MAIN_REPO_URL}/tree/main/docs/benchmarks"
+    assert blob == f"{MAIN_REPO_URL}/blob/main/docs/benchmarks"
 
 
 def test_family_pages_embed_readme_stub_absent_and_collection(tmp_path: Path, families_report: Path) -> None:
     repo = _fixture_repo(tmp_path, families_markdown="")
     pages = {page.path: page.markdown for page in family_pages(repo)}
 
+    # Every family is a collection: each problem-type page carries its website
+    # context and links to the one collection page that embeds the family README.
     sintef = pages["benchmarks/families/vrptw/sintef2008.md"]
     assert sintef.startswith("# Sintef2008 (VRPTW)\n")
     assert "\n## Sub-heading\n" in sintef  # #### demoted to ##
-    assert "## Repository README" in sintef
-    assert f"[LICENSE]({MAIN_REPO_URL}/blob/main/benchmarks/VRPTW/Sintef2008/LICENSE)" in sintef
-    assert "![plot](https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/main/benchmarks/VRPTW/Sintef2008/img/plot.png)" in sintef
     assert "[/benchmarks/vrptw/sintef2008/](/benchmarks/vrptw/sintef2008/)" in sintef
+    assert f"Repository: [{GITHUB_ORG_URL}/MAMUT-routing-Sintef2008]" in sintef
+    assert "[collection page](../collections/sintef2008.md)" in sintef
+    assert "Repository README" not in sintef and "See [LICENSE]" not in sintef
+    sintef_collection = pages["benchmarks/families/collections/sintef2008.md"]
+    assert sintef_collection.startswith("# Sintef2008 collection\n")
+    assert f"[LICENSE]({GITHUB_ORG_URL}/MAMUT-routing-Sintef2008/blob/main/LICENSE)" in sintef_collection
+    assert "![plot](https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing-Sintef2008/main/img/plot.png)" in sintef_collection
 
-    ari = pages["benchmarks/families/tdvrptw/ari2018.md"]
-    assert "Not checked out in this build" in ari
-    assert f"{GITHUB_ORG_URL}/MAMUT-routing-TDVRPTW-Ari2018" in ari
+    # One README for 2 problem types: both pages point at one collection page.
+    for problem_slug in ("tdvrptw", "tdvrp"):
+        ari = pages[f"benchmarks/families/{problem_slug}/ari2018.md"]
+        assert "[collection page](../collections/ari2018.md)" in ari
+        assert f"{GITHUB_ORG_URL}/MAMUT-routing-Ari2018" in ari
+    ari_collection = pages["benchmarks/families/collections/ari2018.md"]
+    assert "Not checked out in this build" in ari_collection
+    assert f"{GITHUB_ORG_URL}/MAMUT-routing-Ari2018" in ari_collection
+    assert sum(1 for path in pages if path.startswith("benchmarks/families/collections/")) == 3
 
     cvrp = pages["benchmarks/families/cvrp/poryos2026.md"]
     assert "[collection page](../collections/poryos2026.md)" in cvrp
@@ -145,7 +170,15 @@ def test_family_pages_embed_readme_stub_absent_and_collection(tmp_path: Path, fa
     assert f"[CVRP]({GITHUB_ORG_URL}/MAMUT-routing-Poryos2026/blob/main/CVRP/)" in collection
 
     summary = pages["benchmarks/families/SUMMARY.md"]
-    for rel in ("vrptw/sintef2008.md", "tdvrptw/ari2018.md", "cvrp/poryos2026.md", "collections/poryos2026.md"):
+    for rel in (
+        "vrptw/sintef2008.md",
+        "tdvrptw/ari2018.md",
+        "tdvrp/ari2018.md",
+        "cvrp/poryos2026.md",
+        "collections/poryos2026.md",
+        "collections/sintef2008.md",
+        "collections/ari2018.md",
+    ):
         assert f"({rel})" in summary
         assert f"benchmarks/families/{rel}" in pages
     assert summary.splitlines()[0] == "* [Overview](index.md)"

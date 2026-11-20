@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # Benchmark satellites are not needed (the docs build degrades to GitHub
+      # Benchmark family repositories are not needed (the docs build degrades to GitHub
       # links when they are absent, and this job exercises exactly that path).
       - uses: actions/checkout@v4
         with:

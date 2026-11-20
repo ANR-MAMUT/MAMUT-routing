@@ -1,8 +1,6 @@
 # Contributing to MAMUT-routing
 
-Thank you for helping. MAMUT-routing is four repositories (this one, `MAMUT-routing-lib`, `MAMUT-routing-tools`
-and the benchmark satellites) with one contract; the
-[documentation](https://mamut-routing.univ-ubs.fr/docs/) has the guides, this page has the rules.
+Thank you for helping. MAMUT-routing is a set of repositories (this one, `MAMUT-routing-lib`, `MAMUT-routing-tools` and 1 repository per benchmark family) with one contract. The [documentation](https://mamut-routing.univ-ubs.fr/docs/) has the guides, and this page has the rules.
 
 ## What is welcome
 
@@ -19,7 +17,7 @@ and the benchmark satellites) with one contract; the
    change with a version bump, documented in the checker's docstring and the Formats pages.
 2. **Every published byte is reproducible.** Sorted JSON keys, sha256-pinned sidecars, deterministic archives,
    seeded generation. Tests enforce byte-identity where it matters (`.vrp` export, route geometry).
-3. **Satellites are optional.** Code, tests, builds and docs must work with empty satellite directories.
+3. **Family repositories are optional.** Code, tests, builds and docs must work with empty `benchmarks/<Family>` directories.
 4. **Data licenses travel with the data.** A family `LICENSE` with an `SPDX-License-Identifier` first line, a clause
    in `NOTICE`, and the license paragraph in the family README.
 5. **Decisions are written down where they apply**: module docstrings for contract rules, family README and

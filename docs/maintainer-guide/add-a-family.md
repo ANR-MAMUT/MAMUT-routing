@@ -3,14 +3,10 @@
 Bringing a new family online touches the lib (the name), the superproject (the mount and the texts) and this
 documentation (regenerated). Order matters because the publisher only sees names the lib knows.
 
-## 1. Prepare the satellite repository
+## 1. Prepare the family repository
 
-- Layout: classic (`<ProblemType>/<Family>/n=<N>/...` in the superproject, so the satellite root *is* the family
-  directory) or family-first collection (the satellite root holds `mamut-collection.json`, the problem-type trees and
-  `sidecars/`).
-- Files at the root: `README.md` (sources, provenance, conventions, how it was built), `CHANGELOG.md`, `LICENSE`
-  whose first line is `SPDX-License-Identifier: <id>` (the website's license card is parsed from it), and the
-  generator record in every artifact's `generator` block.
+- Layout: every family is a collection. The repository root *is* the family directory `benchmarks/<Family>/`. It holds `mamut-collection.json`, one tree per problem type and `sidecars/`. The marker's `layout_version` is 2 for the classic shape (`<ProblemType>/[<subset>/]n=<N>/<file>.vrp.json`) and 1 for the generated-collection shape of Poryos2026 (see [Layouts](../benchmarks/formats/layouts.md)).
+- Files at the root, one set for all the problem types: `README.md` (sources, provenance, conventions, how it was built), `CHANGELOG.md`, `CITATION.cff`, `LICENSE` whose first line is `SPDX-License-Identifier: <id>` (the website's license card is parsed from it), and the generator record in every artifact's `generator` block.
 - Every instance loads and every BKS validates: `mamut-routing --benchmarks-dir <root> list` and a checker pass
   over the BKS files.
 - Size: keep repositories under a few hundred MB where possible (Lera2026 ships IGP specifications instead of ATFs
@@ -25,8 +21,6 @@ superproject's pointers.
 ## 3. Mount it
 
 ```bash
-git submodule add git@github.com:ANR-MAMUT/MAMUT-routing-<Type>-<Family>.git benchmarks/<Type>/<Family>
-# or, for a collection:
 git submodule add git@github.com:ANR-MAMUT/MAMUT-routing-<Family>.git benchmarks/<Family>
 ```
 
@@ -37,8 +31,7 @@ Prefer the `git@github.com:ANR-MAMUT/...` URL form used by the other entries; th
 - Add a ``### `Family` (ProblemType)`` section (one per problem type) to
   `src/mamut_routing_publish/site_assets/texts/mamut-routing_benchmark_families.md`. It becomes the website's family
   context page and the family page of this documentation.
-- Add the license clause to `NOTICE` and the row to the README satellite table (and the layout notes if it is a
-  collection).
+- Add the license clause to `NOTICE` and the row to the README family table (and the layout notes if it is a generated collection).
 
 ## 5. Special cases
 
@@ -57,6 +50,4 @@ uv run mamut-routing-publish site build --skip-atf-cache --skip-route-geometry \
 uv run mamut-routing-publish serve --site-dir dist-preview            # then open /benchmarks/<type>/<family>/ and /docs/benchmarks/families/
 ```
 
-Then a real build with the caches, a release if the family is meant to be downloadable
-(`release build` emits one archive per (type, family)), and the deploy. Add the family to the README download hints
-with its size.
+Then a real build with the caches, a release if the family is meant to be downloadable (`release build` emits one archive per family), and the deploy. Add the family to the README download hints with its size.

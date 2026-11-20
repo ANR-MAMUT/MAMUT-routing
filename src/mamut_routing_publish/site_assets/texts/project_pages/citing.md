@@ -24,7 +24,7 @@ For a citation that must identify an immutable archived state, use the Software 
 - Cite the original benchmark-family publication or data source when using a historical family distributed by MAMUT-routing.
 - Cite [`mamut-routing-lib`](https://github.com/ANR-MAMUT/MAMUT-routing-lib) separately when its Python API, CLI, loaders, or checkers are a material part of the experimental workflow.
 - Cite [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) when its generation or conversion tools are used.
-- Cite each benchmark satellite using its own `CITATION.cff`, alongside the original source publications when applicable.
+- Cite each benchmark family using the `CITATION.cff` of its repository, alongside the original source publications when applicable.
 - Record the exact objective function and metric variant because different MAMUT-routing artifacts for the same base instance can intentionally represent different optimization contracts.
 
 ## Additional publication records

@@ -1,7 +1,7 @@
 # Build the website
 
 ```bash
-git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Sintef2008 benchmarks/Dimacs2021 benchmarks/Ortec2022 benchmarks/Dabia2013 benchmarks/Poryos2026 benchmarks/Mamut2026
 uv sync
 uv run mamut-routing-publish site build --precompress
 uv run mamut-routing-publish serve                  # http://127.0.0.1:8082/

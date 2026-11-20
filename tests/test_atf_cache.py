@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from mamut_routing_lib.json_utils import save_json_to_file
+from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_lib.td import (
     InstanceCategories,
     compute_atf_sha256,
@@ -52,13 +53,20 @@ def _categories() -> InstanceCategories:
 
 
 def _write_twins(repo: Path) -> str:
-    """A TDVRPTW/TDVRP igp-profile pair under ``repo/benchmarks``; returns the shared pin."""
+    """A TDVRPTW/TDVRP igp-profile pair in the ``repo/benchmarks/Lera2026`` collection; returns the shared pin.
+
+    Like the real family (layout 2): ``<PT>/<subset>/n=<N>/<file>.vrp.json``,
+    one categories sidecar under ``sidecars/`` shared by both problem types,
+    referenced by a path relative to the family root.
+    """
     categories = _categories()
     pin = None
+    family_root = repo / "benchmarks" / "Lera2026"
+    save_collection_marker(CollectionMarker(family="Lera2026", layout_version=2), family_root)
+    save_instance_categories(categories, family_root / "sidecars" / "n=3" / "Lera-TOY.igp.json")
     for problem_type in ("TDVRPTW", "TDVRP"):
-        directory = repo / "benchmarks" / problem_type / "Lera2026" / "n=3"
+        directory = family_root / problem_type / "S2" / "n=3"
         directory.mkdir(parents=True)
-        save_instance_categories(categories, directory / "Lera-TOY.igp.json")
         payload = {
             "instance_name": "Lera-TOY-S2",
             "instance_origin": "GehHom1999",
@@ -75,7 +83,7 @@ def _write_twins(repo: Path) -> str:
                 "model": "igp-profile",
                 "time_periods": PERIODS,
                 "speeds": SPEEDS,
-                "categories_path": "Lera-TOY.igp.json",
+                "categories_path": "sidecars/n=3/Lera-TOY.igp.json",
                 "categories_sha256": compute_categories_sha256(categories),
             },
             "metadata": {},

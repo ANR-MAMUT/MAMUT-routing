@@ -2,12 +2,27 @@
 
 Notable changes of the MAMUT-routing repository (benchmark tree, publisher, website, documentation). The
 per-snapshot data deltas (families, instances and BKS added, removed, improved) are on the website's
-[History](https://mamut-routing.univ-ubs.fr/history/) page; each satellite keeps its own `CHANGELOG.md`; the lib and
+[History](https://mamut-routing.univ-ubs.fr/history/) page. Each benchmark family repository keeps its own `CHANGELOG.md`, and the lib and
 the tools have their own release notes.
 
-## Unreleased — solver integration (branch `feat/solver-integration`, stacked on the MapLibre test branch)
+## Unreleased: one repository per benchmark family
 
-### Library and tools (pinned: lib `feat/solver-integration`, tools `feat/solver-integration`)
+This entry and the ones below it are the work towards version 0.13 of `mamut-routing-lib`. Nothing of it is released yet: the released library (0.12.0) and tools (0.6.0) read the former layout, which stays available in the archive repository named below.
+
+### Data
+
+- **Every benchmark family is one repository**, `MAMUT-routing-<Family>`, mounted at `benchmarks/<Family>/` and marked by a `mamut-collection.json` file. Sintef2008, Dimacs2021, Ortec2022 and Dabia2013, which were tracked in this repository, and Ari2018, Vu2020, Rifki2020, Lera2026 and Blauth2024, which had 1 repository per problem variant, join Poryos2026 and Mamut2026 in this model. Inside a family, instances and best-known solutions sit under `<ProblemType>/` with the path they had before.
+- **Sidecars are shared.** The travel-time sidecars of the 2 variants of a time-dependent family were stored twice. They are now stored once under `<Family>/sidecars/`, and each instance references its sidecar by a path relative to the family root. No sidecar content, no best-known solution and no instance identifier changed. The SHA-256 of the instance files of the 6 time-dependent families changed, because their sidecar path field was rewritten.
+- **History.** The histories of the former repositories are imported in the family repositories, whose `history/` directory maps the former commit identifiers to the new ones. The history of this repository was rewritten without the benchmark files, which made up almost all of its 1.1 GiB. The complete former history is kept, read-only, in [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11), and the former per-variant repositories are archived.
+
+### Library, tools and publisher
+
+- The library reads family collections only (marker `layout_version` 1 for the Poryos2026 shape, 2 for the classic families) and no longer reads the former layout. The tools and the publisher follow.
+- The site keeps every page URL. The raw download paths follow the new on-disk paths.
+
+## Unreleased: solver integration
+
+### Library and tools
 
 - **Solvers by name, behind one protocol.** `mamut_routing_lib.solvers` holds the protocol, a registry (built-ins,
   the `mamut_routing.solvers` entry-point group, `register_solver`) and `run_solver`, which prices every result
@@ -75,7 +90,7 @@ the tools have their own release notes.
 - Getting started (solve and BKS), solution formats, BKS campaigns, update a BKS, workbench API (the
   `/api/workbench/solve` row was wrong), environment variables, developer and user guides.
 
-## Unreleased — MapLibre workbench map and route animation (test branch `test/maplibre-trips-animation`)
+## Unreleased: MapLibre workbench map and route animation
 
 ### Website
 
@@ -97,7 +112,7 @@ the tools have their own release notes.
   MapLibre and deck.gl). `tests/test_shared_frontend_assets.py` keeps the copies equal.
 - Pins the tools test branch (MapLibre GUI, `/timeline`, `arc_starts`).
 
-## Unreleased — 2026-09-24 codebase audit fixes
+## Unreleased: 2026-09-24 codebase audit fixes
 
 Fixes the two critical and eleven high findings of the 2026-09-24 audit, with the medium and low findings that sat
 on the same code paths. Pins mamut-routing-lib 0.12.0 (`a9f7d9a`, both checkouts) and mamut-routing-tools 0.6.0

@@ -26,6 +26,7 @@ Three packages, three roles. Install what you need.
     ```bash
     git clone git@github.com:ANR-MAMUT/MAMUT-routing.git && cd MAMUT-routing
     git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools   # recursive: the nested lib is the one uv installs
+    git submodule update --init benchmarks/Sintef2008                                # the family the tutorials use (~2.5 GB)
     uv sync                                                                          # publisher + lib + tools, editable, with the docs toolchain
     uv run mamut-routing --version && uv run mamut-tools --version && uv run mamut-routing-publish --version
     uv run pytest

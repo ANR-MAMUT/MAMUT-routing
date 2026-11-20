@@ -54,12 +54,7 @@ ladder) with the campaign script; the collection README documents the achieved c
 
 ## Converting an external distribution
 
-`conversion/blauth2024.py` is the template: a pure relabeling (no numeric transformation, so the canonical bytes and
-`atf_sha256` pins are identical on any machine), the family contract spelled out in the module docstring (time unit,
-horizon, depot window, service, capacity, fleet, objective and its constants), per-instance assertions for every
-assumption, and a pointer to the design note. The command is `mamut-tools convert blauth2024 <upstream-checkout>
-<output>`. Older TD conversions (Ari2018, Vu2020, Rifki2020, Lera2026) predate the tools and are documented in their
-satellite READMEs.
+`conversion/blauth2024.py` is the template: a pure relabeling (no numeric transformation, so the canonical bytes and `atf_sha256` pins are identical on any machine), the family contract spelled out in the module docstring (time unit, horizon, depot window, service, capacity, fleet, objective and its constants), per-instance assertions for every assumption, and a pointer to the design note. The command is `mamut-tools convert blauth2024 <upstream-checkout> <output>`. Older TD conversions (Ari2018, Vu2020, Rifki2020, Lera2026) predate the tools and are documented in their family READMEs.
 
 ## Memory and time
 

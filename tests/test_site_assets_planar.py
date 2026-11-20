@@ -78,10 +78,10 @@ def test_a_family_that_declares_lon_lat_stays_on_its_city() -> None:
 
 def test_published_blauth_instances_declare_their_coordinates() -> None:
     """The rule above rests on the published files: every Blauth2024 instance must carry the declaration."""
-    root = Path(__file__).resolve().parents[1] / "benchmarks" / "TDVRPTW" / "Blauth2024"
+    root = Path(__file__).resolve().parents[1] / "benchmarks" / "Blauth2024"
     files = sorted(root.rglob("*.vrp.json"))
     if not files:
-        pytest.skip("the Blauth2024 satellite is not checked out")
+        pytest.skip("the Blauth2024 family submodule is not checked out")
     for path in files:
         instance = json.loads(path.read_text(encoding="utf-8"))
         assert not instance.get("reference_lla"), path.name

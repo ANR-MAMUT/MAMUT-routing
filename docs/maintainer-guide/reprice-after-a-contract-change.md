@@ -9,19 +9,18 @@ example below.
 
 ## 1. Point every checkout at the new lib
 
-Both lib checkouts (`MAMUT-routing-lib/` and `MAMUT-routing-tools/MAMUT-routing-lib/`, the one the venv imports)
-must be on the same commit, and every satellite on a fresh branch from its pinned commit:
+Both lib checkouts (`MAMUT-routing-lib/` and `MAMUT-routing-tools/MAMUT-routing-lib/`, the one the venv imports) must be on the same commit, and every family repository on a fresh branch from its pinned commit:
 
 ```bash
 git -C MAMUT-routing-tools/MAMUT-routing-lib fetch ../../MAMUT-routing-lib <branch>
 git -C MAMUT-routing-tools/MAMUT-routing-lib switch --detach FETCH_HEAD
-git -C benchmarks/TDVRPTW/Rifki2020 switch -c <branch>        # and each TD satellite
+git -C benchmarks/Rifki2020 switch -c <branch>                # and each TD family
 ```
 
 ## 2. Dry run and review
 
 ```bash
-for d in benchmarks/TDVRP/* benchmarks/TDVRPTW/* benchmarks/Poryos2026/TDVRP benchmarks/Poryos2026/TDVRPTW; do
+for d in benchmarks/*/TDVRP benchmarks/*/TDVRPTW; do
   uv run mamut-routing bks reprice-td "$d" --dry-run --jobs 8 --allow-missing-sidecars \
       --report "reprice-$(echo "$d" | tr / -).json"
 done
@@ -45,13 +44,7 @@ uv run mamut-routing bks reprice-td "$d" --write --jobs 8 --note-date <YYYY-MM-D
 uv run mamut-routing bks reprice-td "$d" --dry-run        # must report every file unchanged
 ```
 
-The write pass rewrites `cost`, `metadata.validated_cost`, `metadata.route_durations` and
-`metadata.route_departure_times` where they moved, adds `metadata.repriced` when the cost moved, and on a stamped
-BKS sets `optimality.proven_optimum` to the new cost with a `note` (proof obtained under the old contract,
-re-certification pending). Commit each satellite with a CHANGELOG entry giving the counts, the notable moves and
-the stamp notes; the in-tree families (Dabia2013) go into the root commit. Then bump the gitlinks and run the root
-tests: `tests/test_td_fold_route_vectors.py` re-prices the published route vectors and
-`tests/test_relaxation_invariants.py` screens the relaxation twins.
+The write pass rewrites `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times` where they moved, adds `metadata.repriced` when the cost moved, and on a stamped BKS sets `optimality.proven_optimum` to the new cost with a `note` (proof obtained under the old contract, re-certification pending). Commit each family repository with a CHANGELOG entry giving the counts, the notable moves and the stamp notes. Then bump the gitlinks and run the root tests: `tests/test_td_fold_route_vectors.py` re-prices the published route vectors and `tests/test_relaxation_invariants.py` screens the relaxation twins.
 
 ## 4. After publication
 

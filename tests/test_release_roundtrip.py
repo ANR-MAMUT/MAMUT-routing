@@ -5,9 +5,12 @@ Before lib 0.12, ``remote fetch`` extracted every archive under
 dir raised or produced other IDs than the site. This builds the release
 assets with the publisher, serves them over ``file://`` to the real CLI and
 checks that the fetched tree discovers, lists, hydrates and verifies exactly
-like the source, for a September-shaped repo (family-first collection) and a
-May-shaped one (problem-type-first Poryos2026), with and without
-``archive_root`` in the manifest.
+like the source, with and without ``archive_root`` in the manifest. Every
+family is a collection at ``benchmarks/<Family>/``: the "september" tree is
+the library's toy pair (Poryos2026 in layout 1, Sintef2008 in layout 2), the
+"classic" tree is this repository's release fixture (the same 2 families,
+with structured metadata and a family-root LICENSE). The problem-type-first
+tree of May 2026 is no longer read by the library and has no case here.
 """
 
 from __future__ import annotations
@@ -69,7 +72,7 @@ def _remote(benchmarks_dir: Path, *args: str):
     return result
 
 
-@pytest.mark.parametrize("shape", ["september", "may"])
+@pytest.mark.parametrize("shape", ["september", "classic"])
 @pytest.mark.parametrize("with_archive_root", [True, False], ids=["archive_root", "legacy-manifest"])
 def test_fetched_release_is_the_source_tree(tmp_path: Path, serve_releases, shape: str, with_archive_root: bool) -> None:
     source = tmp_path / "source"

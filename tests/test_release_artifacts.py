@@ -10,6 +10,7 @@ from mamut_routing_lib.enums import BenchmarkName, ObjectiveFunction
 from mamut_routing_lib.json_utils import save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
 from mamut_routing_lib.remote import ReleaseArchiveScope, load_release_manifest
+from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_publish.release_artifacts import (
     GITHUB_RELEASE_ASSET_MAX_SIZE_BYTES,
     GITHUB_RELEASE_ASSET_WARNING_SIZE_BYTES,
@@ -44,10 +45,10 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
-                "vrp": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
-                "meta": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
-                "manifest": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
+                "vrp_json": "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
+                "vrp": "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
+                "meta": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
+                "manifest": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
             },
         },
     )
@@ -79,10 +80,10 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
-                "vrp": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
-                "meta": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
-                "manifest": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
+                "vrp_json": "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
+                "vrp": "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
+                "meta": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
+                "manifest": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
             },
         },
     )
@@ -121,44 +122,27 @@ def make_bks(instance_name: str, objective_function: ObjectiveFunction, method: 
 
 
 def _write_fixture_tree(source_repo_dir: Path) -> None:
+    """Every family is a collection at benchmarks/<Family>/: Poryos2026 (layout 1), Sintef2008 (layout 2)."""
     generated_cvrp = make_generated_cvrp_instance()
     generated_vrptw = make_generated_vrptw_instance()
     historical = make_historical_instance()
 
+    poryos_root = source_repo_dir / "benchmarks" / "Poryos2026"
+    sintef_root = source_repo_dir / "benchmarks" / "Sintef2008"
+    save_collection_marker(CollectionMarker(family="Poryos2026", layout_version=1), poryos_root)
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), sintef_root)
     generated_cvrp_path = (
-        source_repo_dir
-        / "benchmarks"
-        / "CVRP"
-        / "Poryos2026"
-        / "fastest"
-        / "brest"
-        / "n=2"
-        / generated_cvrp.instance_name
-        / f"{generated_cvrp.instance_name}.vrp.json"
+        poryos_root / "CVRP" / "fastest" / "brest" / "n=2" / generated_cvrp.instance_name / f"{generated_cvrp.instance_name}.vrp.json"
     )
     generated_vrptw_path = (
-        source_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Poryos2026"
-        / "fastest"
-        / "brest"
-        / "n=2"
-        / generated_vrptw.instance_name
-        / f"{generated_vrptw.instance_name}.vrp.json"
+        poryos_root / "VRPTW" / "fastest" / "brest" / "n=2" / generated_vrptw.instance_name / f"{generated_vrptw.instance_name}.vrp.json"
     )
-    historical_path = (
-        source_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Sintef2008"
-        / "n=2"
-        / "C101.vrp.json"
-    )
+    historical_path = sintef_root / "VRPTW" / "n=2" / "C101.vrp.json"
 
     save_json_to_file(generated_cvrp.model_dump(mode="json"), generated_cvrp_path)
     save_json_to_file(generated_vrptw.model_dump(mode="json"), generated_vrptw_path)
     save_json_to_file(historical.model_dump(mode="json"), historical_path)
+    (sintef_root / "LICENSE").write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
 
     generated_cvrp_path.with_suffix("").write_text("NAME : fixture\n", encoding="utf-8")
     generated_vrptw_path.with_suffix("").write_text("NAME : fixture\n", encoding="utf-8")
@@ -195,29 +179,38 @@ def test_generate_release_artifacts_writes_expected_archives_and_manifest(tmp_pa
 
     manifest = load_release_manifest(output_dir / "snapshot-manifest.json")
 
-    assert summary.archive_count == 3
+    # One archive per family collection, none per problem type.
+    assert summary.archive_count == 2
     assert manifest.snapshot_id == "2026-04-24-abcdef1"
     assert sorted(asset.filename for asset in manifest.assets) == [
-        "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
+        "Poryos2026-snapshot-2026-04-24-abcdef1.zip",
+        "Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]
-    assert not (output_dir / "CVRP-snapshot-2026-04-24-abcdef1.zip").exists()
-    assert not (output_dir / "VRPTW-snapshot-2026-04-24-abcdef1.zip").exists()
-    assert not (output_dir / "Poryos2026-snapshot-2026-04-24-abcdef1.zip").exists()
+    for stale in ("CVRP-Poryos2026", "VRPTW-Poryos2026", "VRPTW-Sintef2008", "CVRP", "VRPTW"):
+        assert not (output_dir / f"{stale}-snapshot-2026-04-24-abcdef1.zip").exists()
     for asset in manifest.assets:
+        assert asset.scope is ReleaseArchiveScope.FAMILY_COLLECTION
+        assert asset.problem_type is None
         assert asset.download_url.endswith(asset.filename)
         assert asset.size_bytes is not None and asset.size_bytes > 0
         assert asset.checksum_sha256 is not None
         archive_path = output_dir / asset.filename
         assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == asset.checksum_sha256
 
-    family_archive = output_dir / "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip"
-    with zipfile.ZipFile(family_archive, "r") as archive:
+    with zipfile.ZipFile(output_dir / "Poryos2026-snapshot-2026-04-24-abcdef1.zip", "r") as archive:
         names = sorted(archive.namelist())
+    assert "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json" in names
+    assert "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json" in names
+    assert not [name for name in names if not name.startswith("benchmarks/Poryos2026/")]
 
-    assert "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json" in names
-    assert "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json" not in names
+    with zipfile.ZipFile(output_dir / "Sintef2008-snapshot-2026-04-24-abcdef1.zip", "r") as archive:
+        names = set(archive.namelist())
+    assert {
+        "benchmarks/Sintef2008/mamut-collection.json",
+        "benchmarks/Sintef2008/LICENSE",
+        "benchmarks/Sintef2008/VRPTW/n=2/C101.vrp.json",
+        "benchmarks/Sintef2008/VRPTW/n=2/C101.bks.HierarchicalVehicleCost.json",
+    } == names
 
 
 def test_generate_release_artifacts_is_deterministic_for_same_snapshot(tmp_path: Path) -> None:
@@ -248,9 +241,8 @@ def test_generate_release_artifacts_is_deterministic_for_same_snapshot(tmp_path:
     assert first_manifest == second_manifest
 
     for filename in [
-        "CVRP-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Poryos2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
+        "Poryos2026-snapshot-2026-04-24-abcdef1.zip",
+        "Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]:
         assert (first_output_dir / filename).read_bytes() == (second_output_dir / filename).read_bytes()
 
@@ -268,13 +260,15 @@ def _write_collection_fixture_tree(source_repo_dir: Path) -> None:
         instance_dir = collection_root / problem_type / "fastest" / "brest" / "n=2" / instance.instance_name
         save_json_to_file(instance.model_dump(mode="json"), instance_dir / f"{instance.instance_name}.vrp.json")
     save_json_to_file({"matrix": [[0]]}, collection_root / "sidecars" / "brest" / "fastest.distances.json")
-    # Satellite submodules carry a .git gitfile pointing into the superproject's git dir.
+    # Family submodules carry a .git gitfile pointing into the superproject's git dir.
     (collection_root / ".git").write_text("gitdir: ../../.git/modules/benchmarks/Poryos2026\n", encoding="utf-8")
 
     historical = make_historical_instance()
-    historical_path = source_repo_dir / "benchmarks" / "VRPTW" / "Sintef2008" / "n=2" / "C101.vrp.json"
+    sintef_root = source_repo_dir / "benchmarks" / "Sintef2008"
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), sintef_root)
+    historical_path = sintef_root / "VRPTW" / "n=2" / "C101.vrp.json"
     save_json_to_file(historical.model_dump(mode="json"), historical_path)
-    (historical_path.parents[1] / ".git").write_text("gitdir: ../../../.git/modules/Sintef2008\n", encoding="utf-8")
+    (sintef_root / ".git").write_text("gitdir: ../../.git/modules/benchmarks/Sintef2008\n", encoding="utf-8")
 
 
 def test_generate_release_artifacts_packages_a_collection_as_one_archive(tmp_path: Path) -> None:
@@ -295,7 +289,7 @@ def test_generate_release_artifacts_packages_a_collection_as_one_archive(tmp_pat
     by_filename = {asset.filename: asset for asset in manifest.assets}
     assert sorted(by_filename) == [
         "Poryos2026-snapshot-2026-04-24-abcdef1.zip",
-        "VRPTW-Sintef2008-snapshot-2026-04-24-abcdef1.zip",
+        "Sintef2008-snapshot-2026-04-24-abcdef1.zip",
     ]
 
     collection_asset = by_filename["Poryos2026-snapshot-2026-04-24-abcdef1.zip"]
@@ -304,6 +298,9 @@ def test_generate_release_artifacts_packages_a_collection_as_one_archive(tmp_pat
     assert collection_asset.benchmark_name is BenchmarkName.PORYOS_2026
     assert collection_asset.archive_root == "benchmarks/Poryos2026"
     assert manifest.select_assets(benchmark_name=BenchmarkName.PORYOS_2026) == [collection_asset]
+    sintef_asset = by_filename["Sintef2008-snapshot-2026-04-24-abcdef1.zip"]
+    assert sintef_asset.archive_root == "benchmarks/Sintef2008"
+    assert sintef_asset.benchmark_name == BenchmarkName("Sintef2008")
 
     with zipfile.ZipFile(output_dir / collection_asset.filename, "r") as archive:
         names = set(archive.namelist())
@@ -317,6 +314,24 @@ def test_generate_release_artifacts_packages_a_collection_as_one_archive(tmp_pat
     for asset in manifest.assets:
         with zipfile.ZipFile(output_dir / asset.filename, "r") as archive:
             assert not [name for name in archive.namelist() if ".git" in Path(name).parts]
+
+
+def test_generate_release_artifacts_refuses_a_problem_type_first_family(tmp_path: Path) -> None:
+    # The former benchmarks/<PT>/<Family>/ layout is no longer read, so no
+    # per-problem-type (problem_family) archive can be planned from it.
+    source_repo_dir = tmp_path / "MAMUT-routing"
+    _write_fixture_tree(source_repo_dir)
+    stray = source_repo_dir / "benchmarks" / "VRPTW" / "Dimacs2021" / "n=2" / "C101.vrp.json"
+    save_json_to_file(make_historical_instance().model_dump(mode="json"), stray)
+
+    with pytest.raises(ValueError, match="not inside a family collection"):
+        generate_release_artifacts(
+            source_repo_dir=source_repo_dir,
+            output_dir=tmp_path / "release-assets",
+            source_commit="abcdef123456",
+            published_at="2026-04-24T12:00:00+00:00",
+            snapshot_id="2026-04-24-abcdef1",
+        )
 
 
 def test_validate_release_asset_size_warns_at_1point5_gib() -> None:
@@ -338,13 +353,13 @@ def test_validate_release_asset_size_raises_at_2_gib_or_above() -> None:
 def test_validate_repository_file_size_raises_at_100_mib_or_above() -> None:
     with pytest.raises(ValueError, match="100 MiB per-file limit"):
         _validate_repository_file_size(
-            Path("benchmarks/TDVRPTW/Huge2026/n=1000/huge.atf.json.gz"),
+            Path("benchmarks/Huge2026/sidecars/n=1000/huge.atf.json.gz"),
             GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES,
         )
 
 
 def test_validate_repository_file_size_accepts_below_100_mib() -> None:
     _validate_repository_file_size(
-        Path("benchmarks/TDVRPTW/Fine2026/n=100/fine.atf.json.gz"),
+        Path("benchmarks/Fine2026/sidecars/n=100/fine.atf.json.gz"),
         GITHUB_REPOSITORY_FILE_MAX_SIZE_BYTES - 1,
     )

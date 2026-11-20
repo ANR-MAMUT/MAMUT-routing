@@ -57,7 +57,7 @@ task done, reference to look things up, and explanation where the *why* matters.
 | [MAMUT-routing](https://github.com/ANR-MAMUT/MAMUT-routing) | The benchmark tree (families as submodules), the website publisher `mamut-routing-publish`, this documentation | checkout + `uv sync` |
 | [MAMUT-routing-lib](https://github.com/ANR-MAMUT/MAMUT-routing-lib) | The data contract: models, checkers, BKS logic, remote archives, CVRPLIB export, `mamut-routing` CLI | `pip install "mamut-routing-lib[cli]"` |
 | [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) | Local generation and solving: OSM fetch, road graphs, instance generation, converters, workbench GUI, `mamut-tools` CLI | `uvx --from mamut-routing-tools mamut-tools` |
-| Benchmark satellites | One repository per large family or collection (`MAMUT-routing-TDVRPTW-Rifki2020`, `MAMUT-routing-Poryos2026`, ...) | `git submodule update --init benchmarks/<...>` |
+| Benchmark families | One repository per family (`MAMUT-routing-Rifki2020`, `MAMUT-routing-Poryos2026`, ...) | `git submodule update --init benchmarks/<Family>` |
 
 ## Where things are
 

@@ -1,16 +1,17 @@
 """Release archives: one deterministic zip per family plus a manifest.
 
 ``generate_release_artifacts`` discovers the benchmark tree and writes
-``<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`` for each classic
-(problem type, family) tree and ``<Family>-snapshot-<snapshot-id>.zip`` for
-each family-first collection (the whole marker-rooted tree, sidecars
-included), with fixed entry timestamps, mode 0644 and a streamed sha256,
-then ``snapshot-manifest.json``
+``<Family>-snapshot-<snapshot-id>.zip`` for each family collection (the whole
+marker-rooted tree at ``benchmarks/<Family>/``, every problem type and the
+shared sidecars included), with fixed entry timestamps, mode 0644 and a
+streamed sha256, then ``snapshot-manifest.json``
 (``mamut_routing_lib.remote.ReleaseArchiveManifest``) that the lib's
 ``mamut-routing remote`` commands consume. Size guards mirror GitHub's
 limits (warn above 1.5 GiB, fail above 2 GiB per asset; refuse repository
-files above 100 MB). Git metadata (the ``.git`` gitfiles of satellite
-submodules) is never archived.
+files above 100 MB). Git metadata (the ``.git`` gitfiles of the family
+submodules) is never archived. The per-problem-type archives
+(``problem_family`` scope) of snapshots published for mamut-routing-lib
+<= 0.12 are no longer written: every family is a collection.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import zipfile
 from pydantic import BaseModel, ConfigDict
 
 from mamut_routing_lib.artifacts import discover_benchmark_instances, find_collection_roots
-from mamut_routing_lib.enums import BenchmarkName, ProblemType
+from mamut_routing_lib.enums import BenchmarkName
 from mamut_routing_lib.json_utils import save_json_to_file
 from mamut_routing_lib.remote import (
     DEFAULT_MANIFEST_FILENAME,
@@ -53,7 +54,6 @@ class _ArchiveRequest:
     filename: str
     archive_root: str
     include_dirs: tuple[Path, ...]
-    problem_type: ProblemType | None = None
     benchmark_name: BenchmarkName | None = None
 
 
@@ -164,22 +164,16 @@ def _deterministic_zip_write(
         return hashing_output.hexdigest(), hashing_output.tell()
 
 
-def _problem_dir(problem_type: ProblemType) -> Path:
-    return Path("benchmarks") / problem_type.value
-
-
-def _family_dir(problem_type: ProblemType, benchmark_name: BenchmarkName) -> Path:
-    return _problem_dir(problem_type) / benchmark_name.value
-
-
 def _build_archive_requests(source_repo_dir: Path, snapshot_id: str) -> list[_ArchiveRequest]:
     benchmarks_root = (source_repo_dir / "benchmarks").resolve()
+    # Discovery refuses any instance outside a marker-rooted collection, so
+    # the collections below cover every instance of the tree.
     discovered = discover_benchmark_instances(benchmarks_root=benchmarks_root)
     if not discovered:
         raise FileNotFoundError(f"No benchmark instances found under {benchmarks_root}")
 
-    # A family-first collection ships whole (every problem type and the shared
-    # sidecars/ tree) as one archive; its instances are not planned per problem type.
+    # A family collection ships whole (every problem type and the shared
+    # sidecars/ tree) as one archive.
     collection_roots = find_collection_roots(benchmarks_root)
     requests: list[_ArchiveRequest] = []
     for root, family in sorted(collection_roots.items(), key=lambda pair: pair[1]):
@@ -193,28 +187,6 @@ def _build_archive_requests(source_repo_dir: Path, snapshot_id: str) -> list[_Ar
                 benchmark_name=BenchmarkName(family),
             )
         )
-
-    family_pairs = sorted(
-        {
-            (item.problem_type, BenchmarkName(item.benchmark_name))
-            for item in discovered
-            if not any(item.instance_path.is_relative_to(root) for root in collection_roots)
-        },
-        key=lambda pair: (pair[0].value, pair[1].value),
-    )
-
-    for problem_type, benchmark_name in family_pairs:
-        requests.append(
-            _ArchiveRequest(
-                scope=ReleaseArchiveScope.PROBLEM_FAMILY,
-                filename=f"{problem_type.value}-{benchmark_name.value}-snapshot-{snapshot_id}.zip",
-                archive_root=_family_dir(problem_type, benchmark_name).as_posix(),
-                include_dirs=(_family_dir(problem_type, benchmark_name),),
-                problem_type=problem_type,
-                benchmark_name=benchmark_name,
-            )
-        )
-
     return requests
 
 
@@ -336,7 +308,6 @@ def generate_release_artifacts(
                 scope=request.scope,
                 filename=request.filename,
                 download_url=download_url,
-                problem_type=request.problem_type,
                 benchmark_name=request.benchmark_name,
                 checksum_sha256=result.checksum_sha256,
                 size_bytes=result.size_bytes,

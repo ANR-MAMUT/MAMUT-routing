@@ -51,7 +51,7 @@ published artifacts).
 - **Decisions are written down where they apply.** Contract rules go in the owning module docstring and the
   Formats pages; family-specific choices in the family README and changelog. `docs/reports/` is a local,
   untracked scratch folder for working notes and is excluded from the documentation build.
-- **Satellites are optional.** Everything must work with empty satellite directories.
+- **Family submodules are optional.** Everything must work with empty family directories.
 
 ## Contributing
 

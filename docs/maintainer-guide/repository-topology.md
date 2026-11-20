@@ -6,10 +6,10 @@ MAMUT-routing (superproject, this repository)
 ├── MAMUT-routing-tools/             submodule and uv workspace member
 │   └── MAMUT-routing-lib/           nested submodule: the lib uv installs ([tool.uv.sources])
 ├── benchmarks/
-│   ├── VRPTW/{Sintef2008,Dimacs2021,Ortec2022}/     in-repo families
-│   ├── TDVRPTW/Dabia2013/, TDVRP/Dabia2013/          in-repo default TD family
-│   ├── TDVRPTW/<Family>/, TDVRP/<Family>/            satellite submodules (Ari2018, Vu2020, Rifki2020, Lera2026, Blauth2024)
-│   ├── Poryos2026/, Mamut2026/                       family-first collection satellites
+│   ├── {Sintef2008,Dimacs2021,Ortec2022}/                    VRPTW family submodules
+│   ├── {Dabia2013,Ari2018,Vu2020,Rifki2020,Lera2026}/        TDVRPTW and TDVRP family submodules
+│   ├── Blauth2024/                                           TDVRPTW family submodule
+│   ├── Poryos2026/, Mamut2026/                               generated collection submodules
 ├── osmdata/                          git-ignored OSM extracts feeding route geometry
 ├── src/mamut_routing_publish/        the publisher
 ├── docs/ + mkdocs.yml                this documentation
@@ -41,25 +41,22 @@ mamut-routing-tools = { workspace = true }
 Keep the top-level `MAMUT-routing-lib` pointer on the same commit as the nested one (it exists so a browse or a
 `git diff` from the superproject shows the lib; nothing imports it).
 
-## Satellites
+## Family repositories
 
-A satellite is a self-contained repository (instances, BKS, sidecars, `README.md`, `CHANGELOG.md`, `LICENSE`) mounted
-at its family directory. A plain clone leaves the directory **empty**; every tool, test and build must tolerate that,
-and the documentation build does (family pages fall back to a GitHub link).
+Every family is a self-contained repository (instances, BKS, sidecars, `README.md`, `CHANGELOG.md`, `LICENSE`, `CITATION.cff`) named `MAMUT-routing-<Family>` and mounted at `benchmarks/<Family>/`. It holds every problem type of the family, and its root files cover all of them. A plain clone leaves the directory **empty**. Every tool, test and build must tolerate that, and the documentation build does (family pages fall back to a GitHub link).
 
 ```bash
-git submodule update --init benchmarks/TDVRPTW/Rifki2020    # one family (0.1–0.8 GB each)
+git submodule update --init benchmarks/Rifki2020            # one family (0.1–2.5 GB each)
 git submodule update --init benchmarks/Poryos2026            # a collection (~0.4 GB)
-git submodule update --init                                  # everything (~2.8 GB)
+git submodule update --init                                  # everything (~5.3 GB)
 ```
 
-Two layouts, both discovered by `discover_benchmark_instances` in the lib:
+Every family is a collection rooted by `mamut-collection.json` (`{"format": "mamut-collection", "format_version": 1, "family": "<Family>", "layout_version": <1 or 2>}`), discovered by `discover_benchmark_instances` in the lib. The marker's `layout_version` gives the shape of the paths below the family root:
 
-- **classic**: `benchmarks/<ProblemType>/<Family>/n=<N>/<instance>.vrp.json`;
-- **family-first collection**: `benchmarks/<Family>/{CVRP,VRPTW,TDVRP,TDVRPTW}/...` plus `benchmarks/<Family>/sidecars/`,
-  rooted by `mamut-collection.json` (`{"format": "mamut-collection", "format_version": 1, "family": "<Family>", "layout_version": 1}`).
+- **layout 2** (the classic families): `benchmarks/<Family>/<ProblemType>/[<subset>/]n=<N>/<instance>.vrp.json`, sidecars under `benchmarks/<Family>/sidecars/`;
+- **layout 1** (Poryos2026, Mamut2026): `benchmarks/<Family>/{CVRP,VRPTW,TDVRP,TDVRPTW}/...` plus `benchmarks/<Family>/sidecars/`.
 
-`.gitmodules` is the list of satellites; the README satellite table is the human copy.
+`.gitmodules` is the list of family repositories. The README family table is the human copy.
 
 ## The uv workspace
 

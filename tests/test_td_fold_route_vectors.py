@@ -23,7 +23,7 @@ VECTORS = json.loads(
 PRESENT = [vector for vector in VECTORS["routes"] if (BENCHMARKS / vector["instance"]).is_file()]
 
 
-@pytest.mark.skipif(not PRESENT, reason="benchmark satellites not checked out")
+@pytest.mark.skipif(not PRESENT, reason="benchmark family repositories not checked out")
 @pytest.mark.parametrize("vector", PRESENT, ids=[f"{v['tree']}:{Path(v['instance']).name}" for v in PRESENT])
 def test_route_vector_prices_as_published(vector: dict) -> None:
     loaded = load_td_instance_for_routes(BENCHMARKS / vector["instance"], [vector["route"]])

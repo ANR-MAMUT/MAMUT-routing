@@ -168,8 +168,9 @@ def materialize_atf_cache(
 ) -> ATFCacheSummary:
     """Materialize sidecars for every materialized-model instance with n <= max_customers.
 
-    Scans ``benchmarks/TDVRPTW`` and ``benchmarks/TDVRP``; twins collapse onto
-    one cache entry. Existing cache files are reused when they hash to the
+    Scans the ``TDVRPTW`` and ``TDVRP`` trees of every family collection
+    (``benchmarks/<Family>/TDVRPTW``, ``benchmarks/<Family>/TDVRP``). Twins
+    collapse onto one cache entry. Existing cache files are reused when they hash to the
     instance's ``atf_sha256`` pin, and regenerated otherwise.
 
     ``jobs`` pins the worker count (default: cores - 2). ``cache_dir``
@@ -195,9 +196,9 @@ def materialize_atf_cache(
     pins: dict[str, str | None] = {}
     over_cap: set[str] = set()
     benchmarks_root = output_repo_dir / "benchmarks"
-    # Problem-type-first satellites plus the TD trees of family-first
-    # collections (marker-rooted, e.g. benchmarks/Poryos2026/TDVRPTW).
-    scan_roots = [benchmarks_root / problem_type for problem_type in ("TDVRPTW", "TDVRP")]
+    # The TD trees of every marker-rooted family collection
+    # (e.g. benchmarks/Poryos2026/TDVRPTW, benchmarks/Lera2026/TDVRP).
+    scan_roots: list[Path] = []
     if benchmarks_root.is_dir():
         for candidate in sorted(benchmarks_root.iterdir()):
             if candidate.is_dir() and (candidate / COLLECTION_MARKER_FILENAME).is_file():

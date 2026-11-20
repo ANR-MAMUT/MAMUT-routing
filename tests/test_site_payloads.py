@@ -12,6 +12,7 @@ from mamut_routing_lib.artifacts import discover_benchmark_instances
 from mamut_routing_lib.enums import MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
+from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_publish.cli import app
 from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
 from mamut_routing_publish.site_payloads import (
@@ -52,16 +53,16 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
-                "vrp": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
-                "meta": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
-                "manifest": "benchmarks/CVRP/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
+                "vrp_json": "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json",
+                "vrp": "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp",
+                "meta": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.meta.json",
+                "manifest": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.manifest.json",
             },
             "sibling_variant_paths": {
-                "euclidean": "benchmarks/CVRP/Poryos2026/euclidean/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
+                "euclidean": "benchmarks/Poryos2026/CVRP/euclidean/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
             },
             "derived_problem_paths": {
-                "fastest": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
+                "fastest": "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
             },
             "source_problem_paths": {},
         },
@@ -94,17 +95,17 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
             "num_vehicles_lb": 2,
             "generator_version": "fixture",
             "artifact_paths": {
-                "vrp_json": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
-                "vrp": "benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
-                "meta": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
-                "manifest": "benchmarks/VRPTW/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
+                "vrp_json": "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json",
+                "vrp": "benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp",
+                "meta": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.meta.json",
+                "manifest": "benchmarks/Poryos2026/sidecars/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.manifest.json",
             },
             "sibling_variant_paths": {
-                "euclidean": "benchmarks/VRPTW/Poryos2026/euclidean/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
+                "euclidean": "benchmarks/Poryos2026/VRPTW/euclidean/brest/n=2/poryos-n2-beef456/poryos-n2-beef456.vrp.json"
             },
             "derived_problem_paths": {},
             "source_problem_paths": {
-                "cvrp_vrp_json": "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
+                "cvrp_vrp_json": "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/poryos-n2-cafe123/poryos-n2-cafe123.vrp.json"
             },
         },
     )
@@ -151,11 +152,16 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
     generated_vrptw = make_generated_vrptw_instance()
     historical = make_historical_instance()
 
+    # Every family is a collection at benchmarks/<Family>/: Poryos2026 in the
+    # layout-1 shape (metric, place, base instance), Sintef2008 in the classic
+    # layout-2 shape (<problem>/n=<N>/<file>).
+    poryos_root = output_repo_dir / "benchmarks" / "Poryos2026"
+    sintef_root = output_repo_dir / "benchmarks" / "Sintef2008"
+    save_collection_marker(CollectionMarker(family="Poryos2026", layout_version=1), poryos_root)
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), sintef_root)
     generated_cvrp_path = (
-        output_repo_dir
-        / "benchmarks"
+        poryos_root
         / "CVRP"
-        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
@@ -163,24 +169,15 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         / f"{generated_cvrp.instance_name}.vrp.json"
     )
     generated_vrptw_path = (
-        output_repo_dir
-        / "benchmarks"
+        poryos_root
         / "VRPTW"
-        / "Poryos2026"
         / "fastest"
         / "brest"
         / "n=2"
         / generated_vrptw.instance_name
         / f"{generated_vrptw.instance_name}.vrp.json"
     )
-    historical_path = (
-        output_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Sintef2008"
-        / "n=2"
-        / "C101.vrp.json"
-    )
+    historical_path = sintef_root / "VRPTW" / "n=2" / "C101.vrp.json"
 
     write_json(generated_cvrp_path, generated_cvrp.model_dump(mode="json"))
     write_json(generated_vrptw_path, generated_vrptw.model_dump(mode="json"))
@@ -189,10 +186,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
     (generated_cvrp_path.with_suffix("")).write_text("NAME : fixture\n", encoding="utf-8")
     (generated_vrptw_path.with_suffix("")).write_text("NAME : fixture\n", encoding="utf-8")
     write_json(
-        output_repo_dir
-        / "benchmarks"
-        / "CVRP"
-        / "Poryos2026"
+        poryos_root
         / "sidecars"
         / "brest"
         / "n=2"
@@ -201,10 +195,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         {"instance_id": generated_cvrp.instance_name},
     )
     write_json(
-        output_repo_dir
-        / "benchmarks"
-        / "CVRP"
-        / "Poryos2026"
+        poryos_root
         / "sidecars"
         / "brest"
         / "n=2"
@@ -213,10 +204,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         {"instance_id": generated_cvrp.instance_name},
     )
     write_json(
-        output_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Poryos2026"
+        poryos_root
         / "sidecars"
         / "brest"
         / "n=2"
@@ -225,10 +213,7 @@ def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceC
         {"instance_id": generated_vrptw.instance_name},
     )
     write_json(
-        output_repo_dir
-        / "benchmarks"
-        / "VRPTW"
-        / "Poryos2026"
+        poryos_root
         / "sidecars"
         / "brest"
         / "n=2"
@@ -419,7 +404,7 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     # 9 css/js bundles (incl. the shared nocturne tokens/runtime, the map kit and the
     # route animation) + 4 icons + 8 logos + 1 font + 5 vendored files (MapLibre GL 3,
     # deck.gl 2) + the vendor README.
-    assert webapp_summary.asset_files_written == 28
+    assert webapp_summary.asset_files_written == 29
     assert webapp_summary.html_files_written > 0
     assert (site_output / "index.html").exists()
     assert (site_output / "benchmarks" / "index.html").exists()
@@ -523,10 +508,11 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert "GITHUB_BENCHMARKS_ROOT" in site_js
     assert "GitHub_Invertocat_Black.svg" in site_js
     assert "breadcrumb-github-link" in site_js
-    assert 'FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"])' in site_js
+    # Each family is its own repository: breadcrumb GitHub links go there, not under the main repository.
+    assert 'GITHUB_FAMILY_REPOSITORY_PREFIX = `${GITHUB_ORG_ROOT}/MAMUT-routing-`' in site_js
     assert 'data-vrp-export="${entry.kind}"' in site_js
     assert "button.download-chip" in (site_output / "webapp" / "site.css").read_text(encoding="utf-8")
-    assert "pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments" in site_js
+    assert "function githubFamilyPathSegments(problemType, facets)" in site_js
     assert "Open Derive Mode" not in site_js
     assert "deriveBenchmarkBtn" not in workbench_js
     assert "Promise.allSettled" in workbench_js
@@ -611,7 +597,7 @@ MAMUT CVRP context first paragraph.
 """,
         encoding="utf-8",
     )
-    sintef_license = output_repo_dir / "benchmarks" / "VRPTW" / "Sintef2008" / "LICENSE"
+    sintef_license = output_repo_dir / "benchmarks" / "Sintef2008" / "LICENSE"
     sintef_license.write_text(
         """SPDX-License-Identifier: MIT
 
@@ -620,7 +606,7 @@ https://mit-license.org/
 """,
         encoding="utf-8",
     )
-    mamut_cvrp_license = output_repo_dir / "benchmarks" / "CVRP" / "Poryos2026" / "LICENSE"
+    mamut_cvrp_license = output_repo_dir / "benchmarks" / "Poryos2026" / "LICENSE"
     mamut_cvrp_license.write_text(
         """SPDX-License-Identifier: ODbL-1.0
 
@@ -687,10 +673,9 @@ https://opendatacommons.org/licenses/odbl/1-0/
     assert "payload.license_markdown" in site_js
 
 
-def test_family_license_section_falls_back_to_collection_layout(tmp_path: Path) -> None:
-    # Poryos2026 stores its problem-type layers under benchmarks/Poryos2026/<PT>/
-    # with a single LICENSE at the collection root; the standard per-family
-    # path benchmarks/<PT>/Poryos2026/LICENSE does not exist there.
+def test_family_license_section_reads_the_family_root(tmp_path: Path) -> None:
+    # Every family is a collection at benchmarks/<Family>/ with a single LICENSE
+    # at its root, covering every problem-type layer stored as <Family>/<PT>/.
     from mamut_routing_lib.enums import BenchmarkName, ProblemType
     from mamut_routing_publish.site_payloads import _load_family_license_section
 
@@ -709,12 +694,20 @@ OSM-derived artifacts use ODbL.
         assert section.spdx_id == "ODbL-1.0"
         assert "ODbL" in (section.markdown or "")
 
-    # A per-family LICENSE at the standard path wins over the collection root.
-    family_license = repo / "benchmarks" / "TDVRP" / "Poryos2026" / "LICENSE"
-    family_license.parent.mkdir(parents=True)
-    family_license.write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
-    assert _load_family_license_section(repo, ProblemType.TDVRP, BenchmarkName.PORYOS_2026).spdx_id == "MIT"
-    assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName.PORYOS_2026).spdx_id == "ODbL-1.0"
+    # A classic family with 2 problem types (Dabia2013) has one LICENSE for both.
+    dabia_license = repo / "benchmarks" / "Dabia2013" / "LICENSE"
+    dabia_license.parent.mkdir(parents=True)
+    dabia_license.write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
+    for problem_type in (ProblemType.TDVRP, ProblemType.TDVRPTW):
+        assert _load_family_license_section(repo, problem_type, BenchmarkName("Dabia2013")).spdx_id == "MIT"
+
+    # A LICENSE left inside a problem-type layer, or at the former
+    # benchmarks/<PT>/<Family>/ path, is not read.
+    for stray in (repo / "benchmarks" / "Poryos2026" / "TDVRP" / "LICENSE", repo / "benchmarks" / "TDVRP" / "Poryos2026" / "LICENSE"):
+        stray.parent.mkdir(parents=True, exist_ok=True)
+        stray.write_text("SPDX-License-Identifier: MIT\n", encoding="utf-8")
+    assert _load_family_license_section(repo, ProblemType.TDVRP, BenchmarkName.PORYOS_2026).spdx_id == "ODbL-1.0"
+    assert _load_family_license_section(repo, ProblemType.CVRP, BenchmarkName("Sintef2008")).spdx_id is None
 
 
 def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp_path: Path) -> None:
@@ -835,7 +828,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "objective_function": "HierarchicalVehicleCost",
             "cost": 12,
             "num_routes": 1,
-            "artifact_path": "benchmarks/VRPTW/Sintef2008/n=2/C101.bks.HierarchicalVehicleCost.json",
+            "artifact_path": "benchmarks/Sintef2008/VRPTW/n=2/C101.bks.HierarchicalVehicleCost.json",
             "optimality_proven": False,
         },
     ]
@@ -856,7 +849,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
     mamut_item = vrptw_size_index["items"][0]
     assert mamut_item["num_customers"] == 2
     assert mamut_item["instance_id"] == f"vrptw-poryos2026-fastest-brest-n2-{generated_vrptw.instance_name}"
-    mamut_dir = f"benchmarks/VRPTW/Poryos2026/fastest/brest/n=2/{generated_vrptw.instance_name}"
+    mamut_dir = f"benchmarks/Poryos2026/VRPTW/fastest/brest/n=2/{generated_vrptw.instance_name}"
     assert mamut_item["objective_availability"] == [
         {
             "objective_function": "HierarchicalVehicleCost",
@@ -925,10 +918,11 @@ def test_catalog_items_are_sorted_by_size_then_display_name(tmp_path: Path) -> N
         ("C102", 2),
         ("R101", 2),
     ]
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), output_repo_dir / "benchmarks" / "Sintef2008")
     for name, n in fixtures:
         instance = _historical(name, n)
         instance_path = (
-            output_repo_dir / "benchmarks" / "VRPTW" / "Sintef2008" / f"n={n}" / f"{name}.vrp.json"
+            output_repo_dir / "benchmarks" / "Sintef2008" / "VRPTW" / f"n={n}" / f"{name}.vrp.json"
         )
         write_json(instance_path, instance.model_dump(mode="json"))
         write_json(
@@ -1127,8 +1121,8 @@ def test_generate_site_payloads_persists_inventory_and_change_log_across_runs(tm
     vrptw_dir = (
         output_repo_dir
         / "benchmarks"
-        / "VRPTW"
         / "Poryos2026"
+        / "VRPTW"
         / "fastest"
         / "brest"
         / "n=2"
@@ -1236,8 +1230,8 @@ def test_generate_site_payloads_reports_a_repriced_bks(tmp_path: Path) -> None:
     mc_path = (
         output_repo_dir
         / "benchmarks"
-        / "VRPTW"
         / "Poryos2026"
+        / "VRPTW"
         / "fastest"
         / "brest"
         / "n=2"
@@ -1496,7 +1490,8 @@ def test_atf_materialization_never_forks_more_workers_than_tasks(
     assert atf_cache_module.resolve_atf_jobs(8, 0) == 1
 
     repo_dir = tmp_path / "MAMUT-routing"
-    tree = repo_dir / "benchmarks" / "TDVRPTW" / "Fake" / "n=10"
+    save_collection_marker(CollectionMarker(family="Fake", layout_version=2), repo_dir / "benchmarks" / "Fake")
+    tree = repo_dir / "benchmarks" / "Fake" / "TDVRPTW" / "n=10"
     tree.mkdir(parents=True)
     for index in (1, 2):
         payload = {
@@ -1879,10 +1874,10 @@ def test_schedule_groups_keep_td_twins_together_without_merging_size_buckets() -
     # C101 exists once per size bucket; only the TDVRPTW/TDVRP pair within one
     # bucket shares an ATF sidecar.
     items = [
-        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C101.vrp.json"),
-        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=50/C101.vrp.json"),
-        _fake_discovered(ProblemType.TDVRPTW, "TDVRPTW/Dabia2013/n=25/C101.vrp.json"),
-        _fake_discovered(ProblemType.TDVRPTW, "TDVRPTW/Dabia2013/n=50/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "Dabia2013/TDVRP/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "Dabia2013/TDVRP/n=50/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRPTW, "Dabia2013/TDVRPTW/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRPTW, "Dabia2013/TDVRPTW/n=50/C101.vrp.json"),
     ]
     groups = _schedule_groups(items)
 
@@ -1891,8 +1886,8 @@ def test_schedule_groups_keep_td_twins_together_without_merging_size_buckets() -
         tuple(sorted(item.instance_path.as_posix() for _, item in group)) for group in groups
     }
     assert grouped == {
-        ("benchmarks/TDVRP/Dabia2013/n=25/C101.vrp.json", "benchmarks/TDVRPTW/Dabia2013/n=25/C101.vrp.json"),
-        ("benchmarks/TDVRP/Dabia2013/n=50/C101.vrp.json", "benchmarks/TDVRPTW/Dabia2013/n=50/C101.vrp.json"),
+        ("benchmarks/Dabia2013/TDVRP/n=25/C101.vrp.json", "benchmarks/Dabia2013/TDVRPTW/n=25/C101.vrp.json"),
+        ("benchmarks/Dabia2013/TDVRP/n=50/C101.vrp.json", "benchmarks/Dabia2013/TDVRPTW/n=50/C101.vrp.json"),
     }
 
 
@@ -1927,8 +1922,8 @@ def test_schedule_groups_never_split_a_shared_sidecar_at_the_size_cap() -> None:
 
 def test_resolve_instance_group_isolates_a_failing_instance(monkeypatch) -> None:
     items = [
-        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C101.vrp.json"),
-        _fake_discovered(ProblemType.TDVRP, "TDVRP/Dabia2013/n=25/C102.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "Dabia2013/TDVRP/n=25/C101.vrp.json"),
+        _fake_discovered(ProblemType.TDVRP, "Dabia2013/TDVRP/n=25/C102.vrp.json"),
     ]
 
     def fake_resolve(_repo, item, _atf_dir, _geometry_dir):
@@ -1955,3 +1950,144 @@ def test_site_header_links_to_the_documentation_tree(tmp_path: Path) -> None:
     benchmarks_html = (site_output / "benchmarks" / "index.html").read_text(encoding="utf-8")
     assert 'href="../docs/index.html">Docs</a>' in benchmarks_html
     assert 'class="nav-link active" href="../docs/index.html"' not in benchmarks_html
+
+
+# ---------------------------------------------------------------------------
+# Every family is a collection: metadata paths, identifiers and history.
+# ---------------------------------------------------------------------------
+
+
+def _artifact_route(output_repo_dir: Path, artifact_path: str):
+    from mamut_routing_publish.site_payloads import _artifact_path_to_route_path
+
+    return _artifact_path_to_route_path(output_repo_dir, artifact_path)
+
+
+def test_artifact_path_routes_follow_the_family_collection_layouts(tmp_path: Path) -> None:
+    repo = tmp_path / "MAMUT-routing"
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), repo / "benchmarks" / "Sintef2008")
+    save_collection_marker(CollectionMarker(family="Ortec2022", layout_version=2), repo / "benchmarks" / "Ortec2022")
+    save_collection_marker(CollectionMarker(family="Poryos2026", layout_version=1), repo / "benchmarks" / "Poryos2026")
+
+    # Layout 2 (classic families): the routes the problem-type-first layout produced.
+    assert _artifact_route(repo, "benchmarks/Sintef2008/VRPTW/n=800/RC2_8_9.vrp.json") == "/benchmarks/vrptw/sintef2008/n=800/RC2_8_9/"
+    assert _artifact_route(repo, "Sintef2008/VRPTW/n=800/RC2_8_9.vrp.json") == "/benchmarks/vrptw/sintef2008/n=800/RC2_8_9/"
+    assert _artifact_route(repo, "benchmarks/Ortec2022/VRPTW/final/n=200/ORTEC-x.vrp.json") == "/benchmarks/vrptw/ortec2022/final/n=200/ORTEC-x/"
+    # Layout 1: static instances keep their metric and place facets; the route
+    # names the instance, not its base directory (a TW-set variant differs).
+    base = "poryos-brest-n10-poi"
+    assert (
+        _artifact_route(repo, f"benchmarks/Poryos2026/CVRP/euclidean/brest/n=10/{base}/{base}.vrp.json")
+        == f"/benchmarks/cvrp/poryos2026/euclidean/brest/n=10/{base}/"
+    )
+    assert (
+        _artifact_route(repo, f"benchmarks/Poryos2026/VRPTW/fastest/brest/n=10/{base}/{base}-tw-tight.vrp.json")
+        == f"/benchmarks/vrptw/poryos2026/fastest/brest/n=10/{base}-tw-tight/"
+    )
+    # TD instances of a layout-1 collection have no metric directory and are filed under fastest.
+    assert (
+        _artifact_route(repo, f"benchmarks/Poryos2026/TDVRPTW/brest/n=10/{base}/bpr-light/{base}-bpr-light.vrp.json")
+        == f"/benchmarks/tdvrptw/poryos2026/fastest/brest/n=10/{base}-bpr-light/"
+    )
+
+
+def test_artifact_path_routes_without_a_marker_follow_the_path_depth(tmp_path: Path) -> None:
+    # A family that is not checked out has no marker on disk: the layout follows from the depth.
+    repo = tmp_path / "MAMUT-routing"
+    assert _artifact_route(repo, "benchmarks/Dabia2013/TDVRPTW/n=25/C101.vrp.json") == "/benchmarks/tdvrptw/dabia2013/n=25/C101/"
+    assert _artifact_route(repo, "benchmarks/Lera2026/TDVRP/S1/n=200/Lera-x.vrp.json") == "/benchmarks/tdvrp/lera2026/s1/n=200/Lera-x/"
+    assert (
+        _artifact_route(repo, "benchmarks/Poryos2026/CVRP/fastest/brest/n=2/b/b.vrp.json")
+        == "/benchmarks/cvrp/poryos2026/fastest/brest/n=2/b/"
+    )
+
+
+def test_artifact_path_routes_keep_their_none_and_error_contract(tmp_path: Path) -> None:
+    repo = tmp_path / "MAMUT-routing"
+    save_collection_marker(CollectionMarker(family="Sintef2008", layout_version=2), repo / "benchmarks" / "Sintef2008")
+    # Not an instance file: no route.
+    assert _artifact_route(repo, "benchmarks/Sintef2008/VRPTW/n=100/C101.bks.MonoCost.json") is None
+    assert _artifact_route(repo, "benchmarks/Poryos2026/sidecars/brest/n=2/b/b.meta.json") is None
+    # The problem-type-first layout is no longer read, like in the library.
+    with pytest.raises(ValueError, match="benchmarks/<Family>/<ProblemType>"):
+        _artifact_route(repo, "benchmarks/VRPTW/Sintef2008/n=100/C101.vrp.json")
+    with pytest.raises(ValueError):
+        _artifact_route(repo, "benchmarks/CVRP/Poryos2026/fastest/brest/n=2/b/b.vrp.json")
+    # A shape the family's layout does not have.
+    with pytest.raises(ValueError):
+        _artifact_route(repo, "benchmarks/Sintef2008/VRPTW/a/b/n=100/C101.vrp.json")
+
+
+def test_classic_family_collections_keep_their_identifiers_routes_and_licence(tmp_path: Path) -> None:
+    """Identifiers and routes are those of the problem-type-first layout; no ODbL default leaks in."""
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    for name, subset in (("ORTEC-VRPTW-final-1", "final"), ("ORTEC-VRPTW-public-1", "public")):
+        payload = make_historical_instance().model_dump(mode="json")
+        # A plain-dict metadata, as the real classic families carry: the branch where a collection gets its ODbL default.
+        instance = BenchmarkInstance.model_validate({**payload, "instance_name": name, "benchmark_name": "Ortec2022", "metadata": {}})
+        instance_path = output_repo_dir / "benchmarks" / "Ortec2022" / "VRPTW" / subset / "n=2" / f"{name}.vrp.json"
+        write_json(instance_path, instance.model_dump(mode="json"))
+    save_collection_marker(CollectionMarker(family="Ortec2022", layout_version=2), output_repo_dir / "benchmarks" / "Ortec2022")
+
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="abcdef123456",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="2026-04-23-abcdef1",
+    )
+    payload_root = output_repo_dir / "dist" / "site-payloads"
+    page = json.loads(
+        (payload_root / "benchmarks" / "vrptw" / "ortec2022" / "final" / "n=2" / "ORTEC-VRPTW-final-1" / "index.json").read_text(encoding="utf-8")
+    )
+    assert page["route_path"] == "/benchmarks/vrptw/ortec2022/final/n=2/ORTEC-VRPTW-final-1/"
+    assert page["artifact_links"]["vrp_json_path"] == "benchmarks/Ortec2022/VRPTW/final/n=2/ORTEC-VRPTW-final-1.vrp.json"
+    assert "license" in page["summary"] and page["summary"]["license"] is None
+    assert page["sibling_variant_routes"] == {} and page["derived_problem_routes"] == {}
+
+    inventory = json.loads(
+        (output_repo_dir / "publish-state" / "snapshots" / "2026-04-23-abcdef1.inventory.json").read_text(encoding="utf-8")
+    )
+    assert set(inventory["instances"]) == {
+        "cvrp-poryos2026-fastest-brest-n2-poryos-n2-cafe123",
+        "vrptw-poryos2026-fastest-brest-n2-poryos-n2-beef456",
+        "vrptw-sintef2008-n2-C101",
+        "vrptw-ortec2022-final-n2-ORTEC-VRPTW-final-1",
+        "vrptw-ortec2022-public-n2-ORTEC-VRPTW-public-1",
+    }
+
+
+def test_history_diff_is_keyed_by_identifier_not_by_file_path(tmp_path: Path) -> None:
+    """Moving a family's files (here: renaming its checkout directory) changes no history record.
+
+    The inventory the history diffs is keyed by instance identifier and holds
+    no file path, so the first publication after the move from
+    ``benchmarks/<PT>/<Family>/`` to ``benchmarks/<Family>/<PT>/`` reports no
+    instance as removed and added again.
+    """
+    output_repo_dir = tmp_path / "MAMUT-routing"
+    build_fixture_site_inputs(output_repo_dir)
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="firstcommit01",
+        published_at="2026-04-23T12:00:00",
+        snapshot_id="2026-04-23-firstcom",
+    )
+    first_inventory = json.loads(
+        (output_repo_dir / "publish-state" / "snapshots" / "2026-04-23-firstcom.inventory.json").read_text(encoding="utf-8")
+    )
+    assert "benchmarks/" not in json.dumps(first_inventory)
+
+    (output_repo_dir / "benchmarks" / "Sintef2008").rename(output_repo_dir / "benchmarks" / "sintef-checkout")
+    generate_site_payloads(
+        output_repo_dir=output_repo_dir,
+        source_commit="secondcommit2",
+        published_at="2026-04-30T12:00:00",
+        snapshot_id="2026-04-30-secondc",
+    )
+    second_detail = json.loads(
+        (output_repo_dir / "dist" / "site-payloads" / "history" / "2026-04-30-secondc" / "index.json").read_text(encoding="utf-8")
+    )
+    counts = second_detail["change_log"]["counts"]
+    assert counts["instances_added"] == 0 and counts["instances_removed"] == 0
+    assert counts["bks_added"] == 0 and counts["bks_removed"] == 0

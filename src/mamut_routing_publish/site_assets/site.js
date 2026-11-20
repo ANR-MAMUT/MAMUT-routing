@@ -66,10 +66,16 @@ const WGS84_A = 6378137.0;
 const WGS84_F = 1 / 298.257223563;
 const WGS84_E2 = WGS84_F * (2 - WGS84_F);
 const MAMUT_PROJECT_LOGO_PATH = "/webapp/logos/logo_anr_mamut.png";
-const GITHUB_BENCHMARKS_ROOT = "https://github.com/ANR-MAMUT/MAMUT-routing/tree/main/benchmarks";
+const GITHUB_ORG_ROOT = "https://github.com/ANR-MAMUT";
+// The main repository's benchmarks/ directory lists the family submodules.
+const GITHUB_BENCHMARKS_ROOT = `${GITHUB_ORG_ROOT}/MAMUT-routing/tree/main/benchmarks`;
+// Each family is its own repository, mounted at benchmarks/<Family>/ of the main one.
+const GITHUB_FAMILY_REPOSITORY_PREFIX = `${GITHUB_ORG_ROOT}/MAMUT-routing-`;
+const GITHUB_FAMILY_BRANCH = "main";
 const GITHUB_ICON_PATH = "/webapp/icons/GitHub_Invertocat_Black.svg";
 const OPTIMAL_BADGE_ICON_PATH = "/webapp/icons/check-badge-svgrepo-com.svg";
-const FILE_BACKED_BENCHMARK_FAMILIES = new Set(["Dimacs2021", "Sintef2008"]);
+const TIME_DEPENDENT_PROBLEM_TYPES = new Set(["TDVRP", "TDVRPTW"]);
+const METRIC_FACETS = new Set(["fastest", "shortest", "euclidean"]);
 const PROJECT_PARTICIPANT_LOGOS = [
   { label: "ANR", src: "/webapp/logos/ANR-logo-2021-noir.png", wide: true, href: "https://anr.fr/en/" },
   { label: "CNRS", src: "/webapp/logos/LOGO_CNRS_BLEU.png", href: "https://www.cnrs.fr/en" },
@@ -431,22 +437,29 @@ function githubBenchmarksHref(items) {
   if (sourceSegments.length === 0 || sourceSegments[0].toLowerCase() !== "benchmarks") {
     return "";
   }
-  const githubSegments = githubBenchmarkPathSegments(sourceSegments);
-  const encodedPath = githubSegments
-    .slice(1)
+  // benchmarks/ and benchmarks/<ProblemType>/: a problem type spans several
+  // family repositories, so both link to the list of family submodules.
+  if (sourceSegments.length < 3) {
+    return GITHUB_BENCHMARKS_ROOT;
+  }
+  const [, problemType, family, ...facets] = sourceSegments;
+  const encodedPath = [problemType, ...githubFamilyPathSegments(problemType, facets)]
     .map((segment) => encodePathSegment(segment))
     .join("/");
-  return encodedPath ? `${GITHUB_BENCHMARKS_ROOT}/${encodedPath}` : GITHUB_BENCHMARKS_ROOT;
+  return `${GITHUB_FAMILY_REPOSITORY_PREFIX}${encodePathSegment(family)}/tree/${GITHUB_FAMILY_BRANCH}/${encodedPath}`;
 }
 
-function githubBenchmarkPathSegments(sourceSegments) {
-  const benchmarkFamily = sourceSegments[2] || "";
-  const lastSegment = sourceSegments[sourceSegments.length - 1] || "";
-  const pointsToHistoricalInstance =
-    FILE_BACKED_BENCHMARK_FAMILIES.has(benchmarkFamily) &&
-    sourceSegments.length >= 5 &&
-    !lastSegment.startsWith("n=");
-  return pointsToHistoricalInstance ? sourceSegments.slice(0, -1) : sourceSegments;
+// Directories of the family repository below <ProblemType>/ for the facets
+// of a breadcrumb trail. The trail stops at the size bucket: an instance is a
+// file (classic families) or sits in a base directory the trail does not name
+// (collections such as Poryos2026). TD instances of a collection are shown
+// under the fastest facet, but their path has no metric directory.
+function githubFamilyPathSegments(problemType, facets) {
+  const sizeIndex = facets.findIndex((segment) => segment.startsWith("n="));
+  const directories = sizeIndex >= 0 ? facets.slice(0, sizeIndex + 1) : facets;
+  return TIME_DEPENDENT_PROBLEM_TYPES.has(problemType)
+    ? directories.filter((segment) => !METRIC_FACETS.has(segment))
+    : directories;
 }
 
 function renderBenchmarksGithubLink(href) {

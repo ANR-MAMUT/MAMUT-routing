@@ -7,12 +7,13 @@ else, so nothing is duplicated:
 - the website's project pages (FAQ, glossary, citing, authors, ...) come from
   ``site_assets/texts/project_pages`` and ``AUTHORS.md``, the same files the
   website renders;
-- one page per benchmark family comes from the family sections of
-  ``site_assets/texts/mamut-routing_benchmark_families.md`` (the website's
-  family "context" pages), followed by the family's own README when its
-  satellite submodule is checked out, or a stub pointing at GitHub when it
-  is not (a plain clone leaves satellite directories empty; the docs build
-  must never fail because of that);
+- one page per benchmark family and problem type comes from the family
+  sections of ``site_assets/texts/mamut-routing_benchmark_families.md`` (the
+  website's family "context" pages), and one collection page per family
+  embeds the family's README (``benchmarks/<Family>/README.md``, one README
+  for all its problem types) when its submodule is checked out, or a stub
+  pointing at GitHub when it is not (a plain clone leaves submodule
+  directories empty; the docs build must never fail because of that);
 - the README of the two tooling packages (lib, tools) as-is;
 - one API-reference page per module for the curated package list.
 
@@ -244,19 +245,11 @@ def github_bases_for_path(repo_root: Path, relative_dir: str) -> tuple[str, str,
     )
 
 
-def is_collection_family(repo_root: Path, benchmark_name: BenchmarkName) -> bool:
-    """Family-first collections live at ``benchmarks/<Family>/`` (Poryos2026, Mamut2026)."""
-    collection_dir = repo_root / "benchmarks" / benchmark_name.value
-    if collection_dir.is_dir():
-        return True
-    return f"benchmarks/{benchmark_name.value}" in parse_gitmodules(repo_root)
-
-
 def family_source_dir(repo_root: Path, problem_type: ProblemType, benchmark_name: BenchmarkName) -> str:
-    """Repo-relative directory holding the family's README/LICENSE (mirrors the publisher's license lookup)."""
-    classic = f"benchmarks/{problem_type.value}/{benchmark_name.value}"
-    if (repo_root / classic).is_dir() or not is_collection_family(repo_root, benchmark_name):
-        return classic
+    """Repo-relative directory holding the family's README/LICENSE (mirrors the publisher's license lookup).
+
+    Every family is a collection mounted at ``benchmarks/<Family>/``, whatever the problem type.
+    """
     return f"benchmarks/{benchmark_name.value}"
 
 
@@ -277,7 +270,7 @@ def _source_note(browse_url: str, what: str) -> str:
 def _absent_stub(browse_url: str, what: str) -> str:
     return (
         '!!! warning "Not checked out in this build"\n'
-        f"    {what} is a satellite repository that was not initialised when this documentation "
+        f"    {what} lives in a family repository that was not initialised when this documentation "
         f"was built, so its README is not embedded here. Read it on GitHub: [{browse_url}]({browse_url}).\n"
     )
 
@@ -355,8 +348,11 @@ def family_pages(repo_root: Path) -> list[GeneratedDocPage]:
         source_dir = family_source_dir(repo_root, problem_type, benchmark_name)
         browse_url, _blob, _raw = github_bases_for_path(repo_root, source_dir)
         website_route = _family_route_path(problem_type, benchmark_name)
-        collection = is_collection_family(repo_root, benchmark_name) and source_dir == f"benchmarks/{benchmark_name.value}"
 
+        # Every family is a collection mounted at benchmarks/<Family>/, and its
+        # one README covers all its problem types. It is embedded once, on the
+        # collection page, and each problem-type page links to it.
+        collection_page = f"../collections/{family_slug}.md"
         parts = [
             f"# {section.title}\n",
             shift_headings(section.markdown, -2).rstrip("\n") + "\n",
@@ -365,28 +361,16 @@ def family_pages(repo_root: Path) -> list[GeneratedDocPage]:
             f"    Instances and best-known solutions: [{website_route}]({website_route}) on the website. "
             f"Repository: [{browse_url}]({browse_url}).",
             "",
+            f"The README of the **{benchmark_name.value}** family covers all its problem types "
+            f"(layout, conventions, sidecars). It is on the [collection page]({collection_page}).\n",
         ]
-        if collection:
-            collection_page = f"../collections/{family_slug}.md"
-            parts.append(
-                f"This family is one problem-type layer of the **{benchmark_name.value} collection**; "
-                f"the collection README (layout, conventions, sidecars) is on the "
-                f"[collection page]({collection_page}).\n"
-            )
-            if benchmark_name not in collections:
-                readme = embedded_readme(repo_root, source_dir)
-                header = f"# {benchmark_name.value} collection\n\n"
-                if readme is None:
-                    collections[benchmark_name] = header + _absent_stub(browse_url, f"The {benchmark_name.value} collection")
-                else:
-                    collections[benchmark_name] = header + _source_note(browse_url, "This README") + "\n" + readme
-        else:
+        if benchmark_name not in collections:
             readme = embedded_readme(repo_root, source_dir)
+            header = f"# {benchmark_name.value} collection\n\n"
             if readme is None:
-                parts.append(_absent_stub(browse_url, f"`{source_dir}`"))
+                collections[benchmark_name] = header + _absent_stub(browse_url, f"The {benchmark_name.value} collection")
             else:
-                parts.append("## Repository README\n")
-                parts.append(shift_headings(readme, 1))
+                collections[benchmark_name] = header + _source_note(browse_url, "This README") + "\n" + readme
         pages.append(GeneratedDocPage(path=doc_path, markdown="\n".join(parts).rstrip("\n") + "\n"))
         by_problem.setdefault(problem_type, []).append((benchmark_name, f"{problem_slug}/{family_slug}.md"))
 

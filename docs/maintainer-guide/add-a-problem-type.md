@@ -10,7 +10,7 @@ directory layout and model class. Adding one is a versioned contract change acro
 |---|---|
 | the name | `ProblemType` / `ObjectiveFunction` in `enums.py` |
 | the instance model | `models.py` (static) or `td/models.py` (time-dependent), pydantic with `extra="forbid"`, format tags and versions for any new sidecar |
-| layout parsing | `artifacts.parse_layout` and `parse_collection_layout` derive the problem type from the first path segment |
+| layout parsing | `artifacts.parse_collection_layout` derives the problem type from the first path segment below the family root |
 | loading | `artifacts.load_benchmark_instance` picks the model; `instance_problem_type` maps back by `isinstance` |
 | validation | `checker.check_solution` / `td/checker.check_td_solution` and `is_better_solution` for the objective order |
 | BKS files | `<base>.bks.<Objective>.json`; the store functions in `bks.py` / `td/bks.py` |

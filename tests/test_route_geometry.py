@@ -365,3 +365,21 @@ def test_backfill_writes_a_companion_for_an_entry_that_has_none(tmp_path: Path) 
     assert json.loads(gzip.decompress(meta_path.read_bytes()))["path_keys"] == sorted(
         load_route_geometry(target)["paths"]
     )
+
+
+def test_route_geometry_discovery_skips_classic_family_collections(tmp_path: Path) -> None:
+    # Every family is a collection now, but only the layout-1 ones (Poryos2026
+    # shape) carry geo sidecars. Classic families (layout 2) are not even read:
+    # their instance files below are not JSON, and discovery must not open them.
+    from mamut_routing_publish.route_geometry import _discover_pending
+
+    _write(tmp_path / "benchmarks" / "Poryos2026" / COLLECTION_MARKER_FILENAME, '{"family": "Poryos2026"}\n')
+    for family, relative in (
+        ("Sintef2008", "VRPTW/n=100/C101.vrp.json"),
+        ("Dabia2013", "TDVRPTW/n=25/C101.vrp.json"),
+    ):
+        _write(tmp_path / "benchmarks" / family / COLLECTION_MARKER_FILENAME, json.dumps({"family": family, "layout_version": 2}))
+        _write(tmp_path / "benchmarks" / family / relative, "not json")
+        _write(tmp_path / "benchmarks" / family / relative.replace(".vrp.json", ".bks.Duration.json"), '{"routes":[[1]]}\n')
+
+    assert _discover_pending(tmp_path, min_customers=0) == ([], 0)

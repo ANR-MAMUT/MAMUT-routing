@@ -30,17 +30,15 @@ uv run mamut-routing list | sed -n '/^Summary/,/Metric variants/p'    # what is 
 uv run mamut-routing list --problem-type VRPTW --benchmark-name sintef2008 | tail -4
 ```
 
-`remote list` reads the release manifest on GitHub: one zip per family, with its size and sha256
-([step 1](browse-and-download.md) downloads them). The local summary counts only what is checked out; each satellite
-submodule you initialize adds its family.
+`remote list` reads the release manifest on GitHub: one zip per family, with its size and sha256 ([step 1](browse-and-download.md) downloads them). The local summary counts only what is checked out. Each family submodule you initialize adds its family.
 
 ## Solve a classic instance
 
 ```bash
-uv run mamut-tools solve benchmarks/VRPTW/Sintef2008/n=100/C101.vrp.json \
+uv run mamut-tools solve benchmarks/Sintef2008/VRPTW/n=100/C101.vrp.json \
     --objective HierarchicalVehicleCost --time-limit 10 | jq -c '{cost, n_routes, validation}'
 jq -c '{cost, n_routes: (.routes|length)}' \
-    benchmarks/VRPTW/Sintef2008/n=100/C101.bks.HierarchicalVehicleCost.json
+    benchmarks/Sintef2008/VRPTW/n=100/C101.bks.HierarchicalVehicleCost.json
 ```
 
 PyVRP finds the published BKS of Solomon's C101 within the 10 s: cost 828.94 with 10 routes, `valid` for the

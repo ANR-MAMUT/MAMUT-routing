@@ -1,54 +1,23 @@
 MAMUT-routing third-party and data-license notice
 ================================================
 
-MAMUT-routing is a mixed software and benchmark repository. The source code is
-MIT-licensed unless a file says otherwise. Benchmark data and generated
-artifacts are licensed at the benchmark-family level.
+MAMUT-routing is a mixed software and benchmark project. The source code is MIT-licensed unless a file says otherwise. Benchmark data and generated artifacts are licensed at the benchmark-family level. Each family lives in its own repository, mounted here at benchmarks/<Family>, and carries its own LICENSE and NOTICE files, which prevail for that family.
 
 Component licensing
 -------------------
 
 - Source code in this repository: MIT License.
-- benchmarks/VRPTW/Sintef2008: MAMUT-routing curation artifacts are provided
-  under MIT where MAMUT-routing holds the relevant rights. The underlying
-  classical VRPTW benchmark definitions originate from Solomon (1987),
-  Gehring and Homberger (1999), and the SINTEF VRPTW benchmark convention.
-- benchmarks/VRPTW/Dimacs2021: MAMUT-routing curation artifacts are provided
-  under MIT where MAMUT-routing holds the relevant rights. The benchmark
-  contract follows the 12th DIMACS Implementation Challenge VRPTW rules.
-- benchmarks/VRPTW/Ortec2022: ORTEC instances and related redistributed BKS
-  files are provided under Creative Commons Attribution-NonCommercial 4.0
-  International (CC BY-NC 4.0).
-- benchmarks/TDVRPTW/Dabia2013 and benchmarks/TDVRP/Dabia2013: MAMUT-routing
-  curation artifacts are provided under MIT where MAMUT-routing holds the
-  relevant rights. The underlying Solomon-derived IGP instances are those
-  distributed with the MIT-licensed open-source solver of Lera-Romero,
-  Miranda Bront and Soulignac (2020).
-- benchmarks/TDVRPTW/Ari2018 and benchmarks/TDVRP/Ari2018: MAMUT-routing
-  curation artifacts are provided under MIT where MAMUT-routing holds the
-  relevant rights. The underlying benchmark definitions originate from the
-  time-dependent TSPTW generator of the Arigliano et al. lineage.
-- benchmarks/TDVRPTW/Vu2020 and benchmarks/TDVRP/Vu2020: MAMUT-routing
-  curation artifacts are provided under MIT where MAMUT-routing holds the
-  relevant rights. The underlying raw files originate from the Vu et al.
-  (2020) time-dependent TSPTW benchmark material.
-- benchmarks/TDVRPTW/Rifki2020 and benchmarks/TDVRP/Rifki2020: MAMUT-routing
-  curation artifacts are provided under MIT where MAMUT-routing holds the
-  relevant rights. The underlying stepwise travel-time construction follows
-  Rifki et al. (2020); coordinates are a deterministic MAMUT-routing
-  embedding.
-- benchmarks/TDVRPTW/Lera2026 and benchmarks/TDVRP/Lera2026: MAMUT-routing
-  generation and curation artifacts are provided under MIT where
-  MAMUT-routing holds the relevant rights. The base data are the Gehring and
-  Homberger (1999) instances as curated in benchmarks/VRPTW/Sintef2008, with
-  IGP (Ichoua-Gendreau-Potvin 2003) travel speeds.
-- benchmarks/Poryos2026 (CVRP, VRPTW, TDVRP and TDVRPTW layers): OSM-derived
-  benchmark instances, sidecars, generated route artifacts, and related
-  benchmark data are distributed under ODbL 1.0 where they derive from
-  OpenStreetMap data.
-- benchmarks/Mamut2026 (CVRP): OSM-derived benchmark instances, sidecars,
-  generated route artifacts, and related benchmark data are distributed under
-  ODbL 1.0 where they derive from OpenStreetMap data.
+- benchmarks/Sintef2008 (VRPTW): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The underlying classical VRPTW benchmark definitions originate from Solomon (1987), Gehring and Homberger (1999), and the SINTEF VRPTW benchmark convention.
+- benchmarks/Dimacs2021 (VRPTW): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The benchmark contract follows the 12th DIMACS Implementation Challenge VRPTW rules.
+- benchmarks/Ortec2022 (VRPTW): ORTEC instances and related redistributed BKS files are provided under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0).
+- benchmarks/Dabia2013 (TDVRPTW and TDVRP): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The underlying Solomon-derived IGP instances are those distributed with the MIT-licensed open-source solver of Lera-Romero, Miranda Bront and Soulignac (2020).
+- benchmarks/Ari2018 (TDVRPTW and TDVRP): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The underlying benchmark definitions originate from the time-dependent TSPTW generator of the Arigliano et al. lineage.
+- benchmarks/Vu2020 (TDVRPTW and TDVRP): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The underlying raw files originate from the Vu et al. (2020) time-dependent TSPTW benchmark material.
+- benchmarks/Rifki2020 (TDVRPTW and TDVRP): MAMUT-routing curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The underlying stepwise travel-time construction follows Rifki et al. (2020). Coordinates are a deterministic MAMUT-routing embedding.
+- benchmarks/Lera2026 (TDVRPTW and TDVRP): MAMUT-routing generation and curation artifacts are provided under MIT where MAMUT-routing holds the relevant rights. The base data are the Gehring and Homberger (1999) instances as curated in benchmarks/Sintef2008, with IGP (Ichoua-Gendreau-Potvin 2003) travel speeds.
+- benchmarks/Blauth2024 (TDVRPTW): the instances, sidecars and best-known-solution files are provided under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). They are a value-exact conversion of the delivery-only instances of the vrptdt-benchmark of Blauth et al. (2024), which carries the same licence because it incorporates Uber Movement speed data.
+- benchmarks/Poryos2026 (CVRP, VRPTW, TDVRP and TDVRPTW layers): OSM-derived benchmark instances, sidecars, generated route artifacts, and related benchmark data are distributed under ODbL 1.0 where they derive from OpenStreetMap data.
+- benchmarks/Mamut2026 (CVRP): OSM-derived benchmark instances, sidecars, generated route artifacts, and related benchmark data are distributed under ODbL 1.0 where they derive from OpenStreetMap data.
 
 Attribution
 -----------
@@ -75,7 +44,8 @@ license (see src/mamut_routing_publish/site_assets/vendor/README.md):
 - MapLibre GL JS (BSD-3-Clause)
 - deck.gl (MIT), loaded only by the route animation. Its single bundle also
   contains the vis.gl libraries luma.gl, loaders.gl, math.gl and probe.gl
-  (MIT) and long.js (Apache-2.0).
+  (MIT) and long.js (Apache-2.0, text in
+  src/mamut_routing_publish/site_assets/vendor/deck.gl/LICENSE-long.js-Apache-2.0.txt).
 
 The MAMUT-routing-tools GUI vendors byte-identical copies of the same files.
 

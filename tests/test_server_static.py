@@ -36,8 +36,8 @@ def site_repo(tmp_path: Path) -> Path:
     )
 
     (repo / "LICENSE").write_text("MIT-ish license text")
-    (repo / "benchmarks" / "CVRP" / "Fam").mkdir(parents=True)
-    (repo / "benchmarks" / "CVRP" / "Fam" / "inst.vrp.json").write_text('{"instance_name": "inst"}')
+    (repo / "benchmarks" / "Fam" / "CVRP").mkdir(parents=True)
+    (repo / "benchmarks" / "Fam" / "CVRP" / "inst.vrp.json").write_text('{"instance_name": "inst"}')
     (repo / "secret.txt").write_text("not served")
     return repo
 
@@ -90,7 +90,7 @@ def test_repo_artifact_roots(client: TestClient) -> None:
     assert license_response.status_code == 200
     assert license_response.headers["cache-control"] == "public, max-age=3600"
 
-    vrp = client.get("/benchmarks/CVRP/Fam/inst.vrp.json")
+    vrp = client.get("/benchmarks/Fam/CVRP/inst.vrp.json")
     assert vrp.status_code == 200
     assert vrp.headers["cache-control"] == "public, max-age=3600"
 
@@ -228,7 +228,7 @@ def test_site_dir_option_serves_a_staging_tree_with_repo_artifacts(site_repo: Pa
     with TestClient(create_app(site_repo, site_dir=staging)) as client:
         assert client.get("/").text == "<html>staging home</html>"
         assert client.get("/benchmarks/cvrp/").status_code == 404  # only in the live dist
-        assert client.get("/benchmarks/CVRP/Fam/inst.vrp.json").status_code == 200
+        assert client.get("/benchmarks/Fam/CVRP/inst.vrp.json").status_code == 200
         assert client.get("/LICENSE").status_code == 200
     with pytest.raises(FileNotFoundError):
         create_app(site_repo, site_dir=tmp_path / "missing")

@@ -1,6 +1,8 @@
 # MAMUT-routing
 
-Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes, all in one repository. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
+Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes. Each benchmark family is its own repository, mounted here under `benchmarks/`. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
+
+> **Transition to version 0.13.** The `main` branch holds the work towards version 0.13 of `mamut-routing-lib`. Its benchmark tree (one repository per family) is read by the library pinned in this repository, `MAMUT-routing-lib/`, and not by the released library. The released library (0.12.0 on PyPI) reads the former layout, which is available through `mamut-routing remote fetch` (snapshot of 2026-09-23) and in the read-only [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11). The website shows the released state until version 0.13 is out.
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
 
@@ -18,7 +20,7 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | Path | Purpose |
 |---|---|
 | `benchmarks/` | Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmark instances + BKS, served as the canonical browsable copy. |
-| `benchmarks/<ProblemType>/<Family>/` *(some are submodules)* | Large non-default benchmark families are self-contained satellite repositories mounted as submodules — see below. |
+| `benchmarks/<Family>/` *(submodules)* | Every benchmark family is a self-contained repository mounted as a submodule at its family directory, holding all its problem types. See below. |
 | `benchmarks/Poryos2026/` *(submodule)* | The generated **Poryos2026 collection**: one family-first repository holding all four problem-type trees plus shared sidecars — see below. |
 | `benchmarks/Mamut2026/` *(submodule)* | The generated **Mamut2026 CVRP collection**: designed-diversity city instances under three arc-cost metrics — see below. |
 | `osmdata/` | OpenStreetMap-derived data feeding the Poryos2026 and Mamut2026 generated benchmarks. |
@@ -31,29 +33,29 @@ The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-
 | `publish-state/` *(generated, gitignored)* | Persistent publication state: history ledger + snapshot inventories, surviving fresh release directories. |
 | `tests/` | Pytest suite for `mamut_routing_publish`. |
 
-### Benchmark family satellites
+### Benchmark family repositories
 
-The default family of each time-dependent problem type (`Dabia2013` for TDVRPTW and TDVRP) lives directly in this repository. The other TD families are **satellite repositories** mounted as submodules at their family directory; each satellite is self-contained (instances, ATF sidecars, BKS, and a README documenting raw sources, provenance, and the consolidation pipeline recorded in every artifact's `generator` block):
+Every family is its own repository, mounted as a submodule at `benchmarks/<Family>/`. One repository holds all the problem types of its family (for example the TDVRPTW and TDVRP trees of `Dabia2013`), with one `README.md`, `LICENSE`, `CHANGELOG.md` and `CITATION.cff` at its root. Each repository is self-contained (instances, ATF sidecars, BKS, and a README documenting raw sources, provenance, and the consolidation pipeline recorded in every artifact's `generator` block). The 2 generated collections are described in the next sections.
 
 | Submodule | Mounted at |
 |---|---|
-| [MAMUT-routing-TDVRPTW-Ari2018](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018) | `benchmarks/TDVRPTW/Ari2018` |
-| [MAMUT-routing-TDVRPTW-Vu2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Vu2020) | `benchmarks/TDVRPTW/Vu2020` |
-| [MAMUT-routing-TDVRPTW-Rifki2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020) | `benchmarks/TDVRPTW/Rifki2020` |
-| [MAMUT-routing-TDVRPTW-Lera2026](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Lera2026) | `benchmarks/TDVRPTW/Lera2026` |
-| [MAMUT-routing-TDVRPTW-Blauth2024](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRPTW-Blauth2024) | `benchmarks/TDVRPTW/Blauth2024` |
-| [MAMUT-routing-TDVRP-Ari2018](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Ari2018) | `benchmarks/TDVRP/Ari2018` |
-| [MAMUT-routing-TDVRP-Vu2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Vu2020) | `benchmarks/TDVRP/Vu2020` |
-| [MAMUT-routing-TDVRP-Rifki2020](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Rifki2020) | `benchmarks/TDVRP/Rifki2020` |
-| [MAMUT-routing-TDVRP-Lera2026](https://github.com/ANR-MAMUT/MAMUT-routing-TDVRP-Lera2026) | `benchmarks/TDVRP/Lera2026` |
+| [MAMUT-routing-Sintef2008](https://github.com/ANR-MAMUT/MAMUT-routing-Sintef2008) | `benchmarks/Sintef2008` (VRPTW) |
+| [MAMUT-routing-Dimacs2021](https://github.com/ANR-MAMUT/MAMUT-routing-Dimacs2021) | `benchmarks/Dimacs2021` (VRPTW) |
+| [MAMUT-routing-Ortec2022](https://github.com/ANR-MAMUT/MAMUT-routing-Ortec2022) | `benchmarks/Ortec2022` (VRPTW) |
+| [MAMUT-routing-Dabia2013](https://github.com/ANR-MAMUT/MAMUT-routing-Dabia2013) | `benchmarks/Dabia2013` (TDVRPTW, TDVRP) |
+| [MAMUT-routing-Ari2018](https://github.com/ANR-MAMUT/MAMUT-routing-Ari2018) | `benchmarks/Ari2018` (TDVRPTW, TDVRP) |
+| [MAMUT-routing-Vu2020](https://github.com/ANR-MAMUT/MAMUT-routing-Vu2020) | `benchmarks/Vu2020` (TDVRPTW, TDVRP) |
+| [MAMUT-routing-Rifki2020](https://github.com/ANR-MAMUT/MAMUT-routing-Rifki2020) | `benchmarks/Rifki2020` (TDVRPTW, TDVRP) |
+| [MAMUT-routing-Lera2026](https://github.com/ANR-MAMUT/MAMUT-routing-Lera2026) | `benchmarks/Lera2026` (TDVRPTW, TDVRP) |
+| [MAMUT-routing-Blauth2024](https://github.com/ANR-MAMUT/MAMUT-routing-Blauth2024) | `benchmarks/Blauth2024` (TDVRPTW) |
 
-`Lera2026` is the first `igp-profile` family: it ships compact IGP specifications instead of ATF sidecars (the canonical arrival-time functions materialize deterministically on load, pinned by `atf_sha256`), which keeps its two satellites at ~50 MB despite covering 200–1000 customers.
+`Lera2026` is the first `igp-profile` family: it ships compact IGP specifications instead of ATF sidecars (the canonical arrival-time functions materialize deterministically on load, pinned by `atf_sha256`), which keeps its repository at ~60 MB despite covering 200–1000 customers.
 
 `Blauth2024` is the conversion of the delivery-only vrptdt-benchmark of Blauth et al. (2024) (real OSM road networks, Uber Movement speeds, integer-millisecond time unit, `FleetCostDuration` objective) and hosts a hybrid slice: n=10 and n=500 in full, n=1000 and n=2000 as instance descriptors and BKS plus sha256 pins, with only the oversized arrival-time-function sidecars regenerated by the deterministic converter in MAMUT-routing-tools. It is CC BY-NC 4.0 (non-commercial, Uber data lineage) and has no TDVRP twin (the time windows are intrinsic to the upstream generation).
 
 ### The Poryos2026 collection
 
-[MAMUT-routing-Poryos2026](https://github.com/ANR-MAMUT/MAMUT-routing-Poryos2026), mounted at `benchmarks/Poryos2026/`, is the generated city family and the first **family-first collection**: instead of one satellite per problem type, a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Poryos2026 satellites are archived with tombstone READMEs.
+[MAMUT-routing-Poryos2026](https://github.com/ANR-MAMUT/MAMUT-routing-Poryos2026), mounted at `benchmarks/Poryos2026/`, is the generated city family and the first **family-first collection**: a single marker-rooted repository holds the CVRP, VRPTW, TDVRP and TDVRPTW trees of the same 60 base instances (5 cities × n ∈ {10, 25, 50, 100, 500, 1000} × 2 sampling methods; 1080 instances, all with checker-validated BKS) plus their shared sha256-pinned sidecars (geo, road graph, 6 traffic overlays, distance matrices). Arc costs are 3-decimal floats family-wide, VRPTW carries three time-window sets per base of which only the bare-base-named one is shared with the TDVRPTW twins; see the collection README for the conventions and the pairing rule. The retired per-problem-type v1 Poryos2026 satellites are archived with tombstone READMEs.
 
 ### The Mamut2026 collection
 
@@ -103,13 +105,14 @@ lib contract, with `mamut-routing export vrp` from
 `.vrp ↓` download chips of the website (see the site FAQ and
 [the format contract](https://mamut-routing.univ-ubs.fr/docs/benchmarks/formats/cvrplib-export/)).
 
-A plain `git clone` leaves satellite directories empty (the tooling and the default families work without them). Fetch only the families you need:
+A plain `git clone` leaves every family directory empty (the tooling works without them). Fetch only the families you need:
 
 ```bash
-git submodule update --init benchmarks/TDVRPTW/Rifki2020   # one TD family (0.1–0.8 GB each)
+git submodule update --init benchmarks/Rifki2020            # one TD family (0.1–0.8 GB each)
+git submodule update --init benchmarks/Sintef2008           # the SINTEF VRPTW family (~2.5 GB)
 git submodule update --init benchmarks/Poryos2026           # the generated collection (~0.4 GB)
 git submodule update --init benchmarks/Mamut2026            # the designed CVRP collection (~0.3 GB)
-git submodule update --init                                # everything (~2.8 GB of satellite data)
+git submodule update --init                                # everything (~5.3 GB of benchmark data)
 ```
 
 ## Python publishing toolkit (`mamut-routing-publish`)
@@ -120,8 +123,8 @@ The Python package `mamut_routing_publish` owns site payload generation, static 
 
 ```bash
 # clone with the tooling submodules, recursively: uv installs the lib from
-# the checkout nested in MAMUT-routing-tools (benchmark family satellites stay
-# empty — opt in per family, see "Benchmark family satellites")
+# the checkout nested in MAMUT-routing-tools (benchmark family directories stay
+# empty: opt in per family, see "Benchmark family repositories")
 git clone git@github.com:ANR-MAMUT/MAMUT-routing.git
 cd MAMUT-routing
 git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools
@@ -135,7 +138,7 @@ uv sync
 The whole publish is three chained steps: fetch the data, install, build, then serve:
 
 ```bash
-git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Poryos2026 benchmarks/Mamut2026 \
+git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools benchmarks/Sintef2008 benchmarks/Dimacs2021 benchmarks/Ortec2022 benchmarks/Dabia2013 benchmarks/Poryos2026 benchmarks/Mamut2026 \
   && uv sync \
   && uv run mamut-routing-publish site build \
   && uv run mamut-routing-publish serve
@@ -147,7 +150,7 @@ git submodule update --init --recursive MAMUT-routing-lib MAMUT-routing-tools be
 
 The documentation site is a `site build` phase too: `docs/` + `mkdocs.yml` render into `dist/docs/` (served under `/docs/`, linked from the site header) with the docs toolchain that `uv sync` installs by default (`docs` dependency group). `site docs` rebuilds the documentation alone, `--skip-docs` skips the phase, and `uv run mkdocs serve` gives a live-reloading preview while writing. The build is strict: a broken link or a missing page fails it, and the `Docs` GitHub Actions workflow runs the same build on every push. Failed builds include the underlying warnings in the error message, including with `--quiet`. Pages shared with the website and documentation, such as `AUTHORS.md`, must use absolute GitHub URLs for repository files such as `CITATION.cff` so their links work at every published location.
 
-Initialize more satellite submodules first to publish more families; `dist/` is fully static, so any web server can serve it instead of the last step.
+Initialize more family submodules first to publish more families. `dist/` is fully static, so any web server can serve it instead of the last step.
 
 ### CLI variants
 

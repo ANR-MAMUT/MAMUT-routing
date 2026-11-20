@@ -6,7 +6,7 @@ These pages are the guided tour.
 
 | Page | Covers |
 |---|---|
-| [Layouts, naming and pins](layouts.md) | classic and collection trees, `mamut-collection.json`, file names, sha256-pinned sidecar references |
+| [Layouts, naming and pins](layouts.md) | the 2 layout versions of the family collections, `mamut-collection.json`, file names, sha256-pinned sidecar references |
 | [Static instances](instances.md) | CVRP and VRPTW `.vrp.json`, embedded versus slim (collection) instances, arc-cost sources, metadata |
 | [Time-dependent instances](time-dependent.md) | the `td` block and its three travel models, ATF sidecars, IGP profiles, road graphs and traffic overlays, the piecewise-linear primitive |
 | [Distances and geo sidecars](sidecars.md) | the distance matrix and the map-drawing sidecar |

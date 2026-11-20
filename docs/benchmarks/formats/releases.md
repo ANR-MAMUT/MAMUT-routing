@@ -5,12 +5,13 @@
 
 ## Archives
 
-Two shapes, both with entry paths relative to the repository root (`benchmarks/...`):
+One archive per family, with entry paths relative to the repository root (`benchmarks/...`):
 
 | Scope | File name | Content |
 |---|---|---|
-| `problem_family` | `<ProblemType>-<Family>-snapshot-<snapshot-id>.zip` | the classic `benchmarks/<ProblemType>/<Family>/` tree (instances, BKS, sidecars) |
-| `family_collection` | `<Family>-snapshot-<snapshot-id>.zip` | a whole family-first collection `benchmarks/<Family>/`: every problem type, the shared `sidecars/`, the `mamut-collection.json` marker, README, LICENSE, CHANGELOG |
+| `family_collection` | `<Family>-snapshot-<snapshot-id>.zip` | a whole family collection `benchmarks/<Family>/`: every problem type, the shared `sidecars/`, the `mamut-collection.json` marker, README, LICENSE, CHANGELOG, CITATION.cff |
+
+The `problem_family` scope (`<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`, one problem type of one family in the former `benchmarks/<ProblemType>/<Family>/` tree) is found only in snapshots published for mamut-routing-lib 0.12 or earlier. The publisher no longer writes it, and the lib refuses to extract it since 0.13.
 
 A collection asset has `problem_type: null`; its sidecars resolve by walking up from an instance to the marker, so
 the extracted tree works wherever it lands. Files a family ships as sha256 pins rather than bytes are pins in the
@@ -25,11 +26,7 @@ and `*.partial` temp files are skipped, so a release built from a fetched tree i
 
 ## Extraction (`remote fetch`, lib ≥ 0.12.0)
 
-`mamut-routing --benchmarks-dir <bd> remote fetch …` keeps each archive at `<bd>/<filename>` and extracts the
-subtree under the asset's `archive_root` into the **canonical tree**: `benchmarks/VRPTW/Sintef2008` lands at
-`<bd>/VRPTW/Sintef2008`, a collection `benchmarks/Poryos2026` at `<bd>/Poryos2026`. `mamut-routing list`,
-`discover_benchmark_instances(<bd>)` and the website then give the same instance IDs. `extract_release_archive`
-does the work:
+`mamut-routing --benchmarks-dir <bd> remote fetch …` keeps each archive at `<bd>/<filename>` and extracts the subtree under the asset's `archive_root` into the **canonical tree**: `benchmarks/Sintef2008` lands at `<bd>/Sintef2008`, `benchmarks/Poryos2026` at `<bd>/Poryos2026`. `mamut-routing list`, `discover_benchmark_instances(<bd>)` and the website then give the same instance IDs. `extract_release_archive` does the work:
 
 - every member is validated first (relative, no `..`, inside `archive_root`; the root is inferred when an older
   manifest lacks it);

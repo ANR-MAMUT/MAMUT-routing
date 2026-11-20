@@ -41,7 +41,7 @@ pre-rename clone: `git -C <path> remote set-url origin <new url>` then `git subm
 The private deploy superproject can be pushed to the host directly over ssh
 (`git push ssh://<host>/<path> main:refs/remotes/local-push/main`, then fast-forward there).
 
-**Satellite directories are empty after a clone.** Expected: `git submodule update --init <path>` per family.
+**Family directories are empty after a clone.** Expected: `git submodule update --init <path>` per family.
 
 ## Deployments
 

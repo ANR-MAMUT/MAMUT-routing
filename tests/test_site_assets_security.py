@@ -86,8 +86,8 @@ def test_a_path_cannot_leave_the_attribute() -> None:
 @node
 def test_real_paths_are_unchanged() -> None:
     assert (
-        _run("/benchmarks/vrptw/", 'artifactHref("benchmarks/VRPTW/Sintef2008/n=100/C101.vrp.json")')
-        == "../VRPTW/Sintef2008/n=100/C101.vrp.json"
+        _run("/benchmarks/vrptw/", 'artifactHref("benchmarks/Sintef2008/VRPTW/n=100/C101.vrp.json")')
+        == "../Sintef2008/VRPTW/n=100/C101.vrp.json"
     )
     assert _run("/benchmarks/vrptw/sintef2008/", 'routeHref("/benchmarks/vrptw/sintef2008/n=100/")') == "n=100/index.html"
 

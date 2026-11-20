@@ -234,8 +234,8 @@ def _python_cases() -> tuple[dict, dict]:
             }.items()
         },
         "filenames": [
-            ["benchmarks/VRPTW/Sintef2008/n=400/R1_4_6.vrp.json", "explicit"],
-            ["benchmarks/VRPTW/Sintef2008/n=400/R1_4_6.vrp.json", "solomon"],
+            ["benchmarks/Sintef2008/VRPTW/n=400/R1_4_6.vrp.json", "explicit"],
+            ["benchmarks/Sintef2008/VRPTW/n=400/R1_4_6.vrp.json", "solomon"],
         ],
     }
     assert euclidean_arc_costs(mamut_euclid["coordinates"])[0][1] == round((503.874011**2 + 66.822412**2) ** 0.5, 3)

@@ -1,34 +1,40 @@
 # Layouts, naming and pins
 
-## Two trees
+## The 2 layout versions
 
-**Classic (problem-type first).** Historic families and the in-repo defaults:
-
-```
-benchmarks/<ProblemType>/<Family>/n=<N>/
-    <base>.vrp.json                       the instance
-    <base>.bks.<ObjectiveFunction>.json   one BKS per objective
-    <base>.atf.json[.gz]                  TD families: the arrival-time functions (or an IGP sidecar)
-    <base>.vrp                            optional committed CVRPLIB copy (n <= 200 CVRP only)
-```
-
-Sidecar references inside an instance are relative to the instance file.
-
-**Family-first collection.** Generated collections (Poryos2026, Mamut2026) hold every problem-type layer of the same
-base instances plus their shared sidecars, rooted by a marker:
+Every family is a **collection** at `benchmarks/<Family>/`, rooted by a marker. The marker's `layout_version` says how the paths below the root are shaped:
 
 ```
 benchmarks/<Family>/
-    mamut-collection.json                 {"format": "mamut-collection", "format_version": 1, "family": "<Family>", "layout_version": 1}
-    CVRP/<metric>/n=<N>/<base>.vrp.json   euclidean | shortest | fastest
-    VRPTW/<tw-set>/...  TDVRP/...  TDVRPTW/...
+    mamut-collection.json                 {"format": "mamut-collection", "format_version": 1, "family": "<Family>", "layout_version": 1 | 2}
+    README.md, LICENSE, CHANGELOG.md, CITATION.cff    one set for all the problem types of the family
+    sidecars/                             sidecars shared by the problem-type trees, when the family has any
+```
+
+**Layout 2 (classic families).** Sintef2008, Dimacs2021, Ortec2022, Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026 and Blauth2024:
+
+```
+benchmarks/<Family>/<ProblemType>/[<subset>/]n=<N>/
+    <base>.vrp.json                       the instance
+    <base>.bks.<ObjectiveFunction>.json   one BKS per objective
+benchmarks/<Family>/sidecars/n=<N>/
+    <base>.atf.json[.gz]                  TD families: the arrival-time functions (or an IGP sidecar), shared by the TDVRPTW and TDVRP twins
+```
+
+The optional `<subset>` directory sits between the problem type and the size (`final` and `public` for Ortec2022, `S1` to `S3` for Lera2026).
+
+**Layout 1 (generated collections).** Poryos2026 and Mamut2026 hold every problem-type layer of the same base instances plus their shared sidecars:
+
+```
+benchmarks/<Family>/
+    CVRP/<metric>/<city>/n=<N>/<base>/<base>.vrp.json                   euclidean | shortest | fastest
+    CVRP/<metric>/<city>/n=<N>/<base>/<base>.vrp                        optional committed CVRPLIB copy (n <= 200 CVRP only)
+    VRPTW/<metric>/<city>/n=<N>/<base>/<base>[-tw-<set>].vrp.json
+    TDVRP/<city>/n=<N>/<base>/<subinstance>/<base>-<subinstance>.vrp.json   (TDVRPTW alike)
     sidecars/{geo,road,distances,traffic,...}/
 ```
 
-Sidecar references inside a collection instance are **relative to the collection root**
-(`mamut_routing_lib.sidecars.find_collection_root` walks up to the marker). Discovery (`discover_benchmark_instances`)
-parses either layout (`parse_layout`, `parse_collection_layout`) and yields `DiscoveredBenchmarkInstance` records
-(problem type, family, metric variant, place, size, subset, time-window set, instance id and name, path).
+Sidecar references inside an instance are **relative to the collection root**, in both layouts (`mamut_routing_lib.sidecars.find_collection_root` walks up to the marker). Discovery (`discover_benchmark_instances`) parses every path with `parse_collection_layout` under the layout version of its marker, refuses a file outside any collection, and yields `DiscoveredBenchmarkInstance` records (problem type, family, metric variant, place, size, subset, time-window set, instance id and name, path). The problem-type-first layout (`benchmarks/<ProblemType>/<Family>/...`) was read up to mamut-routing-lib 0.12.
 
 ## Names
 

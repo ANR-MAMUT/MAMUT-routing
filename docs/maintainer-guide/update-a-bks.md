@@ -98,11 +98,10 @@ cost (a dust-level difference needs an explanatory `note`).
    uv run mamut-routing-publish site materialize-route-geometry --jobs 1
    ```
    Do it locally, not on the site VM (a large city graph can exceed 15 GiB); the deploy reuses the cache by content.
-2. **Changelog** of the family (satellite or in-repo), with the source of the improvement.
+2. **Changelog** of the family (at the root of its repository), with the source of the improvement.
 3. **Publish.** The history ledger counts the BKS as `improved`; regressions are impossible by construction but a
    removed file shows up as `removed`.
 
 ## Contributions from outside
 
-Point contributors to the FAQ's contribution section: a pull request on the satellite (or an issue with the solution
-file) is enough. Run the checker on their file yourself before merging; never trust a reported cost.
+Point contributors to the FAQ's contribution section: a pull request on the family repository (or an issue with the solution file) is enough. Run the checker on their file yourself before merging; never trust a reported cost.

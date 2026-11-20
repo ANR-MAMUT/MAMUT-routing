@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME
+from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME, load_collection_marker
 
 
 ROUTE_GEOMETRY_FORMAT = "mamut-bks-geometry"
@@ -303,10 +303,14 @@ def _discover_pending(
     # Every collection, not just the first one that needed this. A collection is
     # marked by its ``mamut-collection.json``; hardcoding one family's directory
     # here silently left the others rendering straight lines between customers no
-    # matter how many validated solutions they carried.
+    # matter how many validated solutions they carried. Only layout-1 collections
+    # (Poryos2026 shape: metric, place, base instance) carry geo sidecars. The
+    # classic families (layout 2) have no road geometry, and skipping them here
+    # spares reading every one of their instance files.
     collection_roots = sorted(
         marker.parent
         for marker in (output_repo_dir / "benchmarks").glob("*/" + COLLECTION_MARKER_FILENAME)
+        if load_collection_marker(marker).layout_version == 1
     )
     pending: list[_PendingBks] = []
     reused = 0

@@ -83,4 +83,4 @@ smoke test.
 - Route geometry for new or replaced BKS: compute locally, copy `dist/route-geometry-cache` into the release
   directory (tar over ssh), let the build reuse it.
 - Free disk (`df -h`) and memory (`free -m`) first; never unpack archives under a tmpfs `/tmp`.
-- New satellite: initialise it on the host with HTTPS remotes if the host has no GitHub key.
+- New family repository: initialise it on the host with HTTPS remotes if the host has no GitHub key.

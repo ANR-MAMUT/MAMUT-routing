@@ -1,8 +1,7 @@
 # 3. Load an instance and check a solution
 
 The library is the contract: pydantic models for instances, solutions and BKS, and the checkers that define what a
-valid solution costs. This tutorial uses Sintef2008, an in-repo VRPTW family whose BKS are stored under the
-`HierarchicalVehicleCost` objective.
+valid solution costs. This tutorial uses Sintef2008, a VRPTW family whose BKS are stored under the `HierarchicalVehicleCost` objective. In the checkout, its submodule must be initialised (`git submodule update --init benchmarks/Sintef2008`, see [step 2](install.md)).
 
 ```python
 from pathlib import Path

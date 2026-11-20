@@ -20,7 +20,7 @@ def _committed_vrp_files() -> list[Path]:
     return sorted(path for path in BENCHMARKS.rglob("*.vrp") if path.with_name(f"{path.name}.json").is_file())
 
 
-@pytest.mark.skipif(not _committed_vrp_files(), reason="no committed .vrp files (benchmark satellites not checked out)")
+@pytest.mark.skipif(not _committed_vrp_files(), reason="no committed .vrp files (benchmark family repositories not checked out)")
 def test_export_reproduces_every_committed_vrp_byte_for_byte(tmp_path: Path) -> None:
     mismatches: list[str] = []
     for committed in _committed_vrp_files():
