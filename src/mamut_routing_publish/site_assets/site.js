@@ -2667,8 +2667,10 @@ function formatScheduleTime(value) {
   return value.toFixed(2);
 }
 
-function routeFunctionsHref(routeFunctionsPath) {
-  const normalized = routeFunctionsPath.startsWith("/") ? routeFunctionsPath : `/${routeFunctionsPath}`;
+// A JSON file published next to an instance page (route functions, timelines),
+// addressed by its route-relative payload path.
+function payloadSidecarHref(payloadPath) {
+  const normalized = payloadPath.startsWith("/") ? payloadPath : `/${payloadPath}`;
   return relativeFromCurrent(`${resolvePayloadStaticRoot()}${normalized}`, { directory: false });
 }
 
@@ -2852,7 +2854,7 @@ async function renderInstancePage(payload, options = {}) {
 
     if (selectedEntry?.route_functions_path && routeFunctionsStatus === "idle") {
       routeFunctionsStatus = "loading";
-      fetchJsonMemo(routeFunctionsHref(selectedEntry.route_functions_path))
+      fetchJsonMemo(payloadSidecarHref(selectedEntry.route_functions_path))
         .then((data) => {
           routeFunctionsData = data;
           routeFunctionsStatus = "ready";
@@ -3594,8 +3596,56 @@ function projectEnuInstanceCoordinates(payload) {
   };
 }
 
+/* MapLibre refuses latitudes past ±90 and Web Mercator stops at ±85.0511°. */
+const MERCATOR_MAX_LATITUDE = 85.0511;
+
+function isPlanarInstance(payload) {
+  const coordinates = Array.isArray(payload?.coordinates) ? payload.coordinates : [];
+  const outOfRange = coordinates.some((point) => Array.isArray(point)
+    && (Math.abs(Number(point[0])) > 180 || Math.abs(Number(point[1])) > MERCATOR_MAX_LATITUDE));
+  // Collection instances with a place carry reference_lla (ENU metres). Of the others, Solomon,
+  // Gehring-Homberger and most TD families publish planar x, y; Blauth2024 publishes real
+  // longitudes and latitudes and declares it (metadata.coordinates_convention): it stays on its city.
+  const declaresLonLat = /wgs\s*84|longitude/i.test(String(payload?.metadata?.coordinates_convention || ""));
+  const collectionWithoutPlace = !payload?.reference_lla && !declaresLonLat
+    && Boolean(payload?.benchmark_name || payload?.instance_origin);
+  return outOfRange || collectionWithoutPlace;
+}
+
+/* Planar instances (x, y with no place) are drawn in a synthetic frame: the plane scaled
+   into about one degree around (0, 0), open sea on every basemap. The original x, y stay
+   in planarCoordinates, for the popups. Leaflet used to draw them unprojected; MapLibre
+   throws on such coordinates. Geographic instances pass through unchanged. */
+function withPlanarDisplayFrame(payload) {
+  if (!payload || !Array.isArray(payload.coordinates) || payload.coordinates.length === 0 || !isPlanarInstance(payload)) {
+    return payload;
+  }
+  const points = payload.coordinates.map((point) => [Number(point?.[0]), Number(point?.[1])]);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  points.forEach(([x, y]) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  });
+  if (!Number.isFinite(minX)) return payload;
+  const scale = 1 / (Math.max(maxX - minX, maxY - minY) || 1);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  return {
+    ...payload,
+    coordinates: points.map(([x, y]) => [(x - centerX) * scale, (y - centerY) * scale]),
+    planarCoordinates: payload.coordinates,
+    planar: true,
+  };
+}
+
 function parseUploadedInstanceJson(payload, fileName) {
-  const projected = projectEnuInstanceCoordinates(payload);
+  const projected = withPlanarDisplayFrame(projectEnuInstanceCoordinates(payload));
   const coordinates = Array.isArray(projected?.coordinates)
     ? projected.coordinates.map(normalizeGeometryPoint)
     : [];
@@ -3609,6 +3659,7 @@ function parseUploadedInstanceJson(payload, fileName) {
     capacity: Number.isFinite(Number(payload.vehicle_capacity)) ? Number(payload.vehicle_capacity) : Number(payload.capacity) || null,
     depot: Number.isFinite(Number(payload.depot)) ? Number(payload.depot) : 0,
     coordinates,
+    ...(projected.planar ? { planar: true, planarCoordinates: projected.planarCoordinates } : {}),
     demands: Array.isArray(payload.demands) ? payload.demands.map((value) => Number(value) || 0) : Array.from({ length: coordinates.length }, () => 0),
   };
 }
@@ -4252,6 +4303,8 @@ export {
   parseUploadedMetaText,
   projectEnuInstanceCoordinates,
   parseUploadedSolutionText,
+  withPlanarDisplayFrame,
+  payloadSidecarHref,
   relativeFromCurrent,
   renderVrpExportChips,
   resolvePreviewGeometry,

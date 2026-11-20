@@ -1,10 +1,10 @@
 const body = document.body;
 const runtimeParams = new URLSearchParams(window.location.search);
 const CANONICAL_WORKBENCH_ROUTE = "/workbench/";
-// Leaflet's canvas renderer needs concrete color values, so the twenty route colors
-// are resolved from the live theme rather than set in CSS; a theme change redraws.
-// They live in nocturne-tokens.css as --route-0…19 and are read through nocturne.js,
-// so this file no longer carries its own copy of the palette.
+// The map is MapLibre GL, driven through the shared kit in mamut-map.js. Route and
+// marker colours are resolved from the live theme (nocturne-tokens.css --route-0…19
+// read through nocturne.js) and handed to the map as feature-state, so a theme change
+// recolours without rebuilding any geometry.
 
 function isDarkTheme() {
   return document.documentElement.dataset.theme === "dark";
@@ -16,39 +16,13 @@ function routeColor(routeIndex) {
 }
 
 // Depot / unassigned-customer marker colors mirror the theme tokens (--acc,
-// --mut in site.css); canvas markers cannot consume CSS variables directly.
+// --mut in site.css); map paint values cannot consume CSS variables directly.
 function themeMarkerColors() {
   return isDarkTheme()
     ? { depot: "#9d8bff", unassigned: "#8d92b8" }
     : { depot: "#5b43e8", unassigned: "#6f6f92" };
 }
 
-// Five-pointed star polygon, first point up, as an SVG "points" string. Used for
-// the depot marker so it stays distinguishable from the customer dots.
-function starPoints(centerX, centerY, outerRadius, innerRatio = 0.42, spikes = 5) {
-  const innerRadius = outerRadius * innerRatio;
-  const points = [];
-  for (let index = 0; index < spikes * 2; index += 1) {
-    const radius = index % 2 === 0 ? outerRadius : innerRadius;
-    const angle = -Math.PI / 2 + (index * Math.PI) / spikes;
-    points.push(`${(centerX + radius * Math.cos(angle)).toFixed(2)},${(centerY + radius * Math.sin(angle)).toFixed(2)}`);
-  }
-  return points.join(" ");
-}
-
-// Leaflet has no star marker, so the depot star is a divIcon holding an inline
-// SVG; the outline keeps it readable over dark route lines and road tiles.
-function depotStarIcon(color) {
-  const size = 26;
-  const outline = isDarkTheme() ? "rgba(12, 14, 32, 0.85)" : "rgba(255, 255, 255, 0.9)";
-  return L.divIcon({
-    className: "depot-star-marker",
-    html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><polygon points="${starPoints(12, 12, 11)}" fill="${color}" fill-opacity="0.95" stroke="${outline}" stroke-width="1.4" stroke-linejoin="round" /></svg>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -size / 2],
-  });
-}
 const MODE_BY_ROUTE = new Map([
   ["/workbench/", "catalog"],
   ["/workbench/catalog/", "catalog"],
@@ -145,10 +119,12 @@ const {
   parseUploadedInstanceText,
   parseUploadedMetaText,
   parseUploadedSolutionText,
+  payloadSidecarHref,
   projectEnuInstanceCoordinates,
   resolvePreviewGeometry,
   routeHref,
   setupThemeToggle,
+  withPlanarDisplayFrame,
 } = siteHelpers;
 
 const tabVisualize = document.getElementById("tabVisualize");
@@ -190,103 +166,48 @@ const statsEl = document.getElementById("stats");
 const toastEl = document.getElementById("toast");
 const routeSelectorCard = document.getElementById("routeSelectorCard");
 const routeSelectorContainer = document.getElementById("routeSelectorContainer");
-const map = L.map("map", { zoomControl: true, maxZoom: 20 }).setView([48.8566, 2.3522], 11);
-const routeCanvasRenderer = L.canvas({ padding: 0.35, tolerance: 5 });
+const tripsBarEl = document.getElementById("tripsBar");
+// deck.gl is fetched only when an animation is first opened.
+const DECK_SRC = new URL("./vendor/deck.gl/dist.min.js", import.meta.url).href;
+// Animated paths are thinned harder than the static map: deck redraws every vertex
+// each frame (~60 fps at 500 k on Bogota's 509 routes, ~27 fps at 1.1 M).
+const TRIPS_VERTEX_BUDGET = 500000;
 
 // Basemaps. OpenStreetMap raster tiles are always available and need no key.
-// The CARTO Positron / Dark Matter basemaps are vector styles rendered by
-// MapLibre GL inside Leaflet (maplibre-gl-leaflet plugin, vendored). They need
-// the CARTO basemaps API key that `site build --basemap-api-key` (or the
+// The CARTO Positron / Dark Matter basemaps are vector styles; they need the CARTO
+// basemaps API key that `site build --basemap-api-key` (or the
 // MAMUT_BASEMAP_API_KEY environment variable) writes into this page as the
-// data-basemap-api-key attribute, plus WebGL. Without either, the map runs on
-// OpenStreetMap only. CARTO's free tier requires both CARTO and OpenStreetMap
-// to stay credited on the map (https://carto.com/attributions).
-const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
+// data-basemap-api-key attribute. Without it, the map runs on OpenStreetMap only.
+// CARTO's free tier requires both CARTO and OpenStreetMap to stay credited on the
+// map (https://carto.com/attributions); mamut-map.js sets that attribution.
 const basemapApiKey = body.dataset.basemapApiKey || "";
-
-function cartoStyleUrl(styleName, key) {
-  return `https://basemaps.cartocdn.com/gl/${styleName}/style.json?key=${encodeURIComponent(key)}`;
-}
-
-function withBasemapKey(url, key) {
-  // MapLibre transformRequest: every request to a CARTO basemap host carries
-  // the key (sprite, glyphs, tiles.json, tiles), not only the style document.
-  if (!key) return { url };
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { url };
-  }
-  const host = parsed.hostname;
-  const isCarto = host === "basemaps.cartocdn.com" || host.endsWith(".basemaps.cartocdn.com");
-  if (!isCarto || parsed.searchParams.has("key")) return { url };
-  parsed.searchParams.set("key", key);
-  return { url: parsed.toString() };
-}
-
-function webglAvailable() {
-  try {
-    const canvas = document.createElement("canvas");
-    return Boolean(window.WebGLRenderingContext && (canvas.getContext("webgl2") || canvas.getContext("webgl")));
-  } catch {
-    return false;
-  }
-}
-
-function cartoVectorLayer(styleName, key) {
-  return L.maplibreGL({
-    style: cartoStyleUrl(styleName, key),
-    transformRequest: (url) => withBasemapKey(url, key),
-    interactive: false,
-    maxZoom: 20,
-    attributionControl: { customAttribution: CARTO_ATTRIBUTION },
-  });
-}
-
-const osmBaseLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: OSM_ATTRIBUTION,
+const leftPanelEl = document.querySelector(".wb-panel-left");
+const rightPanelEl = document.querySelector(".wb-panel-right");
+const mapController = window.MamutMap.createMap(document.getElementById("map"), {
+  center: [2.3522, 48.8566],
+  zoom: 10,
+  apiKey: basemapApiKey,
+  dark: isDarkTheme(),
 });
-const cartoBasemapsEnabled = Boolean(basemapApiKey) && typeof L.maplibreGL === "function" && webglAvailable();
-if (!cartoBasemapsEnabled) {
-  console.info(
-    basemapApiKey
-      ? "CARTO basemaps disabled: WebGL is unavailable, using OpenStreetMap tiles."
-      : "CARTO basemaps disabled: no basemap API key was configured at build time, using OpenStreetMap tiles.",
-  );
-}
-const positronBaseLayer = cartoBasemapsEnabled ? cartoVectorLayer("positron-gl-style", basemapApiKey) : null;
-const darkMatterBaseLayer = cartoBasemapsEnabled ? cartoVectorLayer("dark-matter-gl-style", basemapApiKey) : null;
-
-function themedDefaultBaseLayer() {
-  return (isDarkTheme() ? darkMatterBaseLayer : positronBaseLayer) || osmBaseLayer;
+const map = mapController?.map || null;
+if (!map) {
+  const notice = document.createElement("p");
+  notice.className = "map-unavailable";
+  notice.textContent = "The map needs WebGL, which this browser does not provide. Instance details and routes are still listed in the panels.";
+  document.getElementById("map").appendChild(notice);
 }
 
-// The theme picks the matching CARTO base by default; OpenStreetMap stays
-// available in the layer control. A manual pick is respected until the user
-// toggles the theme again.
-let activeBaseLayer = themedDefaultBaseLayer();
-activeBaseLayer.addTo(map);
-map.on("baselayerchange", (event) => {
-  activeBaseLayer = event.layer;
-});
-const baseLayers = { OpenStreetMap: osmBaseLayer };
-if (cartoBasemapsEnabled) {
-  baseLayers.Positron = positronBaseLayer;
-  baseLayers["Dark Matter"] = darkMatterBaseLayer;
+// The theme picks the matching CARTO basemap; a manual OpenStreetMap pick sticks
+// across theme toggles, a manual CARTO pick follows the theme again.
+function themedBasemapForCurrentChoice() {
+  if (!mapController || mapController.basemaps.current === "osm") return null;
+  return window.MamutMap.themedBasemapId(isDarkTheme(), basemapApiKey);
 }
-L.control.layers(baseLayers, null, { position: "topright", collapsed: true }).addTo(map);
 
-// Redraw markers/routes (canvas colors are resolved per theme) and swap the
-// theme-default base layer when the Nocturne theme toggles.
 new MutationObserver(() => {
-  const themedDefault = themedDefaultBaseLayer();
-  if (cartoBasemapsEnabled && activeBaseLayer !== themedDefault && activeBaseLayer !== osmBaseLayer) {
-    map.removeLayer(activeBaseLayer);
-    themedDefault.addTo(map);
-    activeBaseLayer = themedDefault;
+  const themed = themedBasemapForCurrentChoice();
+  if (themed && themed !== mapController.basemaps.current) {
+    mapController.basemaps.set(themed);
   }
   renderVisualState({ fitMap: false });
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -350,12 +271,16 @@ const state = {
     vrpJsonPayload: null,
     vrpFileName: null,
   },
-  layers: {
-    marker: L.layerGroup().addTo(map),
-    route: L.layerGroup().addTo(map),
-    arrow: L.layerGroup().addTo(map),
-    preview: L.layerGroup().addTo(map),
-  },
+  // Routes, arrows, customers and depot on the map (mamut-map.js). Null without WebGL.
+  solutionLayers: map
+    ? window.MamutMap.createSolutionLayers(map, { interaction: "click", nodeRadius: 5, depotRadius: 7, describe: describeMapFeature })
+    : null,
+  // The last geometry handed to the map, so a view-only change (focus, slider, hide)
+  // restyles through feature-state instead of rebuilding millions of points.
+  mapData: { key: null, geometry: null },
+  // The open route animation (mamut-trips.js), if any.
+  animation: null,
+  animationLoading: false,
   view: {
     visualShouldFit: false,
   },
@@ -363,7 +288,7 @@ const state = {
 
 function refreshMapSize() {
   window.requestAnimationFrame(() => {
-    map.invalidateSize();
+    map?.resize();
   });
 }
 
@@ -692,10 +617,10 @@ function visibleRouteIndices(routes, instanceData) {
 }
 
 function clearMapLayers() {
-  state.layers.marker.clearLayers();
-  state.layers.route.clearLayers();
-  state.layers.arrow.clearLayers();
-  state.layers.preview.clearLayers();
+  closeRouteAnimation();
+  state.solutionLayers?.closePopup();
+  state.solutionLayers?.clear();
+  state.mapData = { key: null, geometry: null, pushed: false };
 }
 
 function requestVisualFit() {
@@ -781,6 +706,7 @@ function buildRouteSelector(routes, instanceData) {
         <button type="button" data-route-action="show">Show all</button>
         <button type="button" data-route-action="hide">Hide all</button>
         <button type="button" data-route-action="reset">Reset routes</button>
+        <button type="button" data-route-action="animate"${map ? "" : " disabled"} aria-pressed="${animationPlaying() ? "true" : "false"}">${animationPlaying() ? "Stop animation" : "Animate"}</button>
       </div>
     </div>
     <label class="field route-search-field"><span>Find route</span><input class="route-view-search" type="search" value="${escapeHtml(state.routeView.search)}" placeholder="Route number" /></label>
@@ -809,6 +735,10 @@ function buildRouteSelector(routes, instanceData) {
   });
   routeSelectorContainer.querySelectorAll("[data-route-action]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.routeAction === "animate") {
+        void toggleRouteAnimation();
+        return;
+      }
       if (button.dataset.routeAction === "show") filtered.forEach((index) => state.hiddenRoutes.delete(index));
       if (button.dataset.routeAction === "hide") filtered.forEach((index) => state.hiddenRoutes.add(index));
       if (button.dataset.routeAction === "reset") {
@@ -840,8 +770,7 @@ function buildRouteSelector(routes, instanceData) {
   routeSelectorContainer.querySelector(".route-view-opacity").addEventListener("input", (event) => {
     state.routeView.fadedOpacity = Number(event.target.value);
     routeSelectorContainer.querySelector(".route-view-opacity-value").textContent = `${Math.round(state.routeView.fadedOpacity * 100)}%`;
-    redrawRoutesOnly();
-    if (state.routeView.customersFollowRoutes) redrawCustomersOnly();
+    applyMapView();
   });
   routeSelectorContainer.querySelector(".route-view-render").addEventListener("change", (event) => {
     state.routeView.renderMode = event.target.value;
@@ -850,7 +779,7 @@ function buildRouteSelector(routes, instanceData) {
   routeSelectorContainer.querySelector(".route-view-depot-opacity").addEventListener("input", (event) => {
     state.routeView.depotLegOpacity = Number(event.target.value);
     routeSelectorContainer.querySelector(".route-view-depot-opacity-value").textContent = `${Math.round(state.routeView.depotLegOpacity * 100)}%`;
-    redrawRoutesOnly();
+    applyMapView();
   });
   routeSelectorContainer.querySelector(".route-view-customers").addEventListener("change", (event) => {
     state.routeView.customersFollowRoutes = event.target.checked;
@@ -858,65 +787,12 @@ function buildRouteSelector(routes, instanceData) {
   });
   routeSelectorContainer.querySelector(".route-view-arrows").addEventListener("change", (event) => {
     state.routeView.arrowsEnabled = event.target.checked;
-    redrawRoutesOnly();
+    applyMapView();
   });
   routeSelectorContainer.querySelector(".route-view-depot-star").addEventListener("change", (event) => {
     state.routeView.depotStar = event.target.checked;
     renderVisualState({ fitMap: false });
   });
-}
-
-function calculateBearing(from, to) {
-  const lat1 = (from.lat * Math.PI) / 180;
-  const lat2 = (to.lat * Math.PI) / 180;
-  const dLon = ((to.lng - from.lng) * Math.PI) / 180;
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
-
-function getArrowSpacing() {
-  const zoom = map.getZoom();
-  if (zoom >= 16) return 150;
-  if (zoom >= 14) return 300;
-  if (zoom >= 12) return 600;
-  if (zoom >= 10) return 1200;
-  return 2500;
-}
-
-function addArrowsToPolyline(polyline, color, opacity = 0.95) {
-  const latlngs = polyline.getLatLngs();
-  if (latlngs.length < 2) {
-    return;
-  }
-  const spacingMeters = getArrowSpacing();
-  let distSinceLastArrow = 0;
-  for (let index = 1; index < latlngs.length; index += 1) {
-    const from = latlngs[index - 1];
-    const to = latlngs[index];
-    if (from.lat === to.lat && from.lng === to.lng) {
-      continue;
-    }
-    const segmentDistance = map.distance(from, to);
-    if (segmentDistance < 3) {
-      continue;
-    }
-    distSinceLastArrow += segmentDistance;
-    if (distSinceLastArrow < spacingMeters) {
-      continue;
-    }
-    const overshoot = distSinceLastArrow - spacingMeters;
-    const interpolation = Math.max(0, Math.min(1, (segmentDistance - overshoot) / segmentDistance));
-    const bearing = calculateBearing(from, to);
-    const midpoint = L.latLng(from.lat + (to.lat - from.lat) * interpolation, from.lng + (to.lng - from.lng) * interpolation);
-    const icon = L.divIcon({
-      html: `<div style="transform: rotate(${bearing - 90}deg); transform-origin: 50% 50%; font-size: 10px; line-height: 10px; color: ${color}; font-weight: 700; opacity: ${Math.min(0.95, opacity).toFixed(3)};">▶</div>`,
-      className: "arrow-marker",
-      iconSize: [10, 10],
-    });
-    L.marker(midpoint, { icon }).addTo(state.layers.arrow);
-    distSinceLastArrow = 0;
-  }
 }
 
 function uploadedNodeCoordinatesFromMeta(instanceData, meta) {
@@ -1066,129 +942,244 @@ function customerMarkerOpacity(routeIndex, visibleRoutes, focusedRoute, fadedOpa
   return 1;
 }
 
-function drawCustomers(nodeCoordinates, routes, instanceData, options = {}) {
-  const bounds = [];
-  const markerColors = themeMarkerColors();
+// Solutions above this many route points are thinned (exact Douglas–Peucker at the
+// smallest tolerance that fits) before they reach MapLibre: handing GeoJSON to its
+// worker costs ~0.6 µs per point on the main thread, and the largest published
+// solution has 5 million. Ordinary instances stay at the 0.5 m ranking tolerance.
+const MAP_ROUTE_POINT_BUDGET = 1000000;
+
+function mapGeometryKey(visual) {
+  return [
+    state.sourceKind,
+    visual.instanceData,
+    visual.meta,
+    visual.bksData,
+    visual.routes,
+    state.routeView.renderMode,
+    cachedRoadRenderingAvailable(visual),
+  ];
+}
+
+function sameMapGeometryKey(left, right) {
+  return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+// The geometry for the current view, rebuilt only when the solution, its metadata
+// or the render mode changes; focus, sliders and visibility reuse it.
+function currentMapGeometry() {
+  const visual = currentVisualState();
+  const key = mapGeometryKey(visual);
+  if (state.mapData.geometry && sameMapGeometryKey(key, state.mapData.key)) {
+    return state.mapData.geometry;
+  }
+  // A new solution or render mode: an open animation would show the old routes. Only
+  // the render mode changed (the same solution, now on roads or straight lines): it is
+  // reopened on the new geometry.
+  const previousKey = state.mapData.key;
+  const reopen = animationPlaying() && Array.isArray(previousKey)
+    && key.slice(0, 5).every((value, index) => value === previousKey[index]);
+  closeRouteAnimation();
+  const geometry = buildVisualGeometry();
+  if (geometry) {
+    geometry.ranked = window.MamutMap.rankRouteLines(geometry.routeLines, { minTolerance: 0.5 });
+    geometry.mapRouteLines = window.MamutMap.thinRouteLines(geometry.ranked, MAP_ROUTE_POINT_BUDGET).routeLines;
+  }
+  state.mapData = { key, geometry, pushed: false };
+  if (reopen && geometry) {
+    setTimeout(() => {
+      if (!state.animation && sameMapGeometryKey(key, state.mapData.key)) toggleRouteAnimation();
+    }, 0);
+  }
+  return geometry;
+}
+
+function mapNodes(nodeCoordinates, routes, instanceData) {
+  const depotIndex = Number(instanceData.depot || 0);
   const customerToRoute = new Map();
   routes.forEach((route, routeIndex) => {
     route.forEach((stopIndex) => {
       customerToRoute.set(Number(stopIndex), routeIndex);
     });
   });
-  const visibleRoutes = visibleRouteIndices(routes, instanceData);
+  const nodes = [];
+  let depot = null;
   nodeCoordinates.forEach((coordinate, index) => {
     if (!Array.isArray(coordinate) || coordinate.length < 2) {
       return;
     }
-    const lat = Number(coordinate[1]);
-    const lon = Number(coordinate[0]);
-    const isDepot = index === Number(instanceData.depot || 0);
-    const routeIndex = customerToRoute.get(index);
-    const markerOpacity = isDepot
-      ? 1
-      : customerMarkerOpacity(
-        routeIndex,
-        visibleRoutes,
-        state.focusedRoute,
-        state.routeView.fadedOpacity,
-        state.routeView.customersFollowRoutes,
-      );
-    if (markerOpacity <= 0) return;
-    const color = isDepot
-      ? markerColors.depot
-      : Number.isInteger(routeIndex)
-        ? routeColor(routeIndex)
-        : markerColors.unassigned;
-    const marker = isDepot && state.routeView.depotStar
-      ? L.marker([lat, lon], { icon: depotStarIcon(color), interactive: true, keyboard: false })
-      : L.circleMarker([lat, lon], {
-        radius: isDepot ? 7 : 5,
-        color,
-        fillColor: color,
-        opacity: markerOpacity,
-        fillOpacity: 0.85 * markerOpacity,
-        weight: isDepot ? 2 : 1,
-      });
-    const demand = Number(instanceData.demands?.[index]) || 0;
-    const routeLabel = Number.isInteger(routeIndex) ? `#${routeIndex + 1}` : "Unassigned";
-    const routeDetail = isDepot ? "" : `<br/>Route: ${routeLabel}`;
-    marker.bindPopup(`<strong>${isDepot ? "Depot" : `Node ${index}`}</strong><br/>Demand: ${demand}${routeDetail}<br/>Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
-    marker.addTo(state.layers.marker);
-    bounds.push([lat, lon]);
+    const coord = [Number(coordinate[0]), Number(coordinate[1])];
+    if (index === depotIndex) {
+      depot = { index, coord };
+    } else {
+      nodes.push({ index, coord, routeIndex: customerToRoute.get(index) });
+    }
   });
-  if (options.fitBounds && bounds.length > 1) {
-    map.fitBounds(bounds, { padding: [20, 20] });
+  return { nodes, depot };
+}
+
+function syncMapData(geometry, visual) {
+  if (!state.solutionLayers || state.mapData.pushed) return;
+  const { nodes, depot } = mapNodes(geometry.nodeCoordinates, visual.routes, visual.instanceData);
+  state.solutionLayers.setData({ routeLines: geometry.mapRouteLines, nodes, depot });
+  state.mapData.pushed = true;
+}
+
+// Every view option is feature-state on data the map already holds: no geometry is
+// rebuilt here, which is what keeps sliders responsive on large solutions.
+function applyMapView() {
+  const visual = currentVisualState();
+  const geometry = state.mapData.geometry;
+  if (!state.solutionLayers || !visual.instanceData || !geometry) return;
+  const visibleRoutes = visibleRouteIndices(visual.routes, visual.instanceData);
+  const markerColors = themeMarkerColors();
+  state.solutionLayers.applyView({
+    visibleRoutes,
+    focusedRoute: state.focusedRoute,
+    fadedOpacity: state.routeView.fadedOpacity,
+    depotLegOpacity: state.routeView.depotLegOpacity,
+    routeMode: geometry.routeMode,
+    roadOpacity: 0.88,
+    customerOpacity: (routeIndex) => customerMarkerOpacity(
+      routeIndex,
+      visibleRoutes,
+      state.focusedRoute,
+      state.routeView.fadedOpacity,
+      state.routeView.customersFollowRoutes,
+    ),
+    arrowsEnabled: state.routeView.arrowsEnabled,
+    depotStar: state.routeView.depotStar,
+    palette: window.MamutNocturne.routeColors(),
+    depotColor: markerColors.depot,
+    unassignedColor: markerColors.unassigned,
+    dark: isDarkTheme(),
+    dim: animationPlaying() ? 0.35 : 1,
+  });
+  state.animation?.setView({ palette: window.MamutNocturne.routeColors(), visibleRoutes, focusedRoute: state.focusedRoute });
+}
+
+/* state.animation also holds the "needs WebGL2" notice, so that it closes with the solution;
+   only a real animation dims the routes and turns the button into "Stop animation". */
+function animationPlaying() {
+  return Boolean(state.animation && !state.animation.unavailable);
+}
+
+function closeRouteAnimation() {
+  const animation = state.animation;
+  state.animation = null;
+  animation?.close();
+}
+
+// Benchmarks publish a per-stop timeline (timeline.<Objective>.json) or, for TD
+// instances, td_schedules on the page; uploads have neither and animate at a
+// constant speed.
+async function routeTimelineForCurrentView() {
+  if (state.sourceKind !== "benchmark") return null;
+  const entry = state.benchmark.objectiveEntry;
+  if (entry?.timeline_path) {
+    try {
+      return await fetchJson(payloadSidecarHref(entry.timeline_path));
+    } catch (error) {
+      console.warn("Unable to load the route timeline; animating at constant speed.", error);
+      return null;
+    }
+  }
+  return window.MamutTrips.timelineFromTdSchedules(entry?.td_schedules);
+}
+
+// What the animation's note says when this page knows more than the clock name.
+function routeClockLabelsForCurrentView() {
+  if (state.sourceKind !== "benchmark") return {};
+  const summary = state.benchmark.payload?.summary || {};
+  const labels = {};
+  if (["TDVRP", "TDVRPTW"].includes(summary.problem_type) && !state.benchmark.objectiveEntry?.td_schedules?.length) {
+    // Large TD instances publish no schedule table (their arrival-time functions are not served).
+    labels.schematic = "Constant speed (25 km/h): this BKS's time-dependent schedule is not published at this instance size";
+  }
+  if (summary.metric_variant && summary.metric_variant !== "fastest") {
+    labels.free_flow_fastest = `Free-flow travel times of the fastest variant (this BKS is on the ${summary.metric_variant} metric); no service times`;
+  }
+  return labels;
+}
+
+async function toggleRouteAnimation() {
+  if (state.animation) {
+    closeRouteAnimation();
+    renderVisualState({ fitMap: false });
+    return;
+  }
+  const geometry = state.mapData.geometry;
+  if (!map || !geometry || state.animationLoading) return;
+  state.animationLoading = true;
+  const key = state.mapData.key;
+  try {
+    const timeline = await routeTimelineForCurrentView();
+    const visual = currentVisualState();
+    const animation = await window.MamutTrips.openAnimation(map, tripsBarEl, {
+      deckSrc: DECK_SRC,
+      routeLines: window.MamutMap.thinRouteLines(geometry.ranked, TRIPS_VERTEX_BUDGET).routeLines,
+      timeline,
+      palette: window.MamutNocturne.routeColors(),
+      visibleRoutes: visibleRouteIndices(visual.routes, visual.instanceData),
+      focusedRoute: state.focusedRoute,
+      clockLabels: routeClockLabelsForCurrentView(),
+      onClose: () => {
+        state.animation = null;
+        renderVisualState({ fitMap: false });
+      },
+    });
+    if (animation && !sameMapGeometryKey(key, state.mapData.key)) {
+      // The solution changed while deck.gl was loading.
+      animation.close();
+      return;
+    }
+    state.animation = animation;
+  } catch (error) {
+    console.error(error);
+    showToast(`Route animation unavailable: ${error.message || error}`);
+  } finally {
+    state.animationLoading = false;
+    renderVisualState({ fitMap: false });
   }
 }
 
-function drawRoutes(routeLines, routes, instanceData, routeMode) {
-  const visible = visibleRouteIndices(routes, instanceData);
-  const hasFocus = state.focusedRoute !== null && visible.has(state.focusedRoute);
-  routeLines.forEach((routeLine) => {
-    const routeIndex = routeLine.routeIndex;
-    if (!visible.has(routeIndex)) {
-      return;
-    }
-    const color = routeColor(routeIndex);
-    const focused = hasFocus && state.focusedRoute === routeIndex;
-    const baseOpacity = hasFocus && !focused ? state.routeView.fadedOpacity : (routeMode === "straight_line" ? 0.78 : 0.88);
-    if (baseOpacity <= 0) {
-      // Faded all the way out: skip the route entirely so it leaves behind
-      // neither arrows nor an invisible canvas hit target.
-      return;
-    }
-    const rawSegments = Array.isArray(routeLine.segments) && routeLine.segments.length > 0
-      ? routeLine.segments
-      : [routeLine.coordinates];
-    // A single merged polyline has no isolable depot legs; only a real per-arc
-    // segment list lets us single out the first and last hop.
-    const hasSeparableLegs = rawSegments.length > 1;
-    rawSegments.forEach((segment, segmentIndex) => {
-      const isDepotLeg = hasSeparableLegs && (segmentIndex === 0 || segmentIndex === rawSegments.length - 1);
-      const depotLegOpacity = routeMode === "straight_line" && isDepotLeg
-        ? Math.max(0, Math.min(1, state.routeView.depotLegOpacity))
-        : 1;
-      if (depotLegOpacity <= 0) {
-        return;
-      }
-      const opacity = Math.min(baseOpacity, depotLegOpacity);
-      const latlngs = segment
-        .filter((point) => Array.isArray(point) && point.length >= 2)
-        .map((point) => [Number(point[1]), Number(point[0])]);
-      if (latlngs.length < 2) {
-        return;
-      }
-      const polyline = L.polyline(latlngs, {
-        renderer: routeCanvasRenderer,
-        color,
-        weight: focused ? 5 : 3,
-        opacity,
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(state.layers.route);
-      polyline.bindPopup(`Route #${routeIndex + 1}<br/>Stops: ${routes[routeIndex]?.length ?? "?"}`);
-      if (state.routeView.arrowsEnabled) {
-        addArrowsToPolyline(polyline, color, opacity);
-      }
-    });
+function fitMapToSolution() {
+  if (!map || !state.solutionLayers) return;
+  window.MamutMap.fitToBounds(map, state.solutionLayers.bounds(), [leftPanelEl, rightPanelEl]);
+}
+
+// Popup bodies are built as text nodes: nothing a data file contains is parsed as HTML.
+function popupContent(title, lines) {
+  const container = document.createElement("div");
+  container.className = "map-popup";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  container.appendChild(heading);
+  lines.forEach((line) => {
+    container.appendChild(document.createElement("br"));
+    container.appendChild(document.createTextNode(line));
   });
+  return container;
 }
 
-function redrawRoutesOnly() {
+function describeMapFeature(info) {
   const visual = currentVisualState();
-  const geometry = buildVisualGeometry();
-  if (!visual.instanceData || !geometry) return;
-  state.layers.route.clearLayers();
-  state.layers.arrow.clearLayers();
-  drawRoutes(geometry.routeLines, visual.routes, visual.instanceData, geometry.routeMode);
-}
-
-function redrawCustomersOnly() {
-  const visual = currentVisualState();
-  const geometry = buildVisualGeometry();
-  if (!visual.instanceData || !geometry) return;
-  state.layers.marker.clearLayers();
-  drawCustomers(geometry.nodeCoordinates, visual.routes, visual.instanceData);
+  if (!visual.instanceData) return null;
+  if (info.kind === "route") {
+    return popupContent(`Route #${info.routeIndex + 1}`, [`Stops: ${visual.routes[info.routeIndex]?.length ?? "?"}`]);
+  }
+  const isDepot = info.kind === "depot";
+  const index = info.nodeIndex;
+  const demand = Number(visual.instanceData.demands?.[index]) || 0;
+  const lon = Number(info.lngLat[0]);
+  const lat = Number(info.lngLat[1]);
+  const routeLabel = Number.isInteger(info.routeIndex) ? `#${info.routeIndex + 1}` : "Unassigned";
+  const lines = [`Demand: ${demand}`];
+  if (!isDepot) lines.push(`Route: ${routeLabel}`);
+  const planar = visual.instanceData.planar ? visual.instanceData.planarCoordinates?.[index] : null;
+  if (planar) lines.push(`X/Y: ${Number(planar[0])}, ${Number(planar[1])}`);
+  else lines.push(`Lat/Lon: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+  return popupContent(isDepot ? "Depot" : `Node ${index}`, lines);
 }
 
 function formatDisplayCost(value) {
@@ -1229,6 +1220,7 @@ function updateStats(routeMode) {
     ["Source", state.sourceKind],
     ["Render", routeMode],
   ];
+  if (instanceData.planar) rows.push(["Coordinates", "planar x, y: drawn to scale, not at a place on the map"]);
   if (state.sourceKind === "benchmark") {
     rows.push(["Objective", visual.objectiveEntry?.objective_function || "n/a"]);
     rows.push(["Benchmark", visual.payload?.summary?.benchmark_name || "n/a"]);
@@ -1241,23 +1233,26 @@ function updateStats(routeMode) {
 }
 
 function renderVisualState(options = {}) {
-  clearMapLayers();
   const visual = currentVisualState();
   if (!visual.instanceData) {
+    clearMapLayers();
     selectionHeadline.hidden = true;
     statsEl.innerHTML = "";
     routeSelectorContainer.innerHTML = "";
     routeSelectorCard.hidden = true;
     return;
   }
-  const geometry = buildVisualGeometry();
+  const geometry = currentMapGeometry();
   if (!geometry) {
     return;
   }
   const fitBounds = consumeVisualFit(options.fitMap);
-  drawCustomers(geometry.nodeCoordinates, visual.routes, visual.instanceData, { fitBounds });
   buildRouteSelector(visual.routes, visual.instanceData);
-  drawRoutes(geometry.routeLines, visual.routes, visual.instanceData, geometry.routeMode);
+  syncMapData(geometry, visual);
+  applyMapView();
+  if (fitBounds) {
+    fitMapToSolution();
+  }
   updateStats(geometry.routeMode);
 }
 
@@ -1467,9 +1462,9 @@ async function loadBenchmarkInstance(instanceRoute, preferredObjective = null, o
     if (payload?.payload_kind !== "instance_page") {
       throw new Error(`Route '${instanceRoute}' is not a benchmark instance page.`);
     }
-    const instanceData = projectEnuInstanceCoordinates(
+    const instanceData = withPlanarDisplayFrame(projectEnuInstanceCoordinates(
       await fetchJson(artifactHref(payload.artifact_links.vrp_json_path)),
-    );
+    ));
     const objectiveEntries = Array.isArray(payload.bks_entries) ? payload.bks_entries : [];
     const objectiveEntry = objectiveEntries.find((entry) => entry.objective_function === preferredObjective)
       || objectiveEntries[0]
@@ -1586,12 +1581,6 @@ document.addEventListener("keydown", (event) => {
   else if (event.key === "]") layout.toggleCollapsed("right");
   else return;
   event.preventDefault();
-});
-map.on("zoomend", () => {
-  if (state.activeTab === "generate") {
-    return;
-  }
-  renderVisualState();
 });
 
 benchmarkObjectiveSelect.addEventListener("change", async (event) => {
@@ -1760,7 +1749,7 @@ clearBtn.addEventListener("click", async () => {
     await loadBenchmarkInstance(state.instanceRoute, state.objectiveFunction, { quiet: true });
     return;
   }
-  map.setView([48.8566, 2.3522], 11);
+  map?.jumpTo({ center: [2.3522, 48.8566], zoom: 10 });
   showToast("Cleared current map layers");
 });
 

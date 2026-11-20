@@ -28,6 +28,8 @@ from mamut_routing_publish import site_webapp
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "mamut_routing_publish" / "site_assets"
 SITE_JS = ASSETS / "site.js"
 WORKBENCH_JS = ASSETS / "workbench.js"
+MAMUT_MAP_JS = ASSETS / "mamut-map.js"
+MAMUT_TRIPS_JS = ASSETS / "mamut-trips.js"
 HREF_FUNCTIONS = (
     "escapeHtml",
     "encodePathSegment",
@@ -107,7 +109,11 @@ def test_the_url_no_longer_chooses_the_payload_source() -> None:
     assert "payloadApiPrefix" not in source
 
 
-@pytest.mark.parametrize("path", [SITE_JS, WORKBENCH_JS], ids=["site.js", "workbench.js"])
+@pytest.mark.parametrize(
+    "path",
+    [SITE_JS, WORKBENCH_JS, MAMUT_MAP_JS, MAMUT_TRIPS_JS],
+    ids=["site.js", "workbench.js", "mamut-map.js", "mamut-trips.js"],
+)
 def test_every_href_goes_through_a_safe_helper(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
     offenders = []
@@ -148,6 +154,9 @@ def test_shells_escape_attributes_and_pin_their_inline_scripts(tmp_path: Path) -
     csp = _csp_of(workbench)
     assert _sha(site_webapp.THEME_INIT_SCRIPT) in csp and _sha(site_webapp.LAYOUT_INIT_SCRIPT) in csp
     assert "worker-src 'self' blob:" in csp
+    # deck.gl's loaders.gl probes WebAssembly at load; the probe is caught, so the
+    # policy stays without any eval allowance (see site_assets/vendor/README.md).
+    assert "unsafe-eval" not in csp
 
 
 @pytest.mark.parametrize("route", ["/../../etc/", "relative/", "/a\\b/", "/a/\x07/"])

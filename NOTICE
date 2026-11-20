@@ -72,9 +72,12 @@ Third-party web libraries
 The static website self-hosts the following libraries, each under its own
 license (see src/mamut_routing_publish/site_assets/vendor/README.md):
 
-- Leaflet (BSD-2-Clause)
 - MapLibre GL JS (BSD-3-Clause)
-- maplibre-gl-leaflet (ISC)
+- deck.gl (MIT), loaded only by the route animation. Its single bundle also
+  contains the vis.gl libraries luma.gl, loaders.gl, math.gl and probe.gl
+  (MIT) and long.js (Apache-2.0).
+
+The MAMUT-routing-tools GUI vendors byte-identical copies of the same files.
 
 Users redistributing benchmark subsets should preserve this NOTICE and the
 family-level README.md and LICENSE files.

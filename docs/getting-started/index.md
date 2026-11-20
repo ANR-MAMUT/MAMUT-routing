@@ -1,6 +1,6 @@
 # Getting started
 
-Five short tutorials, each self-contained and runnable as written (they were run on a fresh clone before being
+Six short tutorials, each self-contained and runnable as written (they were run on a fresh clone before being
 published). Do them in order the first time; later, jump to the one you need.
 
 | | Tutorial | You end up with |
@@ -10,6 +10,7 @@ published). Do them in order the first time; later, jump to the one you need.
 | 3 | [Load an instance and check a solution](load-and-check.md) | the checker's verdict and cost on a published BKS |
 | 4 | [Solve with PyVRP and propose a BKS](solve-and-bks.md) | a validated solution file, stored only if it improves |
 | 5 | [Export to CVRPLIB `.vrp`](export-vrp.md) | classic-format files for solvers that do not read `.vrp.json` |
+| 6 | [Tour the tools](tour-the-tools.md) | a city instance of your own, solved under three metrics and traffic, shown in the GUI |
 
 Then: the [User guide](../user-guide/index.md) for the website, the workbench and instance generation; the
 [Benchmarks](../benchmarks/index.md) section for what the data is; the [Maintainer guide](../maintainer-guide/index.md)
