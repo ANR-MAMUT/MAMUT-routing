@@ -1,39 +1,39 @@
 [submodule "MAMUT-routing-lib"]
 	path = MAMUT-routing-lib
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-lib.git
-[submodule "benchmarks/TDVRPTW/Ari2018"]
-	path = benchmarks/TDVRPTW/Ari2018
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Ari2018.git
-[submodule "benchmarks/TDVRPTW/Vu2020"]
-	path = benchmarks/TDVRPTW/Vu2020
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Vu2020.git
-[submodule "benchmarks/TDVRPTW/Rifki2020"]
-	path = benchmarks/TDVRPTW/Rifki2020
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Rifki2020.git
-[submodule "benchmarks/TDVRP/Ari2018"]
-	path = benchmarks/TDVRP/Ari2018
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Ari2018.git
-[submodule "benchmarks/TDVRP/Vu2020"]
-	path = benchmarks/TDVRP/Vu2020
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Vu2020.git
-[submodule "benchmarks/TDVRP/Rifki2020"]
-	path = benchmarks/TDVRP/Rifki2020
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Rifki2020.git
-[submodule "benchmarks/TDVRPTW/Lera2026"]
-	path = benchmarks/TDVRPTW/Lera2026
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Lera2026.git
-[submodule "benchmarks/TDVRP/Lera2026"]
-	path = benchmarks/TDVRP/Lera2026
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRP-Lera2026.git
 [submodule "benchmarks/Poryos2026"]
 	path = benchmarks/Poryos2026
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-Poryos2026.git
 [submodule "MAMUT-routing-tools"]
 	path = MAMUT-routing-tools
 	url = ../MAMUT-routing-tools.git
-[submodule "benchmarks/TDVRPTW/Blauth2024"]
-	path = benchmarks/TDVRPTW/Blauth2024
-	url = git@github.com:ANR-MAMUT/MAMUT-routing-TDVRPTW-Blauth2024.git
 [submodule "benchmarks/Mamut2026"]
 	path = benchmarks/Mamut2026
 	url = git@github.com:ANR-MAMUT/MAMUT-routing-Mamut2026.git
+[submodule "benchmarks/Ari2018"]
+	path = benchmarks/Ari2018
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Ari2018.git
+[submodule "benchmarks/Blauth2024"]
+	path = benchmarks/Blauth2024
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Blauth2024.git
+[submodule "benchmarks/Dabia2013"]
+	path = benchmarks/Dabia2013
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Dabia2013.git
+[submodule "benchmarks/Dimacs2021"]
+	path = benchmarks/Dimacs2021
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Dimacs2021.git
+[submodule "benchmarks/Lera2026"]
+	path = benchmarks/Lera2026
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Lera2026.git
+[submodule "benchmarks/Ortec2022"]
+	path = benchmarks/Ortec2022
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Ortec2022.git
+[submodule "benchmarks/Rifki2020"]
+	path = benchmarks/Rifki2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Rifki2020.git
+[submodule "benchmarks/Sintef2008"]
+	path = benchmarks/Sintef2008
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Sintef2008.git
+[submodule "benchmarks/Vu2020"]
+	path = benchmarks/Vu2020
+	url = git@github.com:ANR-MAMUT/MAMUT-routing-Vu2020.git
