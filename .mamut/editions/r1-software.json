@@ -1,0 +1,61 @@
+{
+  "distribution_root": "MAMUT-routing",
+  "format": "mamut-routing-r1-software-catalog-v1",
+  "independent_manifest_verification": {
+    "native_and_python_wheel": {
+      "path": ".mamut/artifacts/d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "scope": "file",
+      "sha256": "d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4",
+      "size": 473430,
+      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl"
+    },
+    "reference_only_wheel": {
+      "path": ".mamut/artifacts/22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1/mamut_routing_lib-0.13.0.dev0-py3-none-any.whl",
+      "scope": "file",
+      "sha256": "22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1",
+      "size": 226203,
+      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1/mamut_routing_lib-0.13.0.dev0-py3-none-any.whl"
+    },
+    "source": {
+      "path": ".mamut/artifacts/362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411/mamut_routing_lib-0.13.0.dev0.tar.gz",
+      "scope": "file",
+      "sha256": "362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411",
+      "size": 385474,
+      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411/mamut_routing_lib-0.13.0.dev0.tar.gz"
+    }
+  },
+  "numerical_environment": {
+    "path": ".mamut/artifacts/21efc05188bca2b25987b5bd302a87169680b8aa234daa6e77b73e6c1c457197/materialization-environment-linux-x86_64.json",
+    "scope": "file",
+    "sha256": "21efc05188bca2b25987b5bd302a87169680b8aa234daa6e77b73e6c1c457197",
+    "size": 17808,
+    "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/21efc05188bca2b25987b5bd302a87169680b8aa234daa6e77b73e6c1c457197/materialization-environment-linux-x86_64.json"
+  },
+  "numerical_evaluation": {
+    "backends": {
+      "binary64-exact-v1": [
+        "cpp-dyadic-prepared",
+        "python-fraction"
+      ],
+      "td-binary64-exact-v1": [
+        "cpp-gmp-compose",
+        "python-fraction-partition"
+      ]
+    },
+    "native_and_python_wheel": {
+      "path": ".mamut/artifacts/b829e5366f94c6810db090671d2a546cdc06079bf972ee2282f718def94cb9ba/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "scope": "file",
+      "sha256": "b829e5366f94c6810db090671d2a546cdc06079bf972ee2282f718def94cb9ba",
+      "size": 463036,
+      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/b829e5366f94c6810db090671d2a546cdc06079bf972ee2282f718def94cb9ba/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl"
+    },
+    "source": {
+      "path": ".mamut/artifacts/74fb885fc3b76dcd3ac65cb0b75b0086b89f976d422ea6a9fd398e6d10d2d828/mamut_routing_lib-0.13.0.dev0.tar.gz",
+      "scope": "file",
+      "sha256": "74fb885fc3b76dcd3ac65cb0b75b0086b89f976d422ea6a9fd398e6d10d2d828",
+      "size": 372094,
+      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/v013/.mamut/artifacts/74fb885fc3b76dcd3ac65cb0b75b0086b89f976d422ea6a9fd398e6d10d2d828/mamut_routing_lib-0.13.0.dev0.tar.gz"
+    }
+  },
+  "release_branch": "v013"
+}
