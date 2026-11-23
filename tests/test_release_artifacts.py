@@ -8,7 +8,7 @@ import pytest
 
 from mamut_routing_lib.enums import BenchmarkName, ObjectiveFunction
 from mamut_routing_lib.json_utils import save_json_to_file
-from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
+from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstanceVRPTW, BenchmarkInstanceCVRP
 from mamut_routing_lib.remote import ReleaseArchiveScope, load_release_manifest
 from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_publish.release_artifacts import (
@@ -54,8 +54,8 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
     )
 
 
-def make_generated_vrptw_instance() -> BenchmarkInstance:
-    return BenchmarkInstance(
+def make_generated_vrptw_instance() -> BenchmarkInstanceVRPTW:
+    return BenchmarkInstanceVRPTW(
         instance_name="poryos-n2-beef456",
         instance_origin="OsmCvrpGen",
         benchmark_name="Poryos2026",
@@ -89,8 +89,8 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
     )
 
 
-def make_historical_instance() -> BenchmarkInstance:
-    return BenchmarkInstance(
+def make_historical_instance() -> BenchmarkInstanceVRPTW:
+    return BenchmarkInstanceVRPTW(
         instance_name="C101",
         instance_origin="Solomon1987",
         benchmark_name="Sintef2008",

@@ -6,23 +6,18 @@
 {"instance_name": "...", "routes": [[3, 1, 2], [5, 4]], "cost": null, "metadata": {}}
 ```
 
-Routes list customer indices (1-based customers, the depot implicit at both ends); `cost` may be null (the checker
-prices it) or the exact expected value (the checker then refuses any deviation). `metadata` is free-form.
+Each route lists customer indices from 1 to `num_customers`, with the depot implicit at both ends. For a `BenchmarkSolution` passed to the v0.13 exact store, `cost` is optional. A non-null value asserts that the exact rational objective rounds to this binary64 value (round to nearest, ties to even). Leave `cost` null to submit just the routes. `metadata` carries additional information.
 
 ## BKS (`BenchmarkBKS`)
 
-The same plus `objective_function`, stored as `<base>.bks.<ObjectiveFunction>.json` next to the instance, one file
-per objective. Written only through the store functions, which guarantee:
+A `BenchmarkBKS` adds `objective_function` and is stored next to the instance as `<base>.bks.<ObjectiveFunction>.json`, one file per objective. In v0.13, `save_bks_if_improved` and `save_td_solution_as_bks_if_improved` apply the following rules.
 
-- `cost` is the checker's cost (`create_bks_from_solution` / `create_td_bks_from_solution`), for routes stored in
-  **canonical order** (sorted by first customer) and priced in that order, so the float total is reproducible;
-- `metadata.authors` is present and non-empty; `validated_cost`, `validated_num_routes` and `date` are filled;
-- the candidate is itself a valid solution of the instance it is named after;
-- a stored BKS is replaced only by a strictly better one under the objective, after the stored file was itself
-  re-validated (`save_bks_if_improved`, `save_td_solution_as_bks_if_improved`). Static stores (lib ≥ 0.12.0) compare
-  **exact decimal costs** (`is_better_exact`: every arc cost is read as the decimal its JSON text denotes and summed
-  as a fraction), so reordering, reversing or re-summing an incumbent can no longer pass for an improvement by one
-  float ulp. A tie keeps the incumbent and is reported as `BKSUpdateResult(action="kept_existing", tie=True)`.
+- The candidate must be a feasible solution of the named instance. The store writes its routes in lexicographic order, with customer order preserved within each route.
+- The store evaluates static routes under `binary64-exact-v1` and time-dependent routes under `td-binary64-exact-v1`. It stores the rational cost in `metadata.exact_evaluation.authoritative_cost` and its binary64 display value in `cost` (null on display overflow). For TD routes it also records each exact minimum duration and the earliest departure attaining it.
+- `metadata.authors` is required. The store fills `validated_cost`, `validated_num_routes` and `date`.
+- The store re-evaluates the incumbent's routes before comparing them with the candidate. It compares exact costs, with route count taking precedence for `HierarchicalVehicleCost`. A strict improvement replaces the incumbent. A tie keeps it and returns `BKSUpdateResult(action="kept_existing", tie=True)`.
+
+In v0.12, the static store instead summed the shortest round-trip decimal representations of the materialized arc costs.
 
 Provenance fields are free but expected for campaigns: `method`, `seed`, `time_limit_s`, `solver_version`, `machine`,
 `campaign`. A BKS stored from a registry solve (`mamut-routing solve --save-bks`, `submit_bks(...,
@@ -74,9 +69,11 @@ printed by `mamut-tools solve` is also a valid solution file.
 `route_timing_infeasible`. `check_solution` (static) and `check_td_solution` (time-dependent) return a result with
 the status, the routing cost, the route count and an error message.
 
-## Optimality (`OptimalityMetadata`)
+## Optimality claims
 
-A claim of optimality is `metadata.optimality`, validated:
+For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the evaluated profile in `target_profile` (`binary64-exact-v1` for static results or `td-binary64-exact-v1` for TD results). The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
+
+Historical BKS records can carry an `OptimalityMetadata` stamp under the original checker.
 
 | Field | |
 |---|---|
@@ -84,24 +81,15 @@ A claim of optimality is `metadata.optimality`, validated:
 | `prover`, `certificate`, `date` | required: who proved it, what the certificate is (a file, a log, a bound argument), when |
 | `arithmetic`, `proven_optimum`, `dual_bound`, `wall_time_s`, `time_limit_s`, `checker`, `campaign`, `note` | optional |
 
-For TD stores, `annotate_td_bks_optimality` writes it after re-validating the stored BKS; a declared
-`proven_optimum` must equal the stored cost (a dust-level difference needs a `note`). The website shows proven
-optima distinctly.
+A new annotation on a historical TD record must identify the original arithmetic profile in `target_profile` (for the Kayros claims dating from before the September repricing, `td-fold/1`). A declared `proven_optimum` must agree with the stored historical cost within the legacy tolerance, and a nonzero difference requires a `note`.
 
-## Re-pricing
+## Historical TD repricing
 
-A TD cost is the value of the checker contract in force when it was priced (see
-[Time-dependent instances](time-dependent.md#the-checker-contract-td-fold2)). When the contract changes, every stored
-TD BKS is re-priced with `mamut-routing bks reprice-td <tree> --write`, which never changes a route. It rewrites
-the checker outputs that moved (`cost`, `metadata.validated_cost`, `metadata.route_durations`,
-`metadata.route_departure_times`) and, when the cost moved, records:
+The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --write` to replay unmarked TD routes. This command refuses v0.13 exact records. For a legacy cost that moved, the migration updated `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times`, and added this record. [Time-dependent instances](time-dependent.md#the-checker-contract-td-fold2)
 
 ```json
 "repriced": {"previous_cost": 8292.0, "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",
              "contract": "td-fold/2", "date": "2026-09-24"}
 ```
 
-An optimality stamp follows a move of at most 1e-6: `proven_optimum` becomes the new cost and a `note` records that
-the proof was obtained under the previous contract (its `dual_bound` is the prover's value in that arithmetic) and
-that re-certification is pending. A larger move on a stamped BKS is refused (`stamp-conflict`). The website's
-publication history lists re-priced BKS in their own bucket, not as improvements.
+During the September repricing, the legacy tool updated a stamped `proven_optimum` when the cost moved by at most 1e-6. Its note identified the original arithmetic and its `dual_bound` retained the solver value. Larger changes on a stamped BKS produced `stamp-conflict`. The v0.13 migration recovers the original primal from Git for each affected claim and records its historical target explicitly.

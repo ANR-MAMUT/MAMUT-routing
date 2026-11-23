@@ -1,16 +1,10 @@
 # Update or submit a BKS
 
-A best-known solution is a solution file the checker has validated, stored next to its instance as
-`<base>.bks.<ObjectiveFunction>.json`. Two rules make BKS maintenance safe:
+A best-known solution is a validated solution stored next to its instance as `<base>.bks.<ObjectiveFunction>.json`. In v0.13 the store evaluates both the candidate and the incumbent's routes under the same exact profile. A strict improvement replaces the incumbent, and a tie keeps it (`BKSUpdateResult.tie`). The stored `cost` displays the checker's exact rational cost as a binary64 value, or null on display overflow. The store preserves a solver's reported cost separately when supplied.
 
-- **the stored cost is the checker's cost**, whatever the solver reported;
-- **a BKS is replaced only by a strictly better, freshly validated solution**; the stored file is itself
-  re-validated before comparison, so a corrupted BKS is caught rather than silently kept. Static stores compare
-  exact decimal costs (lib ≥ 0.12.0): the incumbent's routes reordered, reversed or re-summed are a tie, never an
-  improvement, and a tie keeps the incumbent (`BKSUpdateResult.tie`). Routes are stored in canonical order.
+The store writes routes in lexicographic order. A permutation of the route list has the same objective value. Reversing stops within a route can change its cost or feasibility.
 
-When the TD checker contract changes, stored TD costs are re-priced instead: see
-[Re-price after a checker-contract change](reprice-after-a-contract-change.md).
+The v0.12 guide documents how historical TD costs were repriced under `td-fold/2`. [Re-price after a checker-contract change](reprice-after-a-contract-change.md)
 
 ## Static families (CVRP, VRPTW)
 
@@ -46,22 +40,17 @@ result = save_solution_as_bks_if_improved(
 print(result.action, result.path, result.candidate_cost)           # created | replaced | kept_existing
 ```
 
-Under the hood: the instance is loaded and, for slim collection instances (Poryos2026, Mamut2026), hydrated from
-its sidecars (`hydrate_collection_instance`); `create_bks_from_solution` builds the `BenchmarkBKS` (validation,
-checker cost, metadata); `save_bks_if_improved(instance, bks, instance_path)` does the compare-and-replace.
+For a slim collection instance (Poryos2026, Mamut2026), `hydrate_collection_instance` loads the required sidecars. Then `create_bks_from_solution` validates the routes, computes the cost and builds the `BenchmarkBKS`. The call `save_bks_if_improved(instance, candidate_bks=bks, instance_path=instance_path)` compares it with the incumbent.
 
 !!! warning "One writer per instance"
     The store is an unlocked read/compare/write. Two processes storing candidates for the same instance at the same
     time can end with the worse one on disk. Serialize the stores (see [Run a BKS campaign](bks-campaigns.md)).
-`create_bks_from_solution` raises on an invalid solution, requires a non-empty `authors`, and fills
-`validated_cost`, `validated_num_routes` and `date` in the metadata. `is_better_solution` implements the objective's
-order (HierarchicalVehicleCost compares route count first). With PyVRP, `solve_and_update_bks` in
-`mamut_routing_lib.solvers.pyvrp` does the solve and the store in one call.
+
+`create_bks_from_solution` raises on an invalid solution, requires non-empty `authors` and fills `validated_cost`, `validated_num_routes` and `date`. With PyVRP, `solve_and_update_bks` in `mamut_routing_lib.solvers.pyvrp` solves the instance and submits the candidate in one call.
 
 ## Time-dependent families (TDVRP, TDVRPTW)
 
-The static checker refuses TD instances; use the TD store, which prices with `check_td_solution` (exact doubles,
-no epsilon):
+For TD instances, `save_td_solution_as_bks_if_improved` evaluates the routes under `td-binary64-exact-v1`.
 
 ```python
 from mamut_routing_lib.td.bks import save_td_solution_as_bks_if_improved, annotate_td_bks_optimality
@@ -76,19 +65,23 @@ Duration objective through the same registry: `mamut-routing solve --solver kayr
 `mamut-tools solve --solver kayros --save-bks --authors ...` re-check its routes with the TD checker and store them
 through the TD store; `mamut-routing bks submit` does the same for a TD solution file found elsewhere.
 
-## Optimality proofs
+## Recording a solver's optimality claim
 
-A proven optimum is metadata, validated like everything else (`OptimalityMetadata`: `proven: true`, `prover`,
-`certificate`, `date`, optional `proven_optimum`, `dual_bound`, `wall_time_s`, `time_limit_s`, `checker`,
-`campaign`, `note`). For TD stores:
+For a TD result evaluated under the exact profile, identify the solver and the profile under which it reported optimality.
 
 ```python
-annotate_td_bks_optimality(instance_path, {"proven": True, "prover": "kayros 1.1.2", "certificate": "...",
-                                            "date": "2026-09-14"}, ObjectiveFunction.DURATION)
+annotate_td_bks_optimality(
+    instance_path,
+    {
+        "status": "solver-reported-optimal",
+        "solver": solver_name,
+        "target_profile": "td-binary64-exact-v1",
+    },
+    ObjectiveFunction.DURATION,
+)
 ```
 
-The stored BKS is re-validated before the stamp is written, and a declared `proven_optimum` must equal the stored
-cost (a dust-level difference needs an explanatory `note`).
+The store re-evaluates the routes and verifies their stored exact result before recording the claim. For a historical unmarked TD record, a legacy stamp must identify the original arithmetic in `target_profile` (for the Kayros claims dating from before the September repricing, `td-fold/1`).
 
 ## After the file changed
 

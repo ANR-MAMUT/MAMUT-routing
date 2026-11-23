@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from mamut_routing_lib.artifacts import discover_benchmark_instances
 from mamut_routing_lib.enums import MetricVariant, ObjectiveFunction, ProblemType
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
-from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstance, BenchmarkInstanceCVRP
+from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstanceVRPTW, BenchmarkInstanceCVRP
 from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_publish.cli import app
 from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
@@ -69,8 +69,8 @@ def make_generated_cvrp_instance() -> BenchmarkInstanceCVRP:
     )
 
 
-def make_generated_vrptw_instance() -> BenchmarkInstance:
-    return BenchmarkInstance(
+def make_generated_vrptw_instance() -> BenchmarkInstanceVRPTW:
+    return BenchmarkInstanceVRPTW(
         instance_name="poryos-n2-beef456",
         instance_origin="OsmCvrpGen",
         benchmark_name="Poryos2026",
@@ -111,8 +111,8 @@ def make_generated_vrptw_instance() -> BenchmarkInstance:
     )
 
 
-def make_historical_instance() -> BenchmarkInstance:
-    return BenchmarkInstance(
+def make_historical_instance() -> BenchmarkInstanceVRPTW:
+    return BenchmarkInstanceVRPTW(
         instance_name="C101",
         instance_origin="Solomon1987",
         benchmark_name="Sintef2008",
@@ -147,7 +147,7 @@ def write_json(path: Path, payload: dict) -> None:
     save_json_to_file(payload, path)
 
 
-def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceCVRP, BenchmarkInstance]:
+def build_fixture_site_inputs(output_repo_dir: Path) -> tuple[BenchmarkInstanceCVRP, BenchmarkInstanceVRPTW]:
     generated_cvrp = make_generated_cvrp_instance()
     generated_vrptw = make_generated_vrptw_instance()
     historical = make_historical_instance()
@@ -891,13 +891,13 @@ def test_objective_availability_rejects_duplicate_objective_entries() -> None:
 
 def test_catalog_items_are_sorted_by_size_then_display_name(tmp_path: Path) -> None:
     """Sintef-style fixture with two sizes — items must come back sorted by num_customers, then name."""
-    from mamut_routing_lib.models import BenchmarkInstance
+    from mamut_routing_lib.models import BenchmarkInstanceVRPTW
 
     output_repo_dir = tmp_path / "MAMUT-routing"
 
-    def _historical(name: str, n: int) -> BenchmarkInstance:
+    def _historical(name: str, n: int) -> BenchmarkInstanceVRPTW:
         coords = [(0, 0)] + [(i, i) for i in range(1, n + 1)]
-        return BenchmarkInstance(
+        return BenchmarkInstanceVRPTW(
             instance_name=name,
             instance_origin="Solomon1987",
             benchmark_name="Sintef2008",
@@ -2025,7 +2025,7 @@ def test_classic_family_collections_keep_their_identifiers_routes_and_licence(tm
     for name, subset in (("ORTEC-VRPTW-final-1", "final"), ("ORTEC-VRPTW-public-1", "public")):
         payload = make_historical_instance().model_dump(mode="json")
         # A plain-dict metadata, as the real classic families carry: the branch where a collection gets its ODbL default.
-        instance = BenchmarkInstance.model_validate({**payload, "instance_name": name, "benchmark_name": "Ortec2022", "metadata": {}})
+        instance = BenchmarkInstanceVRPTW.model_validate({**payload, "instance_name": name, "benchmark_name": "Ortec2022", "metadata": {}})
         instance_path = output_repo_dir / "benchmarks" / "Ortec2022" / "VRPTW" / subset / "n=2" / f"{name}.vrp.json"
         write_json(instance_path, instance.model_dump(mode="json"))
     save_collection_marker(CollectionMarker(family="Ortec2022", layout_version=2), output_repo_dir / "benchmarks" / "Ortec2022")

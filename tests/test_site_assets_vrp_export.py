@@ -16,7 +16,7 @@ import pytest
 
 from mamut_routing_lib.cvrplib import VrpExportOptions, instance_to_vrp_text
 from mamut_routing_lib.models import (
-    BenchmarkInstance,
+    BenchmarkInstanceVRPTW,
     BenchmarkInstanceCVRP,
     BenchmarkInstanceCVRPCollection,
     BenchmarkInstanceVRPTWCollection,
@@ -144,7 +144,7 @@ def _coordinate_exports_flag(instance: dict) -> bool:
     if "arc_costs_source" in instance:
         model = BenchmarkInstanceVRPTWCollection if "time_windows" in instance else BenchmarkInstanceCVRPCollection
     else:
-        model = BenchmarkInstance if "time_windows" in instance else BenchmarkInstanceCVRP
+        model = BenchmarkInstanceVRPTW if "time_windows" in instance else BenchmarkInstanceCVRP
     return coordinates_define_arc_costs(model(**instance))
 
 
@@ -207,10 +207,10 @@ def _python_cases() -> tuple[dict, dict]:
 
     expected = {
         "toy_int_cvrp": instance_to_vrp_text(BenchmarkInstanceCVRP(**toy)),
-        "sintef_float_matrix_vrptw": instance_to_vrp_text(BenchmarkInstance(**sintef)),
-        "sintef_euc_2d": instance_to_vrp_text(BenchmarkInstance(**sintef), options=VrpExportOptions(edge_weight_type="EUC_2D")),
-        "sintef_custom_comment": instance_to_vrp_text(BenchmarkInstance(**sintef), options=VrpExportOptions(comment="hand-written")),
-        "sintef_solomon": instance_to_vrp_text(BenchmarkInstance(**sintef), options=VrpExportOptions(format="solomon")),
+        "sintef_float_matrix_vrptw": instance_to_vrp_text(BenchmarkInstanceVRPTW(**sintef)),
+        "sintef_euc_2d": instance_to_vrp_text(BenchmarkInstanceVRPTW(**sintef), options=VrpExportOptions(edge_weight_type="EUC_2D")),
+        "sintef_custom_comment": instance_to_vrp_text(BenchmarkInstanceVRPTW(**sintef), options=VrpExportOptions(comment="hand-written")),
+        "sintef_solomon": instance_to_vrp_text(BenchmarkInstanceVRPTW(**sintef), options=VrpExportOptions(format="solomon")),
         "mamut_euclidean_collection": instance_to_vrp_text(BenchmarkInstanceCVRPCollection(**mamut_euclid)),
         "mamut_euclidean_euc_2d": instance_to_vrp_text(
             BenchmarkInstanceCVRPCollection(**mamut_euclid), options=VrpExportOptions(edge_weight_type="EUC_2D")

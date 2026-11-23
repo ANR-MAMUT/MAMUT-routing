@@ -4,7 +4,7 @@ Models in `mamut_routing_lib.models`. Two shapes exist.
 
 ## Embedded instances
 
-`BenchmarkInstanceCVRP` and `BenchmarkInstance` (VRPTW) carry the full arc-cost matrix:
+`BenchmarkInstanceCVRP` and `BenchmarkInstanceVRPTW` carry the full arc-cost matrix:
 
 | Field | Type | Notes |
 |---|---|---|
