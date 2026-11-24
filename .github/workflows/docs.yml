@@ -26,6 +26,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      - name: Install native checker headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libboost-dev libgmp-dev
       - name: Sync dependencies
         run: uv sync --group docs
       - name: Build documentation (strict, same code path as the deploy)
