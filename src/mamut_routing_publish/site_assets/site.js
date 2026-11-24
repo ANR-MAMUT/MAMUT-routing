@@ -3217,13 +3217,21 @@ function renderChangeRowBks(change) {
   if (change.routes_delta != null && change.routes_delta !== 0) {
     deltaParts.push(`${formatSignedDelta(change.routes_delta)} veh`);
   }
-  if (change.cost_delta != null) {
+  if (change.cost_delta != null && change.cost_delta !== 0) {
     const pctSuffix = change.cost_pct != null ? `, ${formatPct(change.cost_pct)}` : "";
     deltaParts.push(`${formatSignedDelta(change.cost_delta)}${pctSuffix}`);
+  } else if (change.cost_delta === 0 && prev.evaluation && next.evaluation) {
+    const order = compareCostEntries(next, prev, 1);
+    if (order) deltaParts.push(`cost ${order < 0 ? "decrease" : "increase"} rounds to zero in binary64`);
   }
   const deltaText = deltaParts.length ? ` <span class="change-delta">(${deltaParts.join(" · ")})</span>` : "";
   const meta = next.method ? ` <span class="meta-line">${escapeHtml(next.method)}</span>` : "";
-  return `<li class="${cls}">${head} · <span class="change-from">${valueHtml(prev)}</span> → <span class="change-to">${valueHtml(next)}</span>${deltaText}${meta}</li>`;
+  const showFractions = prev.evaluation && next.evaluation && (prev.cost === next.cost || prev.cost == null || next.cost == null);
+  const fractions = showFractions ? `<details><summary>Exact values</summary>${renderStatGrid([
+    ["Previous", { html: exactFractionHtml(prev.evaluation.authoritative_cost) }],
+    ["Current", { html: exactFractionHtml(next.evaluation.authoritative_cost) }],
+  ])}</details>` : "";
+  return `<li class="${cls}">${head} · <span class="change-from">${valueHtml(prev)}</span> → <span class="change-to">${valueHtml(next)}</span>${deltaText}${meta}${fractions}</li>`;
 }
 
 function renderFamilyChangeSection(changes) {

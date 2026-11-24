@@ -134,3 +134,21 @@ def test_optimality_labels_show_the_claim_target_and_family_default() -> None:
     assert "td-fold/1" in historical and "td-binary64-exact-v1" in historical
     assert "Profile warning" not in same and "badge optimal" in same
     assert "does not specify" in unknown and absent == "[]"
+
+
+@node
+def test_history_explains_improvement_when_the_exact_delta_underflows() -> None:
+    names = ("renderChangeRowBks", "escapeHtml", "isHierarchicalObjective", "costSpan", "displayedCost",
+             "formatCost", "compareCostEntries", "costRatio", "renderStatGrid", "exactFractionHtml")
+    source = SITE_JS.read_text()
+    script = "\n".join(re.search(rf"^function {n}\(.*?^\}}", source, re.S | re.M).group(0) for n in names) + """
+    const denominator = "1" + "0".repeat(6001);
+    const value = (numerator, denominator) => ({cost:1, num_routes:1, evaluation:{profile:"td-binary64-exact-v1",
+      benchmark_revision:"r1", authoritative_cost:{numerator,denominator}}});
+    const prior = "1" + "0".repeat(6000) + "1";
+    const html = renderChangeRowBks({kind:"improved", objective_function:"Duration", instance_name:"test", num_customers:1,
+      prev:value(prior,denominator), new:value("1","1"), routes_delta:0, cost_delta:-0, cost_pct:-0});
+    console.log(JSON.stringify([html.includes(prior),html.includes("cost decrease rounds to zero"),html.includes("Exact values")]));
+    """
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == [True, True, True]
