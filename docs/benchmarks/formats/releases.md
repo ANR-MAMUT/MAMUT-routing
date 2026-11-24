@@ -13,6 +13,8 @@ One archive per family, with entry paths relative to the repository root (`bench
 
 The `problem_family` scope (`<ProblemType>-<Family>-snapshot-<snapshot-id>.zip`, one problem type of one family in the former `benchmarks/<ProblemType>/<Family>/` tree) is found only in snapshots published for mamut-routing-lib 0.12 or earlier. The publisher no longer writes it, and the lib refuses to extract it since 0.13.
 
+To replay the May 2026 problem-first snapshot, use a separate environment with `mamut-routing-lib[cli]==0.12.0`. Run `mamut-routing remote --tag snapshot-2026-05-22-28f9199 list` and fetch the asset by the filename in that manifest. For v0.13, select a family-first snapshot.
+
 A collection asset has `problem_type: null`; its sidecars resolve by walking up from an instance to the marker, so
 the extracted tree works wherever it lands. Files a family ships as sha256 pins rather than bytes are pins in the
 archive as well (see the family page for the `materialize` step). Deterministic: fixed entry timestamps
