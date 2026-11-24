@@ -108,7 +108,10 @@ const {
   catalogGeometryValue,
   catalogSortOptions,
   compareCatalogItems,
+  displayedCost,
+  evaluationStatRows,
   escapeHtml,
+  optimalityStatRows,
   fetchGeometryMetaMemo,
   fetchJson,
   fetchRouteGeometryMetaMemo,
@@ -1094,7 +1097,7 @@ function routeClockLabelsForCurrentView() {
   const labels = {};
   if (["TDVRP", "TDVRPTW"].includes(summary.problem_type) && !state.benchmark.objectiveEntry?.td_schedules?.length) {
     // Large TD instances publish no schedule table (their arrival-time functions are not served).
-    labels.schematic = "Constant speed (25 km/h): this BKS's time-dependent schedule is not published at this instance size";
+    labels.schematic = "Constant speed (25 km/h): per-stop replay is unavailable for this BKS";
   }
   if (summary.metric_variant && summary.metric_variant !== "fastest") {
     labels.free_flow_fastest = `Free-flow travel times of the fastest variant (this BKS is on the ${summary.metric_variant} metric); no service times`;
@@ -1182,14 +1185,6 @@ function describeMapFeature(info) {
   return popupContent(isDepot ? "Depot" : `Node ${index}`, lines);
 }
 
-function formatDisplayCost(value) {
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) {
-    return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(2);
-  }
-  return value === null || value === undefined || value === "" ? "n/a" : String(value);
-}
-
 function updateStats(routeMode) {
   const visual = currentVisualState();
   if (!visual.instanceData) {
@@ -1199,16 +1194,15 @@ function updateStats(routeMode) {
   }
   const instanceData = visual.instanceData;
   const instanceName = instanceData.name || visual.payload?.title || "Unnamed instance";
-  const cost = state.sourceKind === "benchmark"
-    ? visual.objectiveEntry?.cost ?? visual.bksData?.cost
-    : visual.solutionInfo?.cost;
+  const published = state.sourceKind === "benchmark" ? visual.objectiveEntry : null;
+  const cost = published ? displayedCost(published) : visual.solutionInfo?.cost;
   selectionHeadline.hidden = false;
   selectionName.textContent = instanceName;
   selectionCostBlock.hidden = cost === null || cost === undefined || cost === "";
   if (!selectionCostBlock.hidden) {
     const objective = visual.objectiveEntry?.objective_function;
     selectionCostLabel.textContent = objective ? `${objective} · BKS cost` : "Solution cost";
-    selectionCost.textContent = formatDisplayCost(cost);
+    selectionCost.textContent = String(cost);
   }
   const totalDemand = Array.isArray(instanceData.demands) ? instanceData.demands.slice(1).reduce((total, value) => total + (Number(value) || 0), 0) : 0;
   const rows = [
@@ -1224,12 +1218,16 @@ function updateStats(routeMode) {
   if (state.sourceKind === "benchmark") {
     rows.push(["Objective", visual.objectiveEntry?.objective_function || "n/a"]);
     rows.push(["Benchmark", visual.payload?.summary?.benchmark_name || "n/a"]);
+    if (published) rows.push(...evaluationStatRows(published), ...optimalityStatRows(published));
   } else {
     rows.push(["Solution", visual.solutionInfo?.mode || "n/a"]);
     rows.push(["Coverage", visual.solutionInfo?.coverage || "n/a"]);
     rows.push(["Road API", state.lastApiError ? `error: ${state.lastApiError}` : "ok"]);
   }
-  statsEl.innerHTML = rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+  statsEl.innerHTML = rows.map(([label, value]) => {
+    const details = typeof value === "object" ? value.html : escapeHtml(value);
+    return `<dt>${escapeHtml(label)}</dt><dd>${details}</dd>`;
+  }).join("");
 }
 
 function renderVisualState(options = {}) {
