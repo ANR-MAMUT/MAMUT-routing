@@ -667,7 +667,7 @@ pyvrp = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", marker = "extra == 'pyvrp'", specifier = ">=2.0.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pydantic", specifier = ">=2.10" },
     { name = "pyvrp", marker = "extra == 'pyvrp'", specifier = ">=0.13.4,<0.14" },
     { name = "tqdm", marker = "extra == 'cli'", specifier = ">=4.66" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },

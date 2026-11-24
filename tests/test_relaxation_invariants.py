@@ -5,8 +5,8 @@ arrival-time functions, the TDVRP twin drops the windows), and every
 collection VRPTW BKS (any time-window set) is a CVRP solution of the same cost
 on the same metric. The 2026-09 audit found 40 Poryos2026 TDVRP BKS and one
 CVRP BKS beaten by their twin's routes; this screens every pair on the stored
-values (exact decimals, ``mamut_routing_lib.relaxation``) plus the twins'
-structural identity, and names the offending pairs.
+values. Certified editions supply their exact rational costs. The check also
+compares the twins' structural identity and names the offending pairs.
 
 Pricing the strict routes on the relaxation (``priced=True``) is the stronger
 check the twin cross-evaluation campaign runs; it needs the ATFs, so it is not
