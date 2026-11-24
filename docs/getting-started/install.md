@@ -18,8 +18,9 @@ Three packages, three roles. Install what you need.
     ```bash
     uvx --from mamut-routing-tools mamut-tools --help     # no install: uv runs it in an ephemeral environment
     pip install mamut-routing-tools                       # or install it
-    pip install "mamut-routing-tools[kayros]"             # + KAYROS for time-dependent instances
     ```
+
+    Kayros 1.7.1 requires mamut-routing-lib below 0.12. Use a separate historical environment for that solver alongside the v0.13 tools.
 
 === "Develop or maintain (checkout)"
 

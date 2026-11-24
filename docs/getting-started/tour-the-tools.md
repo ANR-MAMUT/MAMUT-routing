@@ -107,16 +107,12 @@ other; how the solutions themselves change with the metric is the question the M
 ```bash
 uv run mamut-tools generate derive-td $D vannes_poi-n31-k3 \
     | jq '{action, twins: [.combos[] | .tdvrptw_twin, .tdvrp_twin]}'
-uv run --with 'kayros>=1.1.2' mamut-tools solve $D/vannes_poi-n31-k3-bpr-moderate.vrp.json \
-    --solver kayros --time-limit 10 | jq '{cost, n_routes, status}'
 ```
 
 `derive-td` simulates a traffic overlay on the road graph (by default the `bpr` commuter model at `moderate`
 intensity), turns it into arrival-time functions, and lifts the time windows so they stay feasible under traffic. It
 writes the TDVRPTW and TDVRP twins with their sha256-pinned sidecars, or nothing at all when the windows cannot be
-certified. `--all` derives the six model × intensity combinations. [KAYROS](https://pypi.org/project/kayros/) solves
-the Duration objective of time-dependent instances; it is an optional extra, so `uv run --with` adds it for this one
-command (`pip install "mamut-routing-tools[kayros]"` installs it for good).
+certified. `--all` derives the six model × intensity combinations. Edition `r1` evaluates TD routes under `td-binary64-exact-v1`. Kayros 1.7.1 uses the historical solver environment described in the [installation guide](install.md).
 
 ## Export to CVRPLIB `.vrp`
 

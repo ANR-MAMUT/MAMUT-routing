@@ -8,6 +8,8 @@ Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark
 
 ## Verify a benchmark result
 
+Version 0.13 uses `binary64-exact-v1` for static instances and `td-binary64-exact-v1` for time-dependent instances. Each evaluates the materialized binary64 operands using exact rational arithmetic. The certified cost is stored in `metadata.standard.authoritative_cost`. The top-level `cost` gives its binary64 display.
+
 Each instance has an adjacent `<instance>.manifest.json`. It identifies the descriptor, required sidecars, materialization recipe where applicable, and the complete static matrix or time-dependent arrival-time functions. Each BKS carries the digest of that manifest in `metadata.standard.manifest_sha256`. Use the pinned library to replay a result from a checkout or an extracted family archive. The following example checks DIMACS C101 with Python Fraction. Omitting `--backend python` selects the native C++ evaluator.
 
 ```sh
@@ -24,9 +26,11 @@ This repository is part of the
 an academic research project advancing the state of the art in combinatorial optimization for logistics and transportation problems.
 See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and contributor information.
 
-The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-time-function sidecars and checker-validated best-known solutions) are the reference data of [KAYROS](https://github.com/0nyr/kayros), the MAMUT time-dependent VRP solver built on this repository's exact Duration checker.
+The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-time-function sidecars and checker-validated best-known solutions) are the reference data of [KAYROS](https://github.com/0nyr/kayros), the MAMUT time-dependent VRP solver. Historical solver claims on these routes retain the checker profile under which Kayros made them.
 
 ## Layout
+
+The website groups instance pages by problem type. In v0.13, raw descriptor and BKS links for the 9 migrated classic families move to `benchmarks/<Family>/<ProblemType>/…`. Former raw URLs return HTTP 404. The existing instance-page URLs lead to the current download links.
 
 | Path | Purpose |
 |---|---|
