@@ -9,8 +9,10 @@ exact on-disk contract.
 |---|---|---|---|---|
 | CVRP | static (euclidean or a distances sidecar) | no | `check_solution` | MonoCost |
 | VRPTW | static | yes | `check_solution` | HierarchicalVehicleCost (vehicles first, then cost), MonoCost |
-| TDVRP | time-dependent arrival-time functions (ATF) per arc | no | `check_td_solution` (exact IEEE-754, no epsilon) | Duration, FleetCostDuration |
+| TDVRP | time-dependent arrival-time functions (ATF) per arc | no | `check_td_solution` | Duration, FleetCostDuration |
 | TDVRPTW | time-dependent | yes | `check_td_solution` | Duration, FleetCostDuration |
+
+Static families use `binary64-exact-v1`. Time-dependent families use `td-binary64-exact-v1`. Both evaluate the materialized binary64 operands exactly and store a rational objective. The displayed binary64 cost rounds once, after evaluation.
 
 The website's [objectives page](/objectives/) explains how each objective is priced. A solution is *valid* only when
 the checker returns `valid`; the eight failure statuses (`invalid_customer_index`, `customer_served_multiple_times`,

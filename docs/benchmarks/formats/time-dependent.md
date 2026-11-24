@@ -34,11 +34,7 @@ The website materializes the two compact models at build time into `dist/atf-cac
 
 ## The NDCPWLF primitive (`td.pwlf`)
 
-A function is two parallel non-decreasing arrays `xs` and `ys`; linear between breakpoints; duplicate `xs` encode a
-step (evaluation returns the smallest value), duplicate `ys` a plateau (waiting). Composition is the two-pointer event
-merge of Visser & Spliet (2020) without normalization, interpolating between enclosing breakpoints and clamping
-monotone, so the invariant holds structurally under any rounding. The module is the pure-Python reference:
-reimplementations must be bit-identical.
+The primitive represents each arc with non-decreasing coordinate arrays `xs` and `ys`. Between adjacent distinct abscissas the function is linear. Repeated abscissas represent steps, with the smallest value taken at the step itself. A horizontal segment represents a plateau. The historical floating-point composition in `td.pwlf` is described below for replay.
 
 ## Pricing TD routes
 
@@ -46,7 +42,7 @@ The family profile for v0.13 is `td-binary64-exact-v1`. The checker reads each m
 
 ### Historical TD fold in v0.12
 
-The v0.12 store used `td-fold/2`, identified by `TD_CHECKER_CONTRACT` in the legacy `td.checker` API. Reproducing a result priced under that contract requires its binary64 operation order. Older solver claims can name `td-fold/1` as their target.
+The v0.12 store used `td-fold/2`. In v0.13 its checker and timing helpers are available under `mamut_routing_lib.td.fold2`. Reproducing a result priced under that contract requires its binary64 operation order. Older solver claims can name `td-fold/1` as their target.
 
 A route `r = (v_1, …, v_m)` from depot `0` is folded left to right into its ready-time function `δ_r`, which maps
 depot departure times to the time the vehicle is back:

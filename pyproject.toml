@@ -71,9 +71,6 @@ MAMUT-routing-lib = "https://github.com/ANR-MAMUT/MAMUT-routing-lib"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mamut_routing_publish"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/mamut_routing_publish/site_assets" = "mamut_routing_publish/site_assets"
-
 [tool.hatch.build.targets.sdist]
 exclude = [
     ".git",

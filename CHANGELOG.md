@@ -9,6 +9,11 @@ the tools have their own release notes.
 
 This entry and the ones below it are the work towards version 0.13 of `mamut-routing-lib`. Nothing of it is released yet: the released library (0.12.0) and tools (0.6.0) read the former layout, which stays available in the archive repository named below.
 
+### Breaking changes for v0.13
+
+- The public static and time-dependent Python checkers and cost helpers now follow `binary64-exact-v1` and `td-binary64-exact-v1` respectively. Existing calls can yield a different feasibility verdict, cost or earliest departure on the same routes. The native backend is the default. Callers can select Python Fraction under the same profile.
+- Certified BKS pages display the family evaluation and the stored TD witnesses. A green optimality label identifies an attached solver claim. A warning identifies a different target profile in the label and the BKS details.
+
 ### Data
 
 - **Every benchmark family is one repository**, `MAMUT-routing-<Family>`, mounted at `benchmarks/<Family>/` and marked by a `mamut-collection.json` file. Sintef2008, Dimacs2021, Ortec2022 and Dabia2013, which were tracked in this repository, and Ari2018, Vu2020, Rifki2020, Lera2026 and Blauth2024, which had 1 repository per problem variant, join Poryos2026 and Mamut2026 in this model. Inside a family, instances and best-known solutions sit under `<ProblemType>/` with the path they had before.

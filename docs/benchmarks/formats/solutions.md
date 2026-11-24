@@ -89,7 +89,9 @@ the status, the routing cost, the route count and an error message.
 
 ## Optimality claims
 
-For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the evaluated profile in `target_profile` (`binary64-exact-v1` for static results or `td-binary64-exact-v1` for TD results). The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
+For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the profile on which the solver reported optimality in `target_profile`. The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
+
+The website displays a green label for a BKS with an attached solver claim. Compare the claim's `target_profile` with the family profile. For example, a Kayros claim for `td-fold/1` on routes certified under `td-binary64-exact-v1` describes the historical objective. The label and the BKS details flag this difference. A BKS without `metadata.optimality` has no attached claim.
 
 Historical BKS records can carry an `OptimalityMetadata` stamp under the original checker.
 

@@ -47,4 +47,4 @@ Short, effective definitions for the acronyms and technical terms used across th
 - **PyPI** — the [*Python Package Index*](https://pypi.org/), from which [`mamut-routing-lib`](https://pypi.org/project/mamut-routing-lib/) is installed.
 - **SPDX** — [*Software Package Data Exchange*](https://spdx.org/licenses/). The standard license identifiers (SPDX IDs) shown as license badges on family pages.
 - **SHA-256** — 256-bit *Secure Hash Algorithm*, used to break ties deterministically when curating instance subsets.
-- **IEEE-754** — the *IEEE Standard for Floating-Point Arithmetic* (IEEE = *Institute of Electrical and Electronics Engineers*); the canonical TD checker computes costs in exact IEEE-754 double precision with no epsilon thresholds.
+- **IEEE 754** specifies the binary64 floating-point format used for materialized instance values and displayed costs. The static and time-dependent family profiles interpret these inputs as exact rationals, perform the evaluation exactly, and round the final rational once for display.

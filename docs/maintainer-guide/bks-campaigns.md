@@ -86,15 +86,7 @@ mamut-tools bks-campaign report   campaign.toml                   # ledger.csv, 
 - **Stopping.** The first Ctrl-C lets the running runs finish and starts no new one; a second aborts them. SIGTERM
   (`kill`, `timeout`, systemd, a batch scheduler before its SIGKILL) aborts at once. Aborted runs leave no record, so
   the next `run` redoes them.
-- **Harvest** sets aside the runs of an instance file that changed since, takes each instance's best remaining valid
-  run (fewer routes first under `HierarchicalVehicleCost`), skips runs below the published fleet lower bound, and
-  offers the rest (all but those worse than the baseline by more than float
-  noise, or all with `--offer-all`) to the BKS store, one process per instance, with the spec's authors and the
-  run's provenance. Ties and near-ties are the store's call: it compares exact decimal costs and keeps the incumbent
-  on a tie. Every harvest is kept as `harvests/NNNN-<time>.json` (`harvest.json` is the latest), and the ledger's
-  `bks_action` is what the store did with each run in any harvest: a run that created a BKS still says `created`
-  (with `bks_action_at`) after a later harvest kept it. A store error (a read-only file, a full disk) fails its
-  instance only (`error` in the results), and a harvest that is interrupted still records what it wrote before.
+- **Harvest** reprices the distinct valid routes on the current edition and selects the best exact objective, with fleet size taking precedence for `HierarchicalVehicleCost`. It sets aside changed instances and runs below the published fleet lower bound. If the frozen baseline bytes are available, it also reprices the baseline and offers a winner that matches or beats it. Otherwise it offers the winner directly. `--offer-all` skips the baseline filter. The store keeps the incumbent on an exact tie. The ledger records each run's actual `bks_action`, and each harvest writes a numbered report under `harvests/`, including completed writes if interrupted.
 - Launch long campaigns as a user unit on shared machines
   (`systemd-run --user --unit=<name> --collect mamut-tools bks-campaign run campaign.toml`): a resumable driver only
   loses the runs in flight when the session goes.
