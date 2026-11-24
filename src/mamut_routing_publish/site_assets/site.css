@@ -504,9 +504,14 @@ code,
   color: var(--cy);
 }
 
+:root:not([data-theme="dark"]) {
+  --claim-green: #08663f;
+  --claim-amber: #865200;
+}
+
 .badge.optimal {
   background: var(--gr-t);
-  color: var(--gr);
+  color: var(--claim-green, var(--gr));
   cursor: help;
 }
 
@@ -548,7 +553,7 @@ code,
 
 .claim-flag,
 .claim-warning {
-  color: var(--am);
+  color: var(--claim-amber, var(--am));
 }
 
 .claim-flag {
@@ -604,15 +609,16 @@ a.bks-link-chip:focus-visible {
 
 a.bks-link-chip.optimal {
   background: var(--gr-t);
-  color: var(--gr);
+  color: var(--claim-green, var(--gr));
 }
 
 a.bks-link-chip.optimal:hover,
 a.bks-link-chip.optimal:focus-visible {
-  background: var(--gr);
+  background: var(--claim-green, var(--gr));
   color: var(--bg);
 }
 
+a.bks-link-chip.optimal:is(:hover, :focus-visible) .claim-flag,
 a.bks-link-chip .badge-cost {
   color: inherit;
 }
