@@ -2860,6 +2860,8 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
   }
   const jumpIndices = entry.jump_indices || [];
   const count = entry.xs.length - jumpIndices.length;
+  const earlierDisplayTie = profile === "td-binary64-exact-v1" && durations.some((v, i) => v === entry.duration && entry.xs[i] < entry.departure_time);
+  const roundingNote = earlierDisplayTie ? " An earlier departure has the same displayed duration. The marker uses the exact values." : "";
   const jumpNote = jumpIndices.length ? " Filled points give the arrival or duration at a jump. Open points give the limit for departures just after it." : "";
   return `
       <div class="route-function-charts">
@@ -2872,7 +2874,7 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
           marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", symbol: "Δ*", label: `Minimum duration ${formatScheduleTime(entry.duration)} at t* = ${formatScheduleTime(entry.departure_time)}` },
         })}
       </div>
-      <p class="meta-line">Route profile <code>${escapeHtml(profile)}</code> · ${count} ${count === 1 ? "breakpoint" : "breakpoints"}. The earliest return to the depot (EAT) is ${formatScheduleTime(entry.ys[0])}. Δ* marks the minimum duration at the earliest departure attaining it.${jumpNote}</p>`;
+      <p class="meta-line">Route profile <code>${escapeHtml(profile)}</code> · ${count} ${count === 1 ? "breakpoint" : "breakpoints"}. The earliest return to the depot (EAT) is ${formatScheduleTime(entry.ys[0])}. Δ* marks the minimum duration at the earliest departure attaining it.${roundingNote}${jumpNote}</p>`;
 }
 
 function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex, routeFunctions, routeFunctionsStatus) {

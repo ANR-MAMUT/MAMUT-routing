@@ -40,6 +40,10 @@ def test_exact_route_knot_projections_and_jumps() -> None:
         assert.equal(evaluateNdcpwlf([0,2,2,8], [4,4,8,14], 3), 9);
         const html = renderTdRouteFunctionCharts({curve_profile:exact, routes:[entry]}, "ready", 0);
         assert.ok(html.includes(exact));
+        assert.ok(!html.includes("same displayed duration"));
+        const roundedTie = {...entry, durations:[0,1,0,2,2]};
+        const tiedHtml = renderTdRouteFunctionCharts({curve_profile:exact, routes:[roundedTie]}, "ready", 0);
+        assert.ok(tiedHtml.includes("same displayed duration"));
         // Only the true jump splits a polyline in each chart.
         assert.equal((html.match(/<polyline /g) || []).length, 4);
         assert.equal((html.match(/class="curve-jump-attained"/g) || []).length, 2);
