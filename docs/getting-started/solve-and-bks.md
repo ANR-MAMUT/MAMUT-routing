@@ -78,10 +78,7 @@ executable = "/opt/filo2/build/filo2"   # built with -DENABLE_TIMELIMIT=ON
 executable = "/opt/HGS-CVRP/build/hgs"  # vidalt/HGS-CVRP + the lib's full-matrix reader patch
 ```
 
-Relative paths are read from the config file's folder; a bare executable name is looked up on PATH. Unknown keys and
-mistyped values (`fleet_limit = "false"`, quoted) are errors, with a suggestion for a near-miss key. An error in one
-`[solvers.<name>]` table disables that solver only: `solvers list` shows it as unavailable with the error, and the
-other solvers keep working. `extends` may name a table defined anywhere in the file.
+Relative paths in the configuration are resolved from the directory containing the config file. A bare executable name uses only absolute directories in `PATH`. Unknown keys and invalid values disable the affected solver. `solvers list` reports the configuration error. A solver can inherit from another table using `extends`.
 
 HGS-CVRP's search handles asymmetric distances, but its upstream CVRPLIB reader only computes Euclidean distances
 from coordinates. The lib ships a small reader patch (`git apply` it to HGS-CVRP 1a92795 and rebuild; `mamut-routing
@@ -97,17 +94,10 @@ uv run mamut-routing solve path/to/inst.vrp.json --solver lkh3 --time-limit-s 60
 | `hgs-cvrp` | CVRP, any metric (asymmetric included), with the lib's full-matrix reader patch applied to HGS-CVRP | decimal full matrix + coordinates (for SWAP*) / CVRPLIB `.sol` |
 | `filo2`, `ails2` | CVRP on euclidean variants (they compute distances from coordinates) | X-format `.vrp` / CVRPLIB `.sol` |
 
-Each run writes the solver's input into a scratch directory with the costs scaled to integers: exactly when the
-data allow (x1000 for the 3-decimal Mamut2026 / Poryos2026 matrices, so the solver's cost unscales exactly and is
-cross-checked), approximately otherwise -- conservatively for time windows, so a schedule the solver finds feasible
-is feasible on the published data. HGS-CVRP computes in doubles and reads the published matrix as is (divided by
-10, exactly, when a distance exceeds its 1e5 limit, e.g. Bogotá `shortest`). Coordinate solvers get coordinates in a
-unit that fits their limits (FILO2 millimetres). The solver runs in its own process group
-with a hard timeout and is killed with its children on cancellation. A run that ends without a solution file reports
-the last lines the solver printed (an unpatched HGS-CVRP rejecting the matrix, a missing library), since the scratch
-directory is gone by then. For LKH-3, `extra_args = ["RUNS = 10"]` adds lines to its parameter file, also when the
-command is wrapped (`argv = ["taskset", "-c", "0", "{executable}", "{params}"]`). Any other solver that reads and writes
-CVRPLIB-style files can be added to the config; see the [solution formats](../benchmarks/formats/solutions.md) page.
+Use `--keep-artifacts DIR` to retain the solver input and output. For solvers that read an explicit integer matrix, the adapter compares a reported integer cost with the sum of the exported weights along the returned routes. A warning identifies inconsistent reports. The checker validates and prices the routes on the family instance before BKS comparison. HGS-CVRP reads a floating-point matrix. FILO2 and AILS-II calculate distances from coordinates.
+
+The runner supervises external solvers through cancellation and hard timeouts. A run that ends without a solution file reports the final log lines. With LKH-3, each `extra_args` entry supplies one parameter line, for example `RUNS = 10`. The runner owns the input and output paths, seed, time limit and cost scale. A generic external solver can declare its CVRPLIB-style files in the configuration. [Solution formats](../benchmarks/formats/solutions.md)
+
 Such a solver is assumed to need symmetric costs: the asymmetric `fastest` and `shortest` variants are refused for
 it, with the reason, unless its entry says `symmetric_only = false` (only declare that if it really reads an
 asymmetric `FULL_MATRIX`; the generic input file says `TYPE : CVRP` whatever the matrix). A solver that
