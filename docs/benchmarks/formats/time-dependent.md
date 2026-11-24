@@ -94,7 +94,7 @@ ready time came out of the ratio interpolation above and could be off by an ulp;
 could land past a vertical step and read its upper branch. Rifki2020's Rifki-30 (n = 30) was priced 8292 instead
 of 8267, and a feasible route could be declared infeasible. `td-fold/2` removes the interpolation from vertex maps
 and from slope-one travel. The 2026-09-24 re-pricing moved 870 stored costs, all but three by a few ulps (see
-[Solutions](solutions.md#re-pricing)). Test vectors for reimplementations are in
+[Solutions](solutions.md#historical-td-repricing)). Test vectors for reimplementations are in
 `MAMUT-routing-lib/tests/fixtures/td/fold-v2-vectors.json`.
 
 A cost that differs from the checker's is refused as `OBJECTIVE_VALUE_MISMATCH`. After a contract change the stored
