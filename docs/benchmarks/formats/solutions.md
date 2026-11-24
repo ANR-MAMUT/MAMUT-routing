@@ -13,19 +13,35 @@ Each route lists customer indices from 1 to `num_customers`, with the depot impl
 A `BenchmarkBKS` adds `objective_function` and is stored next to the instance as `<base>.bks.<ObjectiveFunction>.json`, one file per objective. In v0.13, `save_bks_if_improved` and `save_td_solution_as_bks_if_improved` apply the following rules.
 
 - The candidate must be a feasible solution of the named instance. The store writes its routes in lexicographic order, with customer order preserved within each route.
-- The store evaluates static routes under `binary64-exact-v1` and time-dependent routes under `td-binary64-exact-v1`. It stores the rational cost in `metadata.exact_evaluation.authoritative_cost` and its binary64 display value in `cost` (null on display overflow). For TD routes it also records each exact minimum duration and the earliest departure attaining it.
+- The store evaluates static routes under `binary64-exact-v1` and time-dependent routes under `td-binary64-exact-v1`. It stores the rational cost in `metadata.standard.authoritative_cost` for a certified edition, or `metadata.exact_evaluation.authoritative_cost` before certification, and its binary64 display value in `cost` (null on display overflow). For TD routes it also records each exact minimum duration and the earliest departure attaining it.
 - `metadata.authors` is required. The store fills `validated_cost`, `validated_num_routes` and `date`.
 - The store re-evaluates the incumbent's routes before comparing them with the candidate. It compares exact costs, with route count taking precedence for `HierarchicalVehicleCost`. A strict improvement replaces the incumbent. A tie keeps it and returns `BKSUpdateResult(action="kept_existing", tie=True)`.
 
 In v0.12, the static store instead summed the shortest round-trip decimal representations of the materialized arc costs.
 
-Provenance fields are free but expected for campaigns: `method`, `seed`, `time_limit_s`, `solver_version`, `machine`,
-`campaign`. A BKS stored from a registry solve (`mamut-routing solve --save-bks`, `submit_bks(...,
-metadata=solved.bks_metadata())`, `mamut-tools bks-campaign harvest`) carries `solver`, `method`, `solver_version`,
-`seed`, `time_limit_s`, `wall_time`, `solver_cost` (the solver's own objective in instance units, informational),
-`cost_exact` (whether the solver worked on exactly the published costs or on rounded ones), `machine` (the CPU model)
-and, for external executables, `executable_sha256` and `input_sha256`. BKS files are published: they never record a
-hostname.
+A BKS created from a solver run can carry the solver and method, version, seed, time budget, wall time, campaign and CPU model. External runs can also identify the input file and executable by SHA-256.
+
+### The solver's reported cost
+
+The optional `metadata.solver_report` names the reported objective and preserves its numerical value. An `integer` or `decimal-text` value is the original token as a string. A `binary64` value from an API is a finite JSON number. The optional `family_units_per_solver_unit` is a positive reduced fraction. Multiplying by this fraction converts one solver unit to the instance's cost unit.
+
+```json
+{
+  "solver_report": {
+    "objective": "total-arc-cost",
+    "encoding": "integer",
+    "value": "65617528",
+    "family_units_per_solver_unit": {"numerator": "1", "denominator": "100"}
+  },
+  "solver_cost": 656175.28
+}
+```
+
+This LKH-3 report gives the cost of its routes on the exported Toronto matrix. The family checker priced the same routes at `46174228443702207525/70368744177664`. A certified BKS compares the rational in `metadata.standard.authoritative_cost`. With no verified manifest yet, the evaluation is recorded under `metadata.exact_evaluation`.
+
+For a comparable `total-arc-cost` or `total-route-duration`, calculate `solver_cost` by multiplying the reported value by the unit exactly and rounding once to the nearest binary64, ties to even. For a composite objective such as PyVRP's `vehicle-penalized-cost`, the optional `routing_cost_component` supplies the separately reported comparable quantity with its own `objective`, `encoding` and `value`, in the same unit. Omit `solver_cost` if that conversion is unknown or its binary64 projection overflows. Legacy records can lack the original value or unit.
+
+In an external run's provenance, `reported_cost_matches_exported_model` answers whether the solver's reported number equals the sum of the integer matrix weights on its returned routes, including both depot legs. Either result can accompany a route set that the family checker verifies. The adapter omits the diagnostic when it cannot perform the comparison.
 
 ## Solution files from other solvers
 
