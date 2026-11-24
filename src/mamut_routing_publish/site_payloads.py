@@ -20,7 +20,9 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -51,7 +53,10 @@ from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_inst
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
 from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, atf_cache_path
 from mamut_routing_publish.publish_roots import PublishRoots, hardlink_tree, migrate_legacy_state
-from mamut_routing_lib.td.checker import compute_route_ready_time_function
+from mamut_routing_lib.td.fold2 import compute_route_ready_time_function
+from mamut_routing_lib.exact_types import STATIC_PROFILE, TD_PROFILE
+from mamut_routing_lib.exact_store import routes_sha256
+from mamut_routing_lib.manifests import file_sha256, manifest_path_for
 from mamut_routing_lib import has_structured_metadata
 
 from .progress import ProgressReporter
@@ -64,7 +69,7 @@ from .route_timeline import (
 )
 
 
-SITE_PAYLOAD_SCHEMA_VERSION = "1.0.0"
+SITE_PAYLOAD_SCHEMA_VERSION = "2.0.0"
 DEFAULT_SITE_OUTPUT_DIR = Path("dist")
 DEFAULT_SITE_PAYLOAD_ROOT_DIR = Path("site-payloads")
 DEFAULT_FAMILY_CONTEXT_REPORT_PATH = Path(__file__).with_name("site_assets") / "texts" / "mamut-routing_benchmark_families.md"
@@ -149,6 +154,32 @@ class SiteCounts(BaseModel):
     bks_count: int
 
 
+class RationalValue(BaseModel):
+    numerator: str
+    denominator: str
+
+    def as_fraction(self) -> Fraction:
+        # Decimal bypasses CPython's decimal-string length limit on large TD results.
+        return Fraction(int(Decimal(self.numerator)), int(Decimal(self.denominator)))
+
+
+class PublishedEvaluation(BaseModel):
+    profile: str
+    authoritative_cost: RationalValue
+    display_overflow: bool
+    benchmark_revision: str | None = None
+    manifest_sha256: str | None = None
+
+    @property
+    def identity(self) -> tuple[str, str | None, str | None]:
+        return self.profile, self.benchmark_revision, self.manifest_sha256
+
+
+class RouteWitness(BaseModel):
+    duration: RationalValue
+    departure_time: RationalValue
+
+
 class ObjectiveAvailability(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -156,9 +187,9 @@ class ObjectiveAvailability(BaseModel):
     cost: int | float | None = None
     num_routes: int | None = None
     artifact_path: str
-    # True when the BKS carries a structured optimality proof, so instance
-    # lists can badge proven-optimal entries at a glance.
-    optimality_proven: bool = False
+    evaluation: PublishedEvaluation | None = None
+    family_profile: str
+    optimality: dict[str, Any] | None = None
 
 
 class BreadcrumbItem(BaseModel):
@@ -324,7 +355,7 @@ class TDRouteSchedule(BaseModel):
 
 
 class TDRouteFunctionEntry(BaseModel):
-    """Checker-exact route ready-time function ``δ_r`` of one BKS route.
+    """Historical td-fold/2 route ready-time function ``δ_r`` of one BKS route.
 
     ``xs``/``ys`` are the breakpoints of ``δ_r`` over the feasible depot
     departure domain; the duration PWLF is ``δ_r(t) − t`` and the checker's
@@ -340,6 +371,7 @@ class TDRouteFunctionEntry(BaseModel):
 
 
 class TDRouteFunctionsPayload(BaseModel):
+    curve_profile: str = "td-fold/2"
     model_config = ConfigDict(extra="forbid")
 
     payload_kind: Literal["td_route_functions"] = "td_route_functions"
@@ -361,6 +393,9 @@ class BKSPageEntry(BaseModel):
     validated_num_routes: int | None = None
     license: str | None = None
     license_url: str | None = None
+    evaluation: PublishedEvaluation | None = None
+    family_profile: str | None = None
+    route_evaluations: list[RouteWitness] | None = None
     td_schedules: list[TDRouteSchedule] | None = None
     route_functions_path: str | None = None
     # Per-stop schedule for the workbench animation (route_timeline.py); absent for
@@ -418,6 +453,8 @@ class InstancePageSummary(BaseModel):
 class BksValue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    evaluation: PublishedEvaluation | None = None
+
     cost: int | float | None = None
     num_routes: int | None = None
     authors: str | None = None
@@ -457,7 +494,7 @@ class BksChange(BaseModel):
     instance_name: str
     objective_function: ObjectiveFunction
     #: ``repriced``: same routes, cost changed by a checker-contract change.
-    kind: Literal["added", "removed", "improved", "regressed", "repriced"]
+    kind: Literal["added", "removed", "improved", "regressed", "repriced", "reevaluated"]
     prev: BksValue | None = None
     new: BksValue | None = None
     cost_delta: int | float | None = None
@@ -478,6 +515,7 @@ class ChangeCounts(BaseModel):
     bks_improved: int = 0
     bks_regressed: int = 0
     bks_repriced: int = 0
+    bks_reevaluated: int = 0
 
 
 class SnapshotChangeLog(BaseModel):
@@ -1302,6 +1340,7 @@ def _reset_resolution_memos() -> None:
     """
     _TD_ATFS_MEMO.clear()
     _GEO_META_VIEWS.clear()
+    _VALIDATION_FILE_SHA256.clear()
     clear_route_timeline_memo()
 
 
@@ -1603,7 +1642,7 @@ def _evaluate_on_domain(fn, x: float) -> float:
     return fn.evaluate(x)
 
 
-def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[TDRouteSchedule], list[TDRouteFunctionEntry]]:
+def _legacy_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[TDRouteSchedule], list[TDRouteFunctionEntry]]:
     """Per-stop schedules + route ready-time functions of a TD BKS, in the BKS's stored route order.
 
     Each route is dispatched at the checker's earliest optimal depot departure
@@ -1660,6 +1699,36 @@ def _build_td_schedules(instance, atfs, routes: list[list[int]]) -> tuple[list[T
     return schedules, functions
 
 
+def _certified_td_schedules(instance, atfs, routes, witnesses) -> list[TDRouteSchedule]:
+    """Replay the ATFs at the stored rational departures. Project only the displayed times."""
+    windows = getattr(instance, "time_windows", None)
+    schedules = []
+    for route, witness in zip(routes, witnesses, strict=True):
+        departure = witness.departure_time.as_fraction()
+        duration = witness.duration.as_fraction()
+        current = departure
+        previous = instance.depot
+        stops = []
+        for vertex in route:
+            arrival = atfs.arcs[previous, vertex].evaluate_exact(current)
+            start = max(arrival, Fraction(float(windows[vertex][0]))) if windows is not None else arrival
+            if windows is not None and start > Fraction(float(windows[vertex][1])):
+                raise ValueError(f"stored TD witness misses the window at customer {vertex}")
+            current = start + Fraction(float(instance.service_times[vertex]))
+            stops.append(TDScheduleStop(
+                node=vertex, arrival=float(arrival), wait=float(start - arrival),
+                service_start=float(start), departure=float(current),
+            ))
+            previous = vertex
+        returned = atfs.arcs[previous, instance.depot].evaluate_exact(current)
+        if returned - departure != duration:
+            raise ValueError("stored TD duration disagrees with replay from the stored departure")
+        schedules.append(TDRouteSchedule(
+            departure_time=float(departure), duration=float(duration), return_arrival=float(returned), stops=stops,
+        ))
+    return schedules
+
+
 def _route_functions_filename(objective_function: ObjectiveFunction) -> str:
     return f"route-functions.{objective_function.value}.json"
 
@@ -1684,6 +1753,35 @@ def _bks_source_str(value: Any) -> str | None:
     return str(value)
 
 
+def _read_bks_evaluation(bks_path, bks, manifest, manifest_digest):
+    """Read the exact key and witnesses only after checking their bindings to the published artifacts."""
+    standard = bks.metadata.get("standard")
+    marked = standard if standard is not None else bks.metadata.get("exact_evaluation")
+    evaluation = PublishedEvaluation.model_validate(marked) if marked is not None else None
+    if manifest is not None:
+        family_profile = manifest["default_profile"]
+    else:
+        family_profile = TD_PROFILE if bks.objective_function in TD_SCHEDULE_OBJECTIVES else STATIC_PROFILE
+    witnesses = None
+    display = bks.cost
+    if evaluation is not None:
+        if (marked["objective"] != bks.objective_function or marked["num_routes"] != len(bks.routes)
+                or marked["routes_sha256"] != routes_sha256(bks.routes)):
+            raise ValueError(f"{bks_path}: exact result does not bind these routes and objective")
+        if standard is not None and (manifest is None or evaluation.benchmark_revision != manifest["benchmark_revision"]
+                or evaluation.manifest_sha256 != manifest_digest
+                or evaluation.profile != family_profile or manifest["objective"] != marked["objective"]):
+            raise ValueError(f"{bks_path}: certified result does not match the adjacent edition manifest")
+        display = _binary64_display(evaluation.authoritative_cost.as_fraction())
+        if display != bks.cost or (display is None) != evaluation.display_overflow:
+            raise ValueError(f"{bks_path}: stored cost display disagrees with the exact objective")
+        if evaluation.profile == TD_PROFILE:
+            witnesses = [RouteWitness.model_validate(item) for item in marked["route_evaluations"]]
+            if len(witnesses) != len(bks.routes):
+                raise ValueError(f"{bks_path}: expected one TD witness per route")
+    return evaluation, family_profile, witnesses, display
+
+
 def _build_bks_entries(
     output_repo_dir: Path,
     instance_path: Path,
@@ -1698,12 +1796,22 @@ def _build_bks_entries(
     entries: list[BKSPageEntry] = []
     function_payloads: list[TDRouteFunctionsPayload] = []
     timeline_payloads: list[RouteTimelinePayload] = []
+    adjacent = manifest_path_for(instance_path)
+    manifest_bytes = adjacent.read_bytes() if adjacent.is_file() else None
+    manifest = json.loads(manifest_bytes) if manifest_bytes is not None else None
+    if manifest is not None:
+        if file_sha256(instance_path) != manifest["instance"]["sha256"]:
+            raise ValueError(f"{instance_path}: descriptor disagrees with its edition manifest")
+        manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    else:
+        manifest_digest = None
     for bks_path in (bks_paths if bks_paths is not None else _discover_bks_paths(instance_path)):
         bks = load_bks(bks_path)
         license_value = bks.metadata.get("license") if isinstance(bks.metadata, dict) else None
         license_url_value = bks.metadata.get("license_url") if isinstance(bks.metadata, dict) else None
         optimality_value = bks.metadata.get("optimality") if isinstance(bks.metadata, dict) else None
         repriced_value = bks.metadata.get("repriced") if isinstance(bks.metadata, dict) else None
+        evaluation, family_profile, witnesses, display = _read_bks_evaluation(bks_path, bks, manifest, manifest_digest)
         td_schedules = None
         route_functions_path = None
         route_geometry_path = None
@@ -1731,18 +1839,17 @@ def _build_bks_entries(
             route_geometry_metric = route_geometry.metric
         if td_instance is not None and td_atfs is not None and bks.objective_function in TD_SCHEDULE_OBJECTIVES:
             try:
-                td_schedules, function_entries = _build_td_schedules(td_instance, td_atfs, bks.routes)
-                if route_path is not None:
-                    route_functions_path = f"{route_path}{_route_functions_filename(bks.objective_function)}"
-                    function_payloads.append(
-                        TDRouteFunctionsPayload(
-                            objective_function=bks.objective_function,
-                            route_path=route_path,
-                            routes=function_entries,
-                        )
-                    )
+                if witnesses is not None:
+                    td_schedules = _certified_td_schedules(td_instance, td_atfs, bks.routes, witnesses)
+                elif isinstance(repriced_value, dict) and repriced_value.get("contract") == "td-fold/2":
+                    td_schedules, function_entries = _legacy_td_schedules(td_instance, td_atfs, bks.routes)
+                    if route_path is not None:
+                        route_functions_path = f"{route_path}{_route_functions_filename(bks.objective_function)}"
+                        function_payloads.append(TDRouteFunctionsPayload(
+                            objective_function=bks.objective_function, route_path=route_path, routes=function_entries,
+                        ))
             except Exception as exc:
-                warnings.warn(f"Unable to derive the TD schedule for {bks_path}: {exc}", stacklevel=2)
+                warnings.warn(f"Unable to derive TD schedule or curve for {bks_path}: {exc}", stacklevel=2)
         timeline_path = None
         timeline_clock = None
         if timeline_instance is not None and route_path is not None:
@@ -1756,7 +1863,10 @@ def _build_bks_entries(
                 objective_function=bks.objective_function,
                 artifact_path=bks_path.relative_to(output_repo_dir).as_posix(),
                 num_routes=bks.num_routes,
-                cost=bks.cost,
+                cost=display,
+                evaluation=evaluation,
+                family_profile=family_profile,
+                route_evaluations=witnesses,
                 authors=bks.metadata.get("authors"),
                 source=_bks_source_str(bks.metadata.get("source")),
                 method=bks.metadata.get("method"),
@@ -2046,7 +2156,10 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
                 cost=entry.cost,
                 num_routes=num_routes,
                 artifact_path=entry.artifact_path,
-                optimality_proven=bool(entry.optimality and entry.optimality.get("proven")),
+                evaluation=entry.evaluation,
+                family_profile=entry.family_profile or (TD_PROFILE if objective in TD_SCHEDULE_OBJECTIVES else STATIC_PROFILE),
+                optimality=({key: entry.optimality[key] for key in ("status", "target_profile", "proven")
+                             if key in entry.optimality} if entry.optimality is not None else None),
             )
         )
     return availability
@@ -2961,7 +3074,7 @@ def _build_objectives_page_payload(
             title="HierarchicalVehicleCost",
             description="Lexicographic VRPTW objective: minimize the number of vehicles first, then minimize total cost.",
             interpretation_notes=[
-                "Compare HVC results as fleet-first solutions rather than pure distance optimizers.",
+                "For binary64-exact-v1, compare the number of routes first and the exact sum of binary64 arc costs second.",
                 "Historical SINTEF-style references and some VRPTW Poryos2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.HIERARCHICAL_VEHICLE_COST),
@@ -2972,7 +3085,7 @@ def _build_objectives_page_payload(
             title="MonoCost",
             description="Single-objective cost minimization where total routing cost is optimized directly.",
             interpretation_notes=[
-                "Compare MonoCost results as cost-first solutions even when they use more vehicles than HVC references.",
+                "The binary64-exact-v1 profile sums the materialized binary64 arc costs exactly. The displayed number is the nearest binary64 value.",
                 "DIMACS-style references, the Ortec2022 (EURO Meets NeurIPS 2022) family, and all current CVRP Poryos2026 BKS entries use this objective.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.MONO_COST),
@@ -2983,8 +3096,8 @@ def _build_objectives_page_payload(
             title="Duration",
             description="Time-dependent duration-minimization objective: minimize the sum of route durations, where the depot departure time of each route is a decision variable and travel times vary with departure time (FIFO arrival-time functions).",
             interpretation_notes=[
-                "Costs are the authoritative output of the canonical checker (`mamut_routing_lib.td.check_td_solution`): exact IEEE-754 double arithmetic, no epsilon thresholds, routes in canonical order (sorted by first customer).",
-                "All TDVRPTW and TDVRP families (Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Poryos2026) use this objective; waiting before a time window and service times count toward route duration, and each route is dispatched at its optimal departure time.",
+                "The td-binary64-exact-v1 profile interpolates the binary64 arrival-time function knots exactly, minimizes each route duration, and selects the earliest departure attaining that minimum. The certified BKS records the exact cost and these route witnesses.",
+                "The TD families Dabia2013, Ari2018, Vu2020, Rifki2020, Lera2026, Poryos2026 use this objective. Waiting and service time count toward route duration.",
             ],
             related_routes=_build_objective_related_routes(items, ObjectiveFunction.DURATION),
         ),
@@ -3071,6 +3184,8 @@ def _build_inventory(resolved_items: list[_ResolvedSiteInstance]) -> dict:
                 "authors": entry.authors,
                 "method": entry.method,
             }
+            if entry.evaluation is not None:
+                record["evaluation"] = entry.evaluation.model_dump(mode="json")
             if entry.routes_sha256 is not None:
                 record["routes_sha256"] = entry.routes_sha256
             if entry.repriced is not None and entry.repriced.get("previous_cost") is not None:
@@ -3151,7 +3266,7 @@ def _bks_change_from_inventory(
     record: dict,
     objective_function_value: str,
     *,
-    kind: Literal["added", "removed", "improved", "regressed", "repriced"],
+    kind: Literal["added", "removed", "improved", "regressed", "repriced", "reevaluated"],
     prev: BksValue | None,
     new: BksValue | None,
     cost_delta: int | float | None = None,
@@ -3181,6 +3296,7 @@ def _bks_change_from_inventory(
 
 def _bks_value_from_record(record: dict) -> BksValue:
     return BksValue(
+        evaluation=record.get("evaluation"),
         cost=record.get("cost"),
         num_routes=record.get("num_routes"),
         authors=record.get("authors"),
@@ -3188,12 +3304,19 @@ def _bks_value_from_record(record: dict) -> BksValue:
     )
 
 
+def _binary64_display(value: Fraction) -> float | None:
+    try:
+        return float(value)
+    except OverflowError:
+        return None
+
+
 def _classify_bks_pair(
     objective_function_value: str,
     prev_record: dict,
     new_record: dict,
 ) -> tuple[
-    Literal["improved", "regressed", "repriced"] | None, int | float | None, float | None, int | None, float | None
+    Literal["improved", "regressed", "repriced", "reevaluated"] | None, int | float | None, float | None, int | None, float | None
 ]:
     """Return (kind, cost_delta, cost_pct, routes_delta, routes_pct) for a BKS pair.
 
@@ -3204,18 +3327,22 @@ def _classify_bks_pair(
     old cost in its ``repriced_from`` marker, or both inventories fingerprint
     the same routes. Exact comparisons only, no tolerance.
     """
-    prev_cost = prev_record.get("cost")
-    new_cost = new_record.get("cost")
-    prev_routes = prev_record.get("num_routes")
-    new_routes = new_record.get("num_routes")
-
-    cost_delta: int | float | None
+    previous = _bks_value_from_record(prev_record)
+    current = _bks_value_from_record(new_record)
+    prev_routes, new_routes = previous.num_routes, current.num_routes
+    prev_cost = previous.evaluation.authoritative_cost.as_fraction() if previous.evaluation else previous.cost
+    new_cost = current.evaluation.authoritative_cost.as_fraction() if current.evaluation else current.cost
+    prev_identity = previous.evaluation.identity if previous.evaluation else None
+    new_identity = current.evaluation.identity if current.evaluation else None
+    if prev_identity != new_identity:
+        # Across arithmetic contracts or instance editions, the old and new keys cannot establish an improvement.
+        return ("reevaluated", None, None, None, None)
     if prev_cost is None or new_cost is None:
-        cost_delta = None
-        cost_pct = None
+        cost_delta = cost_pct = None
     else:
-        cost_delta = new_cost - prev_cost
-        cost_pct = (cost_delta / prev_cost * 100.0) if prev_cost not in (0, 0.0) else None
+        difference = Fraction(new_cost) - Fraction(prev_cost)
+        cost_delta = _binary64_display(difference)
+        cost_pct = _binary64_display(difference * 100 / Fraction(prev_cost)) if prev_cost else None
 
     routes_delta: int | None
     if prev_routes is None or new_routes is None:
@@ -3388,6 +3515,7 @@ def _compute_change_log(
         bks_improved=sum(1 for c in bks_changes if c.kind == "improved"),
         bks_regressed=sum(1 for c in bks_changes if c.kind == "regressed"),
         bks_repriced=sum(1 for c in bks_changes if c.kind == "repriced"),
+        bks_reevaluated=sum(1 for c in bks_changes if c.kind == "reevaluated"),
     )
 
     return SnapshotChangeLog(
@@ -3451,6 +3579,8 @@ def _refresh_history_entry_scopes(
         detail_path = _history_detail_payload_path(site_output, entry.snapshot.snapshot_id, payload_root_dir)
         if detail_path.exists():
             detail_payload = load_json_from_file(detail_path)
+            detail_payload["schema_version"] = SITE_PAYLOAD_SCHEMA_VERSION
+            detail_payload["change_log"] = change_log.model_dump(mode="json")
             detail_payload["affected_problem_types"] = [value.value for value in problem_types]
             detail_payload["affected_benchmark_names"] = [value.value for value in benchmark_names]
             detail_payload["affected_objective_functions"] = [value.value for value in objective_functions]

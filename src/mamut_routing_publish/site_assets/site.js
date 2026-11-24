@@ -486,14 +486,30 @@ function formatCost(value) {
   if (value === null || value === undefined) {
     return "n/a";
   }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Number.isInteger(value) ? String(value) : value.toFixed(2);
-  }
   return String(value);
 }
 
 function costSpan(value, className = "badge-cost") {
   return `<span class="${className}">${escapeHtml(formatCost(value))}</span>`;
+}
+
+function displayedCost(entry) {
+  return entry?.evaluation?.display_overflow ? "Outside binary64 range" : formatCost(entry?.cost);
+}
+
+function exactFractionHtml(value) {
+  const label = value.denominator === "1" ? value.numerator : `${value.numerator} / ${value.denominator}`;
+  return `<code class="exact-fraction">${escapeHtml(label)}</code>`;
+}
+
+function evaluationStatRows(entry) {
+  const rows = [["Family default", entry.family_profile || "Unspecified"]];
+  if (!entry.evaluation) return [...rows, ["Evaluation profile", "Unspecified in this BKS"]];
+  const value = entry.evaluation;
+  if (value.profile !== entry.family_profile) rows.push(["Evaluation profile", value.profile]);
+  rows.push(["Edition", value.benchmark_revision || "Uncertified evaluation"]);
+  rows.push(["Exact cost", { html: `<details><summary>Show fraction</summary>${exactFractionHtml(value.authoritative_cost)}</details>` }]);
+  return rows;
 }
 
 // Escape, then turn `backtick spans` into inline <code> elements.
@@ -513,19 +529,39 @@ function routesStatValue(entry) {
   return String(entry.num_routes);
 }
 
-// Extra stat-grid rows for a BKS entry carrying a structured optimality proof
-// (entry.optimality mirrors the mamut-routing-lib OptimalityMetadata object).
-// The full proof detail (certificate wording, prover, campaign) belongs to the
-// instance page's BKS card; the compact contexts (inspector pane, lists) only
-// show the proven-optimal badge.
+function claimInfo(entry) {
+  // Older snapshot summaries only recorded whether a claim was present.
+  const proof = entry?.optimality || (entry?.optimality_proven ? { proven: true } : null);
+  if (!proof) return null;
+  const family = entry.family_profile || (["Duration", "FleetCostDuration"].includes(entry.objective_function)
+    ? "td-binary64-exact-v1" : "binary64-exact-v1");
+  const target = proof.target_profile;
+  const warning = !target
+    ? `This claim does not specify its arithmetic profile. The family default is ${family}.`
+    : (target !== family ? `The solver reported optimality under ${target}. The family evaluates this BKS under ${family}. Optimality under the family default is unverified.` : "");
+  const label = proof.status === "solver-reported-optimal" || proof.proven ? "Solver-reported optimal" : "Optimality record";
+  return { proof, label, warning, title: warning || `${label} under ${target}.` };
+}
+
+function claimTooltip(info) {
+  return `<span class="claim-tooltip" aria-hidden="true">${escapeHtml(info.title)}</span>`;
+}
+
+function claimBadge(info, focusable = true) {
+  if (!info) return "";
+  const warning = info.warning ? ` <span class="claim-flag" aria-label="Profile warning">⚠</span>` : "";
+  return `<span class="badge optimal claim-badge" role="note"${focusable ? ' tabindex="0"' : ""} title="${escapeHtml(info.title)}" aria-label="${escapeHtml(info.title)}">${optimalBadgeIconHtml()}${escapeHtml(info.label)}${warning}${claimTooltip(info)}</span>`;
+}
+
 function optimalityStatRows(entry) {
-  const proof = entry?.optimality;
-  if (!proof?.proven) return [];
-  const badge = `<span class="badge optimal">${optimalBadgeIconHtml()}proven optimal</span>`;
-  const meta = proof.date ? ` <span class="meta-line">${escapeHtml(proof.date)}</span>` : "";
-  const rows = [["Optimality", { html: `${badge}${meta}` }]];
+  const info = claimInfo(entry);
+  if (!info) return [];
+  const proof = info.proof;
+  const rows = [["Optimality", { html: claimBadge(info) }], ["Claim target", proof.target_profile || "Unspecified"]];
+  if (info.warning) rows.push(["Profile warning", { html: `<span class="claim-warning">⚠ ${escapeHtml(info.warning)}</span>` }]);
+  if (proof.solver || proof.prover) rows.push(["Solver", proof.solver || proof.prover]);
+  if (proof.date) rows.push(["Claim date", proof.date]);
   if (proof.certificate) rows.push(["Certificate", proof.certificate]);
-  if (proof.prover) rows.push(["Prover", proof.prover]);
   if (proof.campaign) rows.push(["Campaign", proof.campaign]);
   return rows;
 }
@@ -535,19 +571,19 @@ function optimalBadgeIconHtml() {
   return `<img class="optimal-badge-icon" src="${siteAssetHref(OPTIMAL_BADGE_ICON_PATH)}" alt="" aria-hidden="true" />`;
 }
 
-function bksLinkChip(formatted, artifactPath, objective, optimalityProven = false) {
-  const iconHtml = optimalityProven ? optimalBadgeIconHtml() : "";
-  if (!artifactPath) {
-    return badgeWithTitleHtml(`${iconHtml}${formatted.labelHtml}`, formatted.title);
-  }
-  const href = artifactHref(artifactPath);
-  const title = `${optimalityProven ? "Proven optimal: open" : "Open"} BKS JSON · ${objective}`;
-  return `<a class="bks-link-chip${optimalityProven ? " optimal" : ""}" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(title)}">${iconHtml}${formatted.labelHtml}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span></a>`;
+function bksLinkChip(formatted, entry) {
+  const info = claimInfo(entry);
+  const icon = info ? optimalBadgeIconHtml() : "";
+  const flag = info?.warning ? ' <span class="claim-flag" aria-label="Profile warning">⚠</span>' : "";
+  const title = [info?.title, formatted.title, "Open BKS JSON"].filter(Boolean).join(" · ");
+  const label = `${icon}${formatted.labelHtml}${flag}`;
+  if (!entry.artifact_path) return badgeWithTitleHtml(label, title);
+  return `<a class="bks-link-chip${info ? " optimal" : ""}" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${label}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span>${info ? claimTooltip(info) : ""}</a>`;
 }
 
 function formatObjectiveBadge(entry) {
-  const costHtml = costSpan(entry.cost);
-  const costPlain = formatCost(entry.cost);
+  const costPlain = displayedCost(entry);
+  const costHtml = costSpan(costPlain);
   const objective = escapeHtml(entry.objective_function);
   if (isHierarchicalObjective(entry) && entry.num_routes != null) {
     const routesHtml = `<span class="badge-cost">${escapeHtml(String(entry.num_routes))}</span>`;
@@ -783,6 +819,42 @@ function normalizeCollectionSort(value) {
   return ["size-name", "name", "cost", "routes"].includes(value) ? value : "size-name";
 }
 
+function costRatio(entry) {
+  const exact = entry.evaluation?.authoritative_cost;
+  if (exact) return [BigInt(exact.numerator), BigInt(exact.denominator)];
+  // Legacy payloads carry the binary64 display only. Recover that value on an exact tie-break.
+  let value = entry.cost;
+  let denominator = 1n;
+  while (!Number.isInteger(value)) {
+    value *= 2;
+    denominator *= 2n;
+  }
+  return [BigInt(value), denominator];
+}
+
+function compareCostEntries(left, right, direction) {
+  if (!left || !right) return left ? -1 : (right ? 1 : 0);
+  if (left.cost !== right.cost) {
+    if (left.cost == null) return direction;  // A certified overflow exceeds every finite display.
+    if (right.cost == null) return -direction;
+    return (left.cost < right.cost ? -1 : 1) * direction;
+  }
+  const [ln, ld] = costRatio(left);
+  const [rn, rd] = costRatio(right);
+  const diff = ln * rd - rn * ld;
+  return (diff < 0n ? -1 : (diff > 0n ? 1 : 0)) * direction;
+}
+
+function lowestCostEntry(item, objective) {
+  let lowest = null;
+  for (const entry of item.objective_availability || []) {
+    if (objective && entry.objective_function !== objective) continue;
+    if (entry.cost == null && !entry.evaluation?.display_overflow) continue;
+    if (!lowest || compareCostEntries(entry, lowest, 1) < 0) lowest = entry;
+  }
+  return lowest;
+}
+
 function collectionObjectiveNumber(item, field) {
   // The best BKS value of an item, restricted to the objective filter when one is set.
   const objective = state.collectionFilters.objective_function;
@@ -798,10 +870,12 @@ function compareCollectionItems(left, right) {
   const byName = left.display_name.localeCompare(right.display_name, undefined, { numeric: true });
   if (sort === "name") return byName;
   if (sort === "cost" || sort === "routes") {
-    // Items without a BKS (null) sort last; ties fall back to size, then name.
-    const field = sort === "cost" ? "cost" : "num_routes";
+    const objective = state.collectionFilters.objective_function;
+    const cmp = sort === "cost"
+      ? compareCostEntries(lowestCostEntry(left, objective), lowestCostEntry(right, objective), 1)
+      : compareCatalogNumber(collectionObjectiveNumber(left, "num_routes"), collectionObjectiveNumber(right, "num_routes"), 1);
     return (
-      compareCatalogNumber(collectionObjectiveNumber(left, field), collectionObjectiveNumber(right, field), 1) ||
+      cmp ||
       left.num_customers - right.num_customers ||
       byName
     );
@@ -913,15 +987,12 @@ function renderHomePreviewCard(sample, previewMarkup) {
   const entry = sample?.preview?.selectedEntry || null;
   const routePath = sample?.instancePayload?.route_path || "";
   const title = [sample?.instancePayload?.title, summary.benchmark_name].filter(Boolean).join(" · ");
-  const proven = Boolean(entry?.optimality?.proven);
-  const statusChip = entry
-    ? `<span class="badge ${proven ? "tag-gr" : "tag-am"}">${proven ? "proven optimal" : escapeHtml(entry.method || "heuristic")}</span>`
-    : "";
+  const statusChip = claimBadge(claimInfo(entry), false) || (entry ? badge(entry.method || "BKS") : "");
   const metaParts = [
     summary.problem_type,
     summary.metric_variant,
     summary.num_customers != null ? `n=${summary.num_customers}` : "",
-    entry ? `${entry.objective_function} ${formatCost(entry.cost)}` : "",
+    entry ? `${entry.objective_function} ${displayedCost(entry)}` : "",
   ].filter(Boolean);
   return `<a class="home-preview-card" href="${routeHref(routePath)}">
     <div class="home-preview-kicker">Featured instance</div>
@@ -1141,7 +1212,7 @@ function renderInstanceRows(items, options = {}) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function, entry.optimality_proven);
+          return bksLinkChip(formatted, entry);
         })
         .join("");
       const objectiveCell = objectiveBadges
@@ -1224,7 +1295,7 @@ function renderInstanceGroups(items, preserveOrder = false, options = {}) {
       const objectiveBadges = item.objective_availability
         .map((entry) => {
           const formatted = formatObjectiveBadge(entry);
-          return bksLinkChip(formatted, entry.artifact_path, entry.objective_function, entry.optimality_proven);
+          return bksLinkChip(formatted, entry);
         })
         .join("");
       const objectiveCell = objectiveBadges
@@ -1494,7 +1565,7 @@ function compareCatalogItems(left, right, sortValue = "catalog", directionValue 
   const direction = normalizeSortDirection(directionValue) === "desc" ? -1 : 1;
   if (sort === "name") return compareCatalogText(left.display_name, right.display_name) * direction || compareCatalogOrder(left, right);
   if (sort === "size") return compareCatalogNumber(left.num_customers, right.num_customers, direction) || compareCatalogOrder(left, right);
-  if (sort === "cost") return compareCatalogNumber(catalogObjectiveNumber(left, "cost"), catalogObjectiveNumber(right, "cost"), direction) || compareCatalogOrder(left, right);
+  if (sort === "cost") return compareCostEntries(lowestCostEntry(left), lowestCostEntry(right), direction) || compareCatalogOrder(left, right);
   if (sort === "routes") return compareCatalogNumber(catalogObjectiveNumber(left, "num_routes"), catalogObjectiveNumber(right, "num_routes"), direction) || compareCatalogOrder(left, right);
   return compareCatalogOrder(left, right) * direction;
 }
@@ -1623,10 +1694,8 @@ let inspectorLoadToken = 0;
 
 function inspectorStatusChip(item) {
   const availability = item.objective_availability || [];
-  if (availability.some((entry) => entry.optimality_proven)) {
-    return '<span class="badge tag-gr">proven optimal</span>';
-  }
-  return availability.length ? '<span class="badge tag-am">heuristic</span>' : "";
+  const info = availability.map(claimInfo).find((value) => value?.warning) || availability.map(claimInfo).find(Boolean);
+  return info ? claimBadge(info) : "";
 }
 
 function renderInspectorPaneShell(item) {
@@ -1659,7 +1728,7 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
         .join("")}</div>`
     : "";
   const stats = [
-    [entry ? `BKS · ${entry.objective_function}` : "BKS", entry ? { html: `<strong class="inspector-cost">${escapeHtml(formatCost(entry.cost))}</strong>` } : "none"],
+    [entry ? `BKS · ${entry.objective_function}` : "BKS", entry ? { html: `<strong class="inspector-cost">${escapeHtml(displayedCost(entry))}</strong>` } : "none"],
     ["Routes", entry?.num_routes ?? "n/a"],
     ["Customers", summary.num_customers ?? item.num_customers],
     ["Capacity", summary.vehicle_capacity ?? "n/a"],
@@ -1673,7 +1742,9 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
   const provenance = [];
   if (entry?.method) provenance.push(["Method", entry.method]);
   if (entry?.authors) provenance.push(["Authors", entry.authors]);
-  if (entry?.optimality?.proven && entry.optimality.date) provenance.push(["Proven", entry.optimality.date]);
+  const claim = claimInfo(entry);
+  if (claim?.warning) provenance.push(["⚠ Profile warning", claim.warning]);
+  if (claim?.proof.date) provenance.push(["Claim date", claim.proof.date]);
   const provenanceGrid = provenance.length
     ? `<div class="inspector-prov">${provenance.map(([key, value]) => `<span>${escapeHtml(key)}</span><span>${escapeHtml(value)}</span>`).join("")}</div>`
     : "";
@@ -2237,7 +2308,7 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
     geometryNoteHtml: selectedEntry
       ? (() => {
           const objective = escapeHtml(selectedEntry.objective_function);
-          const costHtml = costSpan(selectedEntry.cost);
+          const costHtml = costSpan(displayedCost(selectedEntry));
           if (selectedEntry.num_routes == null) {
             return `${objective} · ${costHtml}`;
           }
@@ -2677,7 +2748,7 @@ function renderArcFunctionsCard(arcState) {
 
 function formatScheduleTime(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
-  return value.toFixed(2);
+  return String(value);
 }
 
 // A JSON file published next to an instance page (route functions, timelines),
@@ -2706,19 +2777,30 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
           marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", label: `MDT ${formatScheduleTime(entry.duration)} (at t* ${formatScheduleTime(entry.departure_time)})` },
         })}
       </div>
-      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, checker fold). EAT = earliest arrival back at the depot; MDT = minimum duration time Δ* = ${formatScheduleTime(entry.duration)}, attained at the optimal departure t* = ${formatScheduleTime(entry.departure_time)}.</div>`;
+      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, historical td-fold/2). EAT = earliest arrival back at the depot; MDT = minimum duration time Δ* = ${formatScheduleTime(entry.duration)}, attained at the optimal departure t* = ${formatScheduleTime(entry.departure_time)}.</div>`;
 }
 
 function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex, routeFunctions, routeFunctionsStatus) {
   const schedules = selectedEntry?.td_schedules;
-  if (!Array.isArray(schedules) || schedules.length === 0) return "";
-  const routeIndex = Math.min(Math.max(selectedRouteIndex, 0), schedules.length - 1);
-  const schedule = schedules[routeIndex];
+  const witnesses = selectedEntry?.route_evaluations;
+  const count = witnesses?.length ?? schedules?.length ?? 0;
+  if (!count) return "";
+  const routeIndex = Math.min(Math.max(selectedRouteIndex, 0), count - 1);
+  const schedule = schedules?.[routeIndex];
+  const witness = witnesses?.[routeIndex];
+  const certified = Boolean(selectedEntry.evaluation?.manifest_sha256);
+  const exact = witness ? `<details><summary>Exact departure and duration</summary>${renderStatGrid([
+    ["Earliest attaining departure", { html: exactFractionHtml(witness.departure_time) }],
+    ["Minimum duration", { html: exactFractionHtml(witness.duration) }],
+  ])}</details>` : "";
+  const options = Array.from({ length: count }, (_, index) => {
+    const stops = schedules?.[index]?.stops;
+    return `<option value="${index}"${index === routeIndex ? " selected" : ""}>Route ${index + 1}${stops ? ` · ${stops.length} customers` : ""}</option>`;
+  }).join("");
+  const selector = `<label>Route <select data-schedule-route>${options}</select></label>`;
+  if (!schedule) return `<section class="mini-card"><h3>${certified ? "Certified" : "Evaluated"} route times</h3>${selector}${exact}<p class="meta-line">Per-stop replay is unavailable for this route.</p></section>`;
   const timeWindows = Array.isArray(instanceData?.time_windows) ? instanceData.time_windows : null;
   const serviceTimes = Array.isArray(instanceData?.service_times) ? instanceData.service_times : null;
-  const options = schedules
-    .map((entry, index) => `<option value="${index}"${index === routeIndex ? " selected" : ""}>Route ${index + 1} · ${entry.stops.length} clients · Δ* ${formatScheduleTime(entry.duration)}</option>`)
-    .join("");
   const twHeader = timeWindows ? "<th>Time window</th>" : "";
   const rows = [];
   rows.push(`<tr><td class="table-cell-mono">depot</td>${timeWindows ? "<td></td>" : ""}<td></td><td></td><td></td><td class="table-cell-num">${formatScheduleTime(schedule.departure_time)}</td></tr>`);
@@ -2731,8 +2813,9 @@ function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex
   return `
     <section class="mini-card">
       <h3>Schedule</h3>
-      <div class="meta-line">Checker-derived schedule: the route is dispatched at its earliest optimal depot departure t* = ${formatScheduleTime(schedule.departure_time)} and achieves the optimal duration Δ* = ${formatScheduleTime(schedule.duration)}.</div>
-      <div class="inline-actions" style="margin:0.6rem 0"><select data-schedule-route>${options}</select></div>
+      <div class="meta-line">${witness ? (certified ? "Certified schedule" : "Exact schedule") : "Historical td-fold/2 replay"}: the route is dispatched at its earliest optimal depot departure t* = ${formatScheduleTime(schedule.departure_time)} and achieves the optimal duration Δ* = ${formatScheduleTime(schedule.duration)}.</div>
+      <div class="inline-actions" style="margin:0.6rem 0">${selector}</div>
+      ${exact}
       ${renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex)}
       <div class="table-wrap" style="margin-top:0.8rem"><table>
         <thead><tr><th>Stop</th>${twHeader}<th>Arrival</th><th>Wait</th><th>Service</th><th>Departure</th></tr></thead>
@@ -2818,7 +2901,7 @@ async function renderInstancePage(payload, options = {}) {
           ${payload.artifact_links.atf_json_path ? `<li><a href="${artifactHref(payload.artifact_links.atf_json_path)}">${escapeHtml(payload.artifact_links.atf_json_path.split("/").pop().replace(/^.*?\.atf\./, "atf."))}</a></li>` : ""}
         </ul><div class="meta-line" style="margin-top:0.8rem">Published ${escapeHtml(payload.snapshot.published_at)} from commit ${escapeHtml(payload.snapshot.source_commit)}</div>`,
       ),
-      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(selectedEntry.cost, "stat-cost") }], ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${safeExternalHref(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
+      renderCard("BKS Selector", `${renderBksSelector(payload.bks_entries, selectedIndex)}${selectedEntry ? `<div class="mini-card" style="margin-top:0.8rem">${renderStatGrid([["Objective", selectedEntry.objective_function], ["Routes", routesStatValue(selectedEntry)], ["Cost", { html: costSpan(displayedCost(selectedEntry), "stat-cost") }], ...evaluationStatRows(selectedEntry), ...optimalityStatRows(selectedEntry), ["Method", selectedEntry.method || 'n/a'], ["Authors", selectedEntry.authors || 'n/a'], ...(selectedEntry.license ? [["License", selectedEntry.license_url ? { html: `<a href="${safeExternalHref(selectedEntry.license_url)}" target="_blank" rel="noopener">${escapeHtml(selectedEntry.license)}</a>` } : selectedEntry.license]] : [])])}<div class="inline-actions" style="margin-top:0.8rem"><a class="mini-link" href="${artifactHref(selectedEntry.artifact_path)}">Download BKS</a></div></div>` : ''}`),
       renderCard(
         "Related Links",
         `<ul class="link-list">
@@ -2994,8 +3077,7 @@ function formatSignedDelta(delta) {
   if (typeof delta === "number" && Number.isFinite(delta)) {
     const sign = delta > 0 ? "+" : (delta < 0 ? "−" : "±");
     const abs = Math.abs(delta);
-    const formatted = Number.isInteger(abs) ? String(abs) : abs.toFixed(2);
-    return `${sign}${formatted}`;
+    return `${sign}${String(abs)}`;
   }
   return String(delta);
 }
@@ -3014,6 +3096,7 @@ function timelineCountsHeadline(counts, options = {}) {
     counts.instances_removed && `−${counts.instances_removed} instance${counts.instances_removed > 1 ? "s" : ""}`,
     counts.bks_improved && `${counts.bks_improved} BKS improved`,
     counts.bks_regressed && `${counts.bks_regressed} BKS regressed`,
+    counts.bks_reevaluated && `${counts.bks_reevaluated} BKS re-evaluated (edition or profile changed)`,
     counts.bks_repriced && `${counts.bks_repriced} BKS re-priced (checker contract)`,
     counts.bks_added && `+${counts.bks_added} BKS`,
     counts.bks_removed && `−${counts.bks_removed} BKS`,
@@ -3102,7 +3185,7 @@ function renderChangeRowBks(change) {
   if (change.kind === "added") cls = "change-add";
   else if (change.kind === "removed") cls = "change-remove";
   else if (change.kind === "improved") cls = "change-improve";
-  else if (change.kind === "repriced") cls = "change-reprice";
+  else if (change.kind === "repriced" || change.kind === "reevaluated") cls = "change-reprice";
   else cls = "change-regress";
 
   const variant = change.metric_variant ? ` · ${escapeHtml(change.metric_variant)}` : "";
@@ -3111,7 +3194,7 @@ function renderChangeRowBks(change) {
 
   const hierarchical = isHierarchicalObjective(change);
   const valueHtml = (v) => {
-    const cost = costSpan(v.cost, "change-cost-value");
+    const cost = costSpan(displayedCost(v), "change-cost-value") + (v.evaluation ? ` <small>${escapeHtml(v.evaluation.profile)}${v.evaluation.benchmark_revision ? ` · ${escapeHtml(v.evaluation.benchmark_revision)}` : ""}</small>` : "");
     if (v.num_routes == null) return cost;
     const routesText = escapeHtml(String(v.num_routes));
     const routesHtml = hierarchical ? `<span class="change-cost-value">${routesText}</span>` : routesText;
@@ -3181,12 +3264,13 @@ function renderInstanceChangeSection(changes) {
 }
 
 function renderBksChangeSection(changes) {
-  const buckets = { added: [], removed: [], improved: [], regressed: [], repriced: [] };
+  const buckets = { added: [], removed: [], improved: [], regressed: [], repriced: [], reevaluated: [] };
   for (const c of changes) {
     if (buckets[c.kind]) buckets[c.kind].push(c);
   }
+  const editionSummary = buckets.reevaluated.length ? ` / ${buckets.reevaluated.length} re-evaluated` : "";
   const repricedSummary = buckets.repriced.length ? ` / ${buckets.repriced.length} re-priced` : "";
-  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed${repricedSummary}`;
+  const summary = `BKS · +${buckets.added.length} / −${buckets.removed.length} / ${buckets.improved.length} improved / ${buckets.regressed.length} regressed${repricedSummary}${editionSummary}`;
   const groupBy = (list) => {
     const map = new Map();
     for (const c of list) {
@@ -3204,7 +3288,7 @@ function renderBksChangeSection(changes) {
     return `<details class="change-subsection"><summary>${escapeHtml(label)} · ${sign}${list.length}</summary>${groups}</details>`;
   };
   const body = changes.length
-    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Re-priced (checker contract, routes unchanged)", buckets.repriced, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
+    ? `${renderBucket("Improved", buckets.improved, "")}${renderBucket("Regressed", buckets.regressed, "")}${renderBucket("Re-evaluated (edition or profile changed)", buckets.reevaluated, "")}${renderBucket("Re-priced (checker contract, routes unchanged)", buckets.repriced, "")}${renderBucket("Added", buckets.added, "+")}${renderBucket("Removed", buckets.removed, "−")}`
     : `<p class="meta-line">No BKS-level changes.</p>`;
   return `<details class="change-section"><summary>${escapeHtml(summary)}</summary>${body}</details>`;
 }

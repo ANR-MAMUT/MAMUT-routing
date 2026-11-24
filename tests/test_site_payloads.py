@@ -786,6 +786,7 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
         "bks_improved": 0,
         "bks_regressed": 0,
         "bks_repriced": 0,
+        "bks_reevaluated": 0,
     }
     assert ledger["entries"][1]["snapshot"]["snapshot_id"] == "2026-04-22-legacy"
     assert ledger["entries"][1]["affected_benchmark_names"] == ["Poryos2026"]
@@ -799,6 +800,7 @@ def test_generate_site_payloads_accepts_legacy_history_without_change_counts(tmp
         "bks_improved": 0,
         "bks_regressed": 0,
         "bks_repriced": 0,
+        "bks_reevaluated": 0,
     }
 
 
@@ -829,7 +831,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": "benchmarks/Sintef2008/VRPTW/n=2/C101.bks.HierarchicalVehicleCost.json",
-            "optimality_proven": False,
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
         },
     ]
 
@@ -856,14 +858,14 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.HierarchicalVehicleCost.json",
-            "optimality_proven": False,
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
         },
         {
                 "objective_function": "MonoCost",
                 "cost": 12,
                 "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.MonoCost.json",
-            "optimality_proven": False,
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
         },
     ]
 
@@ -1812,7 +1814,7 @@ def test_collection_instances_resolve_with_geometry_and_identity_links(tmp_path:
     assert fastest_objective["objective_function"] == "MonoCost"
     assert fastest_objective["cost"] == 491.5
     assert fastest_objective["num_routes"] == 1
-    assert fastest_objective["optimality_proven"] is False
+    assert fastest_objective["optimality"] is None
 
 
 def test_site_payloads_deduplicate_retired_collection_checkout(
@@ -2091,3 +2093,74 @@ def test_history_diff_is_keyed_by_identifier_not_by_file_path(tmp_path: Path) ->
     counts = second_detail["change_log"]["counts"]
     assert counts["instances_added"] == 0 and counts["instances_removed"] == 0
     assert counts["bks_added"] == 0 and counts["bks_removed"] == 0
+
+
+def test_certified_route_replay_uses_exact_departure_at_a_jump() -> None:
+    from types import SimpleNamespace
+    from mamut_routing_publish.site_payloads import RouteWitness, _certified_td_schedules
+
+    # The exact departure 1 + 2^-54 displays as 1. At 1 the first ordinate
+    # is attained. Immediately afterwards the vehicle traverses the upper branch.
+    scale = 2**54
+    witness = RouteWitness.model_validate({
+        "duration": {"numerator": str(2*scale - 1), "denominator": str(scale)},
+        "departure_time": {"numerator": str(scale + 1), "denominator": str(scale)},
+    })
+    atfs = SimpleNamespace(arcs={
+        (0, 1): NDCPWLF([0., 1., 1., 2.], [1., 1., 3., 3.]),
+        (1, 0): NDCPWLF.identity(0., 4.),
+    })
+    instance = SimpleNamespace(depot=0, service_times=[0, 0])
+    schedule, = _certified_td_schedules(instance, atfs, [[1]], [witness])
+    assert schedule.departure_time == 1
+    assert schedule.duration == 2
+    assert schedule.stops[0].arrival == schedule.return_arrival == 3
+
+
+def test_history_compares_exact_costs_within_the_same_edition() -> None:
+    from mamut_routing_publish.site_payloads import _classify_bks_pair
+
+    def record(value, display, *, edition="r1", digest="a", routes=1):
+        return {"cost": display, "num_routes": routes, "evaluation": {
+            "profile": "binary64-exact-v1", "authoritative_cost": {"numerator": str(value), "denominator": "1"},
+            "benchmark_revision": edition, "manifest_sha256": digest, "display_overflow": display is None}}
+
+    high = record(2**53 + 1, float(2**53))
+    low = record(2**53, float(2**53))
+    assert _classify_bks_pair("MonoCost", high, low)[:2] == ("improved", -1)
+    assert _classify_bks_pair("HierarchicalVehicleCost", high, {**low, "num_routes": 2})[0] == "regressed"
+    assert _classify_bks_pair("MonoCost", record(2**1101, None), record(2**1100, None))[:2] == ("improved", None)
+    assert _classify_bks_pair("MonoCost", {"cost": 8}, low)[:2] == ("reevaluated", None)
+    assert _classify_bks_pair("MonoCost", high, record(1, 1., edition="r2", digest="b"))[:2] == ("reevaluated", None)
+
+
+def test_published_evaluation_survives_overflow_and_detects_changed_manifest(tmp_path: Path) -> None:
+    from hashlib import sha256
+    import sys
+    from mamut_routing_lib.exact_store import routes_sha256
+    from mamut_routing_publish.site_payloads import _build_bks_entries, _objective_availability
+
+    descriptor = tmp_path / "overflow.vrp.json"
+    routes = [[1, 2]]
+    instance = make_generated_cvrp_instance().model_copy(update={"instance_name": "overflow", "arc_costs": [
+        [0, sys.float_info.max, 0], [0, 0, sys.float_info.max], [0, 0, 0]]})
+    descriptor.write_text(instance.model_dump_json())
+    manifest = tmp_path / "overflow.manifest.json"
+    manifest.write_text(json.dumps({"default_profile": "binary64-exact-v1", "benchmark_revision": "r1",
+        "instance": {"sha256": sha256(descriptor.read_bytes()).hexdigest()}, "objective": "MonoCost"}))
+    value = {"numerator": str(2 * int(sys.float_info.max)), "denominator": "1"}
+    marked = {"profile": "binary64-exact-v1", "objective": "MonoCost", "routes_sha256": routes_sha256(routes),
+              "num_routes": 1, "authoritative_cost": value, "display_overflow": True,
+              "benchmark_revision": "r1", "manifest_sha256": sha256(manifest.read_bytes()).hexdigest()}
+    bks = tmp_path / "overflow.bks.MonoCost.json"
+    bks.write_text(json.dumps({"instance_name": "overflow", "routes": routes, "cost": None,
+                               "metadata": {"standard": marked}, "objective_function": "MonoCost"}))
+    entries, _, _ = _build_bks_entries(tmp_path, descriptor)
+    summary, = _objective_availability(entries)
+    assert summary.cost is None and summary.evaluation.display_overflow
+    assert summary.evaluation.authoritative_cost.model_dump() == value
+    assert summary.optimality is None
+    assert _objective_availability([]) == []
+    manifest.write_text(manifest.read_text() + "\n")
+    with pytest.raises(ValueError, match="adjacent edition manifest"):
+        _build_bks_entries(tmp_path, descriptor)

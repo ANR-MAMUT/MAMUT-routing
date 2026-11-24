@@ -62,6 +62,7 @@ def test_collection_bks_pages_link_checker_faithful_timelines(tmp_path: Path) ->
     assert cvrp_entry["timeline_path"] == f"{route_path}timeline.MonoCost.json"
     assert cvrp_entry["timeline_clock"] == "free_flow_fastest"
     cvrp = _timeline(site_output, cvrp_entry)
+    assert cvrp["start_rule"] == "depot_at_zero"
     assert cvrp["route_path"] == route_path and cvrp["clock_metric"] == "fastest"
     assert cvrp["routes"] == [
         {"departure": 0.0, "return_arrival": 491.5, "stops": [[1, 120.5, 120.5, 120.5], [2, 251.25, 251.25, 251.25]]}
@@ -75,6 +76,7 @@ def test_collection_bks_pages_link_checker_faithful_timelines(tmp_path: Path) ->
     # VRPTW: the checker's schedule, with service times.
     vrptw_entry = _page(payload_root, "vrptw", "fastest", _COLLECTION_BASE)["bks_entries"][0]
     assert vrptw_entry["timeline_clock"] == "checker"
+    assert _timeline(site_output, vrptw_entry)["start_rule"] == "depot_opening"
     assert _timeline(site_output, vrptw_entry)["routes"] == [
         {"departure": 0.0, "return_arrival": 511.5, "stops": [[1, 120.5, 120.5, 130.5], [2, 261.25, 261.25, 271.25]]}
     ]

@@ -53,7 +53,7 @@ class RouteTimelinePayload(BaseModel):
     #: The metric whose arc costs clock the routes (always ``fastest`` today).
     clock_metric: Literal["fastest"] = "fastest"
     time_unit: Literal["s"] = "s"
-    start_rule: Literal["depot_at_zero"] = "depot_at_zero"
+    start_rule: Literal["depot_at_zero", "depot_opening"]
     routes: list[RouteTimelineRoute]
 
 
@@ -127,6 +127,7 @@ def build_route_timeline(
     return RouteTimelinePayload(
         objective_function=objective_function,
         route_path=route_path,
-        clock="checker" if time_windows is not None else "free_flow_fastest",
+        clock="checker" if time_windows is not None and instance.metric_variant.value == "fastest" else "free_flow_fastest",
+        start_rule=timeline["start_rule"],
         routes=timeline["routes"],
     )

@@ -22,6 +22,9 @@ SITE_JS = Path(__file__).resolve().parents[1] / "src" / "mamut_routing_publish" 
 FUNCTIONS = (
     "minOf",
     "compareCatalogNumber",
+    "costRatio",
+    "compareCostEntries",
+    "lowestCostEntry",
     "normalizeCollectionSort",
     "collectionObjectiveNumber",
     "compareCollectionItems",
@@ -91,3 +94,43 @@ def test_cost_respects_the_objective_filter() -> None:
 @node
 def test_unknown_sort_values_fall_back_to_the_default() -> None:
     assert _sorted_names("bogus") == _sorted_names("size-name")
+
+
+@node
+def test_exact_sort_breaks_display_ties_and_keeps_overflow_ahead_of_missing() -> None:
+    def entry(numerator: int, display: float | None) -> dict:
+        return {"cost": display, "evaluation": {"authoritative_cost": {"numerator": str(numerator), "denominator": "1"},
+                                                 "display_overflow": display is None}}
+    values = [entry(2**53 + 1, float(2**53)), entry(2**53, float(2**53)), entry(2**1100, None)]
+    script = _extract() + f"""
+    const [high, low, overflow] = {json.dumps(values)};
+    const legacy = {{ cost: 2**53 }};
+    const missing = lowestCostEntry({{objective_availability: [{{ cost: null }}]}});
+    console.log(JSON.stringify([compareCostEntries(high,low,1), compareCostEntries(legacy,low,1),
+      compareCostEntries(overflow,high,1), compareCostEntries(overflow,missing,-1)]));
+    """
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == [1, 0, 1, -1]
+
+
+@node
+def test_optimality_labels_show_the_claim_target_and_family_default() -> None:
+    names = ["escapeHtml", "claimInfo", "claimBadge", "claimTooltip", "optimalityStatRows", "optimalBadgeIconHtml"]
+    source = SITE_JS.read_text()
+    functions = "\n".join(re.search(rf"^function {name}\(.*?^\}}", source, re.S | re.M).group(0) for name in names)
+    script = functions + """
+    const OPTIMAL_BADGE_ICON_PATH = "icon";
+    const siteAssetHref = (path) => path;
+    const base = {family_profile:"td-binary64-exact-v1", objective_function:"Duration"};
+    const record = (profile) => ({...base, optimality: {status:"solver-reported-optimal", target_profile:profile}});
+    const html = (entry) => JSON.stringify(optimalityStatRows(entry));
+    console.log(JSON.stringify([
+      html(record("td-fold/1")), html(record(base.family_profile)), html({...base, optimality:{proven:true}}), html(base),
+    ]));
+    """
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    historical, same, unknown, absent = json.loads(result.stdout)
+    assert "badge optimal" in historical and "Profile warning" in historical
+    assert "td-fold/1" in historical and "td-binary64-exact-v1" in historical
+    assert "Profile warning" not in same and "badge optimal" in same
+    assert "does not specify" in unknown and absent == "[]"

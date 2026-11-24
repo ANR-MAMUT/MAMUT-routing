@@ -510,6 +510,56 @@ code,
   cursor: help;
 }
 
+.claim-badge,
+.bks-link-chip.optimal {
+  position: relative;
+}
+
+.claim-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  width: max-content;
+  max-width: min(26rem, 75vw);
+  white-space: normal;
+  padding: 0.45rem 0.65rem;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--mut);
+  border-radius: 4px;
+  font: normal 0.85rem/1.4 sans-serif;
+  text-align: left;
+}
+
+.claim-badge:hover > .claim-tooltip,
+.claim-badge:focus-visible > .claim-tooltip,
+.bks-link-chip:hover > .claim-tooltip,
+.bks-link-chip:focus-visible > .claim-tooltip,
+.home-preview-card:focus-visible .claim-tooltip {
+  display: block;
+}
+
+.claim-badge:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.claim-flag,
+.claim-warning {
+  color: var(--am);
+}
+
+.claim-flag {
+  font-size: 1.1em;
+  margin-left: 0.2em;
+}
+
+.exact-fraction {
+  overflow-wrap: anywhere;
+}
+
 .optimal-badge-icon {
   width: 1.05em;
   height: 1.05em;

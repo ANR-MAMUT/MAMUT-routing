@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from mamut_routing_lib.td.checker import compute_route_duration
+from mamut_routing_lib.td.fold2 import compute_route_duration
 from mamut_routing_lib.td.reprice import load_td_instance_for_routes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
