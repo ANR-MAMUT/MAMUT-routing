@@ -543,8 +543,8 @@ function claimInfo(entry) {
   return { proof, label, warning, title: warning || `${label} under ${target}.` };
 }
 
-function claimTooltip(info) {
-  return `<span class="claim-tooltip" aria-hidden="true">${escapeHtml(info.title)}</span>`;
+function claimTooltip(info, floating = false) {
+  return `<span class="claim-tooltip"${floating ? ' popover="manual"' : ""} aria-hidden="true">${escapeHtml(info.title)}</span>`;
 }
 
 function claimBadge(info, focusable = true) {
@@ -578,7 +578,48 @@ function bksLinkChip(formatted, entry) {
   const title = [info?.title, formatted.title, "Open BKS JSON"].filter(Boolean).join(" · ");
   const label = `${icon}${formatted.labelHtml}${flag}`;
   if (!entry.artifact_path) return badgeWithTitleHtml(label, title);
-  return `<a class="bks-link-chip${info ? " optimal" : ""}" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${label}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span>${info ? claimTooltip(info) : ""}</a>`;
+  return `<a class="bks-link-chip${info ? " optimal" : ""}" href="${artifactHref(entry.artifact_path)}" target="_blank" rel="noopener" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${label}<span class="bks-link-chip-glyph" aria-hidden="true">↗</span>${info ? claimTooltip(info, true) : ""}</a>`;
+}
+
+function setupCatalogClaimTooltips() {
+  let active = null;
+  const dismiss = () => {
+    if (active?.matches(":popover-open")) active.hidePopover();
+    active = null;
+  };
+  const position = () => {
+    if (!active?.isConnected) { active = null; return; }
+    const anchor = active.parentElement.getBoundingClientRect();
+    const tip = active.getBoundingClientRect();
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - tip.width - 8));
+    const top = anchor.bottom + tip.height + 8 <= window.innerHeight
+      ? anchor.bottom + 4 : Math.max(4, anchor.top - tip.height - 4);
+    active.style.left = `${left}px`;
+    active.style.top = `${top}px`;
+  };
+  function show(event) {
+    const chip = event.target.closest?.(".bks-link-chip.optimal");
+    const tip = chip?.querySelector(".claim-tooltip[popover]");
+    if (!tip?.showPopover || active === tip) return;
+    dismiss();
+    active = tip;
+    tip.showPopover();
+    position();
+  }
+  function leave(event) {
+    const chip = active?.parentElement;
+    if (!chip?.contains(event.target) || chip.contains(event.relatedTarget)) return;
+    if (event.type === "pointerout" && chip.matches(":focus-visible")) return;
+    if (event.type === "focusout" && chip.matches(":hover")) return;
+    dismiss();
+  }
+  document.addEventListener("pointerover", show);
+  document.addEventListener("focusin", show);
+  document.addEventListener("pointerout", leave);
+  document.addEventListener("focusout", leave);
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") dismiss(); });
+  document.addEventListener("scroll", position, true);
+  window.addEventListener("resize", position);
 }
 
 function formatObjectiveBadge(entry) {
@@ -3993,6 +4034,7 @@ async function renderPayloadPage() {
 
 async function init() {
   setupThemeToggle();
+  setupCatalogClaimTooltips();
   try {
     await renderPayloadPage();
   } catch (error) {

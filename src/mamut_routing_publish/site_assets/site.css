@@ -540,10 +540,15 @@ code,
 
 .claim-badge:hover > .claim-tooltip,
 .claim-badge:focus-visible > .claim-tooltip,
-.bks-link-chip:hover > .claim-tooltip,
-.bks-link-chip:focus-visible > .claim-tooltip,
+.claim-tooltip:popover-open,
 .home-preview-card:focus-visible .claim-tooltip {
   display: block;
+}
+
+.claim-tooltip[popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
 }
 
 .claim-badge:focus-visible {
