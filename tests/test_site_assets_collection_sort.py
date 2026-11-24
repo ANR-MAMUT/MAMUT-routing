@@ -114,6 +114,32 @@ def test_exact_sort_breaks_display_ties_and_keeps_overflow_ahead_of_missing() ->
 
 
 @node
+def test_catalogue_badge_rounds_the_stored_cost_and_full_record_preserves_it() -> None:
+    names = ("formatObjectiveBadge", "displayedCost", "formatCost", "costSpan", "escapeHtml", "isHierarchicalObjective")
+    source = SITE_JS.read_text()
+    script = "\n".join(re.search(rf"^function {n}\(.*?^\}}", source, re.S | re.M).group(0) for n in names) + """
+    const sample = (cost, evaluation) => {
+      const entry = {cost, evaluation, objective_function: "Duration"};
+      return [formatObjectiveBadge(entry).title, displayedCost(entry), entry.cost];
+    };
+    console.log(JSON.stringify([
+      sample(9150.837), sample(2.675), sample(1.2), sample(0), sample(null),
+      sample(null, {display_overflow: true})
+    ]));
+    """
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    rows = json.loads(result.stdout)
+    assert [(title.removeprefix("Mono-cost objective: cost = "), full, stored) for title, full, stored in rows] == [
+        ("9150.84", "9150.837", 9150.837),
+        ("2.67", "2.675", 2.675),
+        ("1.20", "1.2", 1.2),
+        ("0", "0", 0),
+        ("n/a", "n/a", None),
+        ("Outside binary64 range", "Outside binary64 range", None),
+    ]
+
+
+@node
 def test_optimality_labels_show_the_claim_target_and_family_default() -> None:
     names = ["escapeHtml", "claimInfo", "claimBadge", "claimTooltip", "optimalityStatRows", "optimalBadgeIconHtml"]
     source = SITE_JS.read_text()

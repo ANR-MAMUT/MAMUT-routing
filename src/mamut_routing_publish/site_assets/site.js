@@ -493,8 +493,11 @@ function costSpan(value, className = "badge-cost") {
   return `<span class="${className}">${escapeHtml(formatCost(value))}</span>`;
 }
 
-function displayedCost(entry) {
-  return entry?.evaluation?.display_overflow ? "Outside binary64 range" : formatCost(entry?.cost);
+function displayedCost(entry, { compactCost = false } = {}) {
+  if (entry?.evaluation?.display_overflow) return "Outside binary64 range";
+  const value = entry?.cost;
+  if (compactCost && Number.isFinite(value) && !Number.isInteger(value)) return value.toFixed(2);
+  return formatCost(value);
 }
 
 function exactFractionHtml(value) {
@@ -623,7 +626,7 @@ function setupCatalogClaimTooltips() {
 }
 
 function formatObjectiveBadge(entry) {
-  const costPlain = displayedCost(entry);
+  const costPlain = displayedCost(entry, { compactCost: true });
   const costHtml = costSpan(costPlain);
   const objective = escapeHtml(entry.objective_function);
   if (isHierarchicalObjective(entry) && entry.num_routes != null) {
@@ -1033,7 +1036,7 @@ function renderHomePreviewCard(sample, previewMarkup) {
     summary.problem_type,
     summary.metric_variant,
     summary.num_customers != null ? `n=${summary.num_customers}` : "",
-    entry ? `${entry.objective_function} ${displayedCost(entry)}` : "",
+    entry ? `${entry.objective_function} ${displayedCost(entry, { compactCost: true })}` : "",
   ].filter(Boolean);
   return `<a class="home-preview-card" href="${routeHref(routePath)}">
     <div class="home-preview-kicker">Featured instance</div>
@@ -1047,6 +1050,7 @@ function renderHomePreviewMarkup(sample) {
   const { instancePayload, preview } = sample;
   const summary = instancePayload.summary || {};
   const straightPreview = renderPreviewSvg(preview.instanceData, preview.selectedBksData, preview.selectedEntry, {
+    compactCost: true,
     metricVariant: summary.metric_variant,
     viewerRenderMode: "straight_line",
     roadCacheStatus: "not_applicable",
@@ -1054,6 +1058,7 @@ function renderHomePreviewMarkup(sample) {
   const hasRoadPreview = summary.viewer_render_mode === "cached_road" && summary.road_cache_status === "complete" && preview.geometryMeta;
   const roadPreview = hasRoadPreview
     ? renderPreviewSvg(preview.instanceData, preview.selectedBksData, preview.selectedEntry, {
+        compactCost: true,
         geometryMeta: preview.geometryMeta,
         metricVariant: summary.metric_variant,
         viewerRenderMode: summary.viewer_render_mode,
@@ -1769,7 +1774,7 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
         .join("")}</div>`
     : "";
   const stats = [
-    [entry ? `BKS · ${entry.objective_function}` : "BKS", entry ? { html: `<strong class="inspector-cost">${escapeHtml(displayedCost(entry))}</strong>` } : "none"],
+    [entry ? `BKS · ${entry.objective_function}` : "BKS", entry ? { html: `<strong class="inspector-cost">${escapeHtml(displayedCost(entry, { compactCost: true }))}</strong>` } : "none"],
     ["Routes", entry?.num_routes ?? "n/a"],
     ["Customers", summary.num_customers ?? item.num_customers],
     ["Capacity", summary.vehicle_capacity ?? "n/a"],
@@ -1821,6 +1826,7 @@ async function hydrateInspectorPane(item, preferredObjective = null) {
     const previewBox = pane.querySelector("[data-inspector-preview]");
     if (previewBox && preview?.instanceData) {
       previewBox.innerHTML = renderPreviewSvg(preview.instanceData, preview.selectedBksData, preview.selectedEntry, {
+        compactCost: true,
         geometryMeta: mergeGeometryMeta(preview.geometryMeta, routeGeometryMeta),
         metricVariant: payload.summary?.metric_variant,
         viewerRenderMode: routeGeometryMeta ? "cached_road" : payload.summary?.viewer_render_mode,
@@ -2349,7 +2355,7 @@ function resolvePreviewGeometry(instanceData, bksData, selectedEntry, options = 
     geometryNoteHtml: selectedEntry
       ? (() => {
           const objective = escapeHtml(selectedEntry.objective_function);
-          const costHtml = costSpan(displayedCost(selectedEntry));
+          const costHtml = costSpan(displayedCost(selectedEntry, options));
           if (selectedEntry.num_routes == null) {
             return `${objective} · ${costHtml}`;
           }
