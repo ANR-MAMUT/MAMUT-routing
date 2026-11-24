@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -49,6 +50,8 @@ from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME, find_collection_root, load_collection_marker
 from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
+from mamut_routing_lib.td.reprice import load_td_instance_for_routes, route_arcs
+from mamut_routing_lib.exact_td import prepare_td
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
 from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, atf_cache_path
@@ -370,6 +373,17 @@ class TDRouteFunctionEntry(BaseModel):
     ys: list[float]
 
 
+class ExactTDRouteFunctionEntry(TDRouteFunctionEntry):
+    """Coordinates rounded from exact knots, with the right limit following each attained jump.
+
+    A jump index identifies the right-limit sample. Distinct exact departures can share a displayed abscissa.
+    Durations are projected independently, after subtracting the exact departure.
+    """
+
+    durations: list[float]
+    jump_indices: list[int]
+
+
 class TDRouteFunctionsPayload(BaseModel):
     curve_profile: str = "td-fold/2"
     model_config = ConfigDict(extra="forbid")
@@ -377,7 +391,7 @@ class TDRouteFunctionsPayload(BaseModel):
     payload_kind: Literal["td_route_functions"] = "td_route_functions"
     objective_function: ObjectiveFunction
     route_path: str
-    routes: list[TDRouteFunctionEntry]
+    routes: list[ExactTDRouteFunctionEntry | TDRouteFunctionEntry]
 
 
 class BKSPageEntry(BaseModel):
@@ -1729,8 +1743,33 @@ def _certified_td_schedules(instance, atfs, routes, witnesses) -> list[TDRouteSc
     return schedules
 
 
-def _route_functions_filename(objective_function: ObjectiveFunction) -> str:
-    return f"route-functions.{objective_function.value}.json"
+def _exact_route_function(knots, witness: RouteWitness) -> ExactTDRouteFunctionEntry:
+    # Between consecutive knots the duration is affine. At a FIFO jump the lower value is attained.
+    optimum = min((k.arrival - k.departure, k.departure) for k in knots)
+    if optimum != (witness.duration.as_fraction(), witness.departure_time.as_fraction()):
+        raise ValueError("route curve minimum or earliest attaining departure disagrees with the stored TD witness")
+    xs, ys, durations, jumps = [], [], [], []
+    for knot in knots:
+        xs.append(float(knot.departure))
+        ys.append(float(knot.arrival))
+        durations.append(float(knot.arrival - knot.departure))
+        if knot.right_arrival != knot.arrival:
+            jumps.append(len(xs))
+            xs.append(xs[-1])
+            ys.append(float(knot.right_arrival))
+            durations.append(float(knot.right_arrival - knot.departure))
+    return ExactTDRouteFunctionEntry(
+        departure_time=float(optimum[1]), duration=float(optimum[0]),
+        xs=xs, ys=ys, durations=durations, jump_indices=jumps,
+    )
+
+
+def _route_functions_filename(payload: TDRouteFunctionsPayload) -> str:
+    name = f"route-functions.{payload.objective_function.value}"
+    if payload.curve_profile == TD_PROFILE:
+        digest = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+        return f"{name}.{digest}.json"
+    return f"{name}.json"
 
 
 # Objectives whose BKS pages carry per-route TD schedules and route functions.
@@ -1837,19 +1876,39 @@ def _build_bks_entries(
             route_geometry_sha256 = route_geometry.payload_sha256
             route_geometry_bks_sha256 = route_geometry.bks_sha256
             route_geometry_metric = route_geometry.metric
-        if td_instance is not None and td_atfs is not None and bks.objective_function in TD_SCHEDULE_OBJECTIVES:
-            try:
-                if witnesses is not None:
-                    td_schedules = _certified_td_schedules(td_instance, td_atfs, bks.routes, witnesses)
-                elif isinstance(repriced_value, dict) and repriced_value.get("contract") == "td-fold/2":
-                    td_schedules, function_entries = _legacy_td_schedules(td_instance, td_atfs, bks.routes)
+        if td_instance is not None and bks.objective_function in TD_SCHEDULE_OBJECTIVES:
+            function_entries = None
+            if witnesses is not None:
+                if td_atfs is None:
+                    # The generated model has no complete ATF cache. Check its source sidecar pins and derive just the used arcs.
+                    try:
+                        selected_atfs = load_td_instance_for_routes(instance_path, bks.routes, verify_sidecar_sha256=True).atfs
+                    except FileNotFoundError as exc:
+                        warnings.warn(f"TD route curves unavailable for {bks_path}: {exc}", stacklevel=2)
+                        selected_atfs = None
+                else:
+                    # Preparing the checker snapshots its operands. Copy only the BKS arcs from the verified whole graph.
+                    selected_atfs = replace(td_atfs, arcs={arc: td_atfs.arcs[arc] for arc in route_arcs(bks.routes)})
+                if selected_atfs is not None:
+                    td_schedules = _certified_td_schedules(td_instance, selected_atfs, bks.routes, witnesses)
                     if route_path is not None:
-                        route_functions_path = f"{route_path}{_route_functions_filename(bks.objective_function)}"
-                        function_payloads.append(TDRouteFunctionsPayload(
-                            objective_function=bks.objective_function, route_path=route_path, routes=function_entries,
-                        ))
-            except Exception as exc:
-                warnings.warn(f"Unable to derive TD schedule or curve for {bks_path}: {exc}", stacklevel=2)
+                        prepared = prepare_td(td_instance, selected_atfs)
+                        function_entries = [
+                            _exact_route_function(prepared.route_curve(route), witness)
+                            for route, witness in zip(bks.routes, witnesses, strict=True)
+                        ]
+            elif td_atfs is not None and isinstance(repriced_value, dict) and repriced_value.get("contract") == "td-fold/2":
+                try:
+                    td_schedules, function_entries = _legacy_td_schedules(td_instance, td_atfs, bks.routes)
+                except Exception as exc:
+                    warnings.warn(f"Unable to derive historical TD schedule or curve for {bks_path}: {exc}", stacklevel=2)
+            if route_path is not None and function_entries is not None:
+                payload = TDRouteFunctionsPayload(
+                    curve_profile=TD_PROFILE if witnesses is not None else "td-fold/2",
+                    objective_function=bks.objective_function, route_path=route_path, routes=function_entries,
+                )
+                route_functions_path = f"{route_path}{_route_functions_filename(payload)}"
+                function_payloads.append(payload)
         timeline_path = None
         timeline_clock = None
         if timeline_instance is not None and route_path is not None:
@@ -2026,6 +2085,7 @@ def _resolve_instance(
         meta_payload_override=geo_meta_view,
     )
     td_atfs = None
+    derive_route_arcs = False
     atf_sidecar = (
         _resolve_atf_sidecar(output_repo_dir, discovered_item.instance_path, instance, atf_cache_dir=atf_cache_dir)
         if bks_paths
@@ -2052,13 +2112,15 @@ def _resolve_instance(
             if td_atfs is None:
                 # The viewer would fetch the same wrong functions.
                 artifact_links = artifact_links.model_copy(update={"atf_json_path": None})
-        elif int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
-            warnings.warn(
-                f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
-                "its page will lack the BKS schedule table and the arc-click viewer. "
-                "Run `mamut-routing-publish site materialize-atf`, or `site build` without --skip-atf-cache.",
-                stacklevel=2,
-            )
+        else:
+            derive_route_arcs = True
+            if int(instance.num_customers or 0) <= ATF_CACHE_DEFAULT_MAX_CUSTOMERS:
+                warnings.warn(
+                    f"No materialized ATF sidecar for {instance.benchmark_name.value}/{instance.instance_name}: "
+                    "the arc-click viewer requires the complete ATF cache. "
+                    "Run `mamut-routing-publish site materialize-atf` to enable it.",
+                    stacklevel=2,
+                )
     # Workbench instances only (geographic collections); TD pages carry td_schedules.
     animates_static_routes = (
         is_collection
@@ -2069,7 +2131,7 @@ def _resolve_instance(
         output_repo_dir,
         discovered_item.instance_path,
         bks_paths,
-        td_instance=instance if td_atfs is not None else None,
+        td_instance=instance if td_atfs is not None or derive_route_arcs else None,
         td_atfs=td_atfs,
         route_path=route_path,
         route_geometry_cache_dir=route_geometry_cache_dir,
@@ -3860,6 +3922,7 @@ def _resolve_instance_group(
     group: list[tuple[int, DiscoveredBenchmarkInstance]],
     atf_cache_dir: Path | None = None,
     route_geometry_cache_dir: Path | None = None,
+    curve_output_root: Path | None = None,
 ) -> list[tuple[int, _ResolvedSiteInstance | None, str | None]]:
     """Resolve one scheduling group, isolating per-instance failures.
 
@@ -3872,7 +3935,24 @@ def _resolve_instance_group(
         results: list[tuple[int, _ResolvedSiteInstance | None, str | None]] = []
         for index, item in group:
             try:
-                results.append((index, _resolve_instance(output_repo_dir, item, atf_cache_dir, route_geometry_cache_dir), None))
+                resolved = _resolve_instance(output_repo_dir, item, atf_cache_dir, route_geometry_cache_dir)
+                if curve_output_root is not None:
+                    # Publish here so the worker returns only the links and the parent never holds every route's knots.
+                    curve_paths = {entry.objective_function: entry.route_functions_path for entry in resolved.bks_entries}
+                    for curve in resolved.td_route_functions:
+                        path = curve_output_root / curve_paths[curve.objective_function].lstrip("/")
+                        if curve.curve_profile == TD_PROFILE:
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            temporary = path.with_suffix(f".{os.getpid()}.partial")
+                            try:
+                                temporary.write_bytes(curve.model_dump_json().encode())
+                                temporary.replace(path)
+                            finally:
+                                temporary.unlink(missing_ok=True)
+                        else:
+                            save_json_to_file(curve.model_dump(mode="json"), path)
+                    resolved.td_route_functions.clear()
+                results.append((index, resolved, None))
             except Exception as exc:  # noqa: BLE001 - reported per instance by the caller
                 results.append((index, None, f"{type(exc).__name__}: {exc}"))
         return results
@@ -3889,6 +3969,7 @@ def _resolve_instances(
     reporter: ProgressReporter | None = None,
     atf_cache_dir: Path | None = None,
     route_geometry_cache_dir: Path | None = None,
+    curve_output_root: Path | None = None,
 ) -> list[_ResolvedSiteInstance]:
     resolved_jobs = resolve_site_build_jobs(jobs, len(discovered_instances))
     if reporter is not None:
@@ -3920,11 +4001,11 @@ def _resolve_instances(
 
         if resolved_jobs == 1:
             for group in groups:
-                absorb(group, _resolve_instance_group(output_repo, group, atf_cache_dir, route_geometry_cache_dir))
+                absorb(group, _resolve_instance_group(output_repo, group, atf_cache_dir, route_geometry_cache_dir, curve_output_root))
         else:
             with ProcessPoolExecutor(max_workers=resolved_jobs) as executor:
                 futures = {
-                    executor.submit(_resolve_instance_group, output_repo, group, atf_cache_dir, route_geometry_cache_dir): group
+                    executor.submit(_resolve_instance_group, output_repo, group, atf_cache_dir, route_geometry_cache_dir, curve_output_root): group
                     for group in groups
                 }
                 for future in as_completed(futures):
@@ -4040,6 +4121,7 @@ def generate_site_payloads(
         reporter=reporter,
         atf_cache_dir=roots.atf_cache_dir,
         route_geometry_cache_dir=roots.route_geometry_publish_dir,
+        curve_output_root=site_output / payload_root,
     )
     family_context_sections = _load_family_context_sections(output_repo, family_context_report_path)
 
@@ -4478,12 +4560,8 @@ def generate_site_payloads(
         for resolved in resolved_items:
             instance_payload = _build_instance_page_payload(resolved, generated_at, snapshot)
             written_paths.append(_write_payload(site_output, resolved.route_path, instance_payload, payload_root))
-            for functions_payload in resolved.td_route_functions:
-                functions_path = _route_payload_path(site_output, resolved.route_path, payload_root).with_name(
-                    _route_functions_filename(functions_payload.objective_function)
-                )
-                save_json_to_file(functions_payload.model_dump(mode="json"), functions_path)
-                written_paths.append(functions_path)
+            written_paths.extend(site_output / payload_root / entry.route_functions_path.lstrip("/")
+                                 for entry in resolved.bks_entries if entry.route_functions_path is not None)
             for timeline_payload in resolved.route_timelines:
                 timeline_file = _route_payload_path(site_output, resolved.route_path, payload_root).with_name(
                     route_timeline_filename(timeline_payload.objective_function)

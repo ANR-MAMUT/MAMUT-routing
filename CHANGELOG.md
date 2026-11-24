@@ -12,7 +12,7 @@ This entry and the ones below it are the work towards version 0.13 of `mamut-rou
 ### Breaking changes for v0.13
 
 - The public static and time-dependent Python checkers and cost helpers now follow `binary64-exact-v1` and `td-binary64-exact-v1` respectively. Existing calls can yield a different feasibility verdict, cost or earliest departure on the same routes. The native backend is the default. Callers can select Python Fraction under the same profile.
-- Certified BKS pages display the family evaluation and the stored TD witnesses. A green optimality label identifies an attached solver claim. A warning identifies a different target profile in the label and the BKS details.
+- Certified BKS pages display the family evaluation and the stored TD witnesses. Each TD route plots the return time and duration over feasible depot departures when its travel-time inputs are available. The duration plot marks the earliest certified minimum. A green optimality label identifies an attached solver claim. A warning identifies a different target profile in the label and the BKS details.
 
 ### Data
 

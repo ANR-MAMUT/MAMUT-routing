@@ -107,6 +107,54 @@ def _build(repo: Path, **kwargs):
     return summary, [str(w.message) for w in caught]
 
 
+def test_publisher_derives_route_curves_without_cache_and_rejects_a_damaged_cache(tmp_path: Path) -> None:
+    from hashlib import sha256
+    from mamut_routing_lib.artifacts import discover_benchmark_instances
+    from mamut_routing_lib.exact_store import evaluation_metadata
+    from mamut_routing_lib.exact_td import prepare_td
+    from mamut_routing_lib.td.reprice import load_td_instance_for_routes
+    from mamut_routing_publish.site_payloads import _resolve_instance_group
+
+    _write_twins(tmp_path)
+    benchmarks = tmp_path / "benchmarks"
+    discovered = next(d for d in discover_benchmark_instances(benchmarks_root=benchmarks) if d.problem_type.value == "TDVRP")
+    path = discovered.instance_path
+    routes = [[1, 2], [3]]
+    loaded = load_td_instance_for_routes(path, routes, verify_sidecar_sha256=True)
+    result = prepare_td(loaded.instance, loaded.atfs, backend="python").evaluate(routes)
+    bks = {
+        "instance_name": loaded.instance.instance_name, "objective_function": result.objective.value,
+        "routes": result.routes, "cost": float(result.cost), "metadata": evaluation_metadata(result),
+    }
+    save_json_to_file(bks, path.with_name(f"{loaded.instance.instance_name}.bks.{result.objective.value}.json"))
+    output = tmp_path / "payloads"
+
+    def resolve():
+        (_, resolved, error), = _resolve_instance_group(tmp_path, [(0, discovered)], curve_output_root=output)
+        assert error is None, error
+        assert resolved.td_route_functions == []
+        return resolved.bks_entries[0]
+
+    with pytest.warns(UserWarning, match="arc-click viewer"):
+        sparse = resolve()
+    sidecar = output / sparse.route_functions_path.lstrip("/")
+    raw = sidecar.read_bytes()
+    assert sha256(raw).hexdigest() in sidecar.name
+    payload = json.loads(raw)
+    assert payload["curve_profile"] == "td-binary64-exact-v1"
+    assert [c["duration"] for c in payload["routes"]] == [float(w.duration) for w in result.route_evaluations]
+    assert all(len(c["xs"]) == len(c["ys"]) == len(c["durations"]) for c in payload["routes"])
+    _build(tmp_path)
+    assert resolve().route_functions_path == sparse.route_functions_path
+    assert sidecar.read_bytes() == raw
+
+    _entry(tmp_path / "dist/atf-cache").write_bytes(b"broken")
+    with pytest.warns(UserWarning, match="Ignoring ATF sidecar"):
+        unavailable = resolve()
+    assert unavailable.route_functions_path is None and unavailable.td_schedules is None
+    assert unavailable.route_evaluations == sparse.route_evaluations
+
+
 def test_twins_share_one_verified_entry_and_rebuilds_reuse_it(tmp_path: Path) -> None:
     pin = _write_twins(tmp_path)
     cache_dir = tmp_path / "dist" / "atf-cache"

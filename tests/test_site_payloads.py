@@ -2118,6 +2118,31 @@ def test_certified_route_replay_uses_exact_departure_at_a_jump() -> None:
     assert schedule.stops[0].arrival == schedule.return_arrival == 3
 
 
+def test_route_chart_projects_durations_and_distinguishes_jumps_from_display_collisions() -> None:
+    from fractions import Fraction
+    from types import SimpleNamespace
+    from mamut_routing_publish.site_payloads import RouteWitness, _exact_route_function
+
+    # Two distinct departure times project to 1. Only the second has a jump.
+    tiny = Fraction(1, 2**55)
+    def knot(t, a, right):
+        return SimpleNamespace(departure=t, arrival=a, right_arrival=right)
+    def witness(departure, duration):
+        def rational(x):
+            return {"numerator": str(x.numerator), "denominator": str(x.denominator)}
+        return RouteWitness.model_validate({"departure_time": rational(departure), "duration": rational(duration)})
+
+    knots = [knot(1, 1 + tiny, 1 + tiny), knot(1 + tiny, 1 + 2*tiny, 2), knot(2, 3, 3)]
+    curve = _exact_route_function(knots, witness(1, tiny))
+    assert curve.xs == [1, 1, 1, 2]
+    assert curve.ys == [1, 1, 2, 3]
+    assert curve.jump_indices == [2]
+    assert curve.durations == [float(tiny), float(tiny), 1, 1]
+    # Both departures attain the same minimum. Only the earlier one is the certified witness.
+    with pytest.raises(ValueError, match="earliest attaining departure"):
+        _exact_route_function(knots, witness(1 + tiny, tiny))
+
+
 def test_history_compares_exact_costs_within_the_same_edition() -> None:
     from mamut_routing_publish.site_payloads import _classify_bks_pair
 

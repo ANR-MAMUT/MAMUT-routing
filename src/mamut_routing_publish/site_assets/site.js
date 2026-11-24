@@ -2654,19 +2654,55 @@ async function fetchInstanceAtfArcs(atfArtifactPath) {
   return promise;
 }
 
+function chartFraction(value, low, high) {
+  if (low === high) return 0.5;
+  return (value - low) / (high - low);
+}
+
+function chartInterpolate(low, high, fraction) {
+  if (fraction === 0 || low === high) return low;
+  if (fraction === 1) return high;
+  return low + fraction * (high - low);
+}
+
+function chartScale(xs, ys) {
+  const width = 420, height = 260;
+  const pad = { left: 62, right: 14, top: 14, bottom: 34 };
+  const xMin = xs[0], xMax = xs[xs.length - 1];
+  const yMin = minOf(ys), yMax = maxOf(ys);
+  const plotWidth = width - pad.left - pad.right, plotHeight = height - pad.top - pad.bottom;
+  return {
+    width, height, pad, xMin, xMax, yMin, yMax,
+    px: x => pad.left + chartFraction(x, xMin, xMax) * plotWidth,
+    py: y => height - pad.bottom - chartFraction(y, yMin, yMax) * plotHeight,
+    departure: sx => chartInterpolate(xMin, xMax, Math.max(0, Math.min(1, (sx - pad.left) / plotWidth))),
+  };
+}
+
+function chartTickLabel(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1e7 || (magnitude > 0 && magnitude < 0.001)) return value.toExponential(2);
+  return String(Number(value.toPrecision(5)));
+}
+
 function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
-  const width = 420;
-  const height = 260;
-  const pad = { left: 56, right: 14, top: 14, bottom: 34 };
-  const xMin = xs[0];
-  const xMax = xs[xs.length - 1];
-  const yMin = Math.min(...ys);
-  const yMax = Math.max(...ys);
-  const ySpan = yMax - yMin || 1;
-  const xSpan = xMax - xMin || 1;
-  const px = (x) => pad.left + ((x - xMin) / xSpan) * (width - pad.left - pad.right);
-  const py = (y) => height - pad.bottom - ((y - yMin) / ySpan) * (height - pad.top - pad.bottom);
-  const points = xs.map((x, k) => `${px(x).toFixed(1)},${py(ys[k]).toFixed(1)}`).join(" ");
+  const { width, height, pad, xMin, xMax, yMin, yMax, px, py } = chartScale(xs, ys);
+  const points = xs.map((x, k) => `${px(x).toFixed(1)},${py(ys[k]).toFixed(1)}`);
+  const pieces = [];
+  const endpoints = [];
+  let first = 0;
+  // Each right limit starts a new affine piece. Distinct exact departures
+  // can round to the same x coordinate even on a continuous segment.
+  for (const right of options.jumpIndices || []) {
+    pieces.push(points.slice(first, right).join(" "));
+    first = right;
+    for (const index of [right - 1, right]) {
+      const attained = index < right;
+      endpoints.push(`<circle class="curve-jump-${attained ? "attained" : "limit"}" cx="${px(xs[index])}" cy="${py(ys[index])}" r="3" style="stroke:${color};fill:${attained ? color : "var(--s)"}" stroke-width="1.5" />`);
+    }
+  }
+  pieces.push(points.slice(first).join(" "));
+  const graph = pieces.map(coords => `<polyline fill="none" style="stroke:${color}" stroke-width="2" stroke-linejoin="round" points="${coords}" />`).join("") + endpoints.join("");
   let markerSvg = "";
   if (options.marker) {
     const m = options.marker;
@@ -2676,20 +2712,26 @@ function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
         <line x1="${pad.left}" y1="${my.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" style="stroke:${m.color}" stroke-width="1" stroke-dasharray="4 3" />
         <line x1="${mx.toFixed(1)}" y1="${height - pad.bottom}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" style="stroke:${m.color}" stroke-width="1" stroke-dasharray="4 3" />
         <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="4" style="fill:${m.color};stroke:var(--s)" stroke-width="1.5"><title>${escapeHtml(m.label)}</title></circle>
-        <text x="${Math.min(mx + 7, width - pad.right - 4).toFixed(1)}" y="${Math.max(my - 7, pad.top + 10).toFixed(1)}" font-size="10.5" style="fill:${m.color}">${escapeHtml(m.label)}</text>`;
+        <text x="${Math.min(mx + 7, width - pad.right - 4).toFixed(1)}" y="${Math.max(my - 7, pad.top + 10).toFixed(1)}" text-anchor="${mx > width - pad.right - 44 ? "end" : "start"}" font-size="10.5" style="fill:${m.color}">${escapeHtml(m.symbol)}</text>`;
   }
-  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
-  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
+  const yTicks = [...new Set([yMin, chartInterpolate(yMin, yMax, 0.5), yMax])];
+  const xTicks = [...new Set([xMin, chartInterpolate(xMin, xMax, 0.5), xMax])];
+  const offsetX = new Set(xTicks.map(chartTickLabel)).size < xTicks.length;
+  const offsetY = new Set(yTicks.map(chartTickLabel)).size < yTicks.length;
+  const axisNotes = [
+    offsetX ? `Horizontal ticks relative to ${formatScheduleTime(xMin)}` : "",
+    offsetY ? `Vertical ticks relative to ${formatScheduleTime(yMin)}` : "",
+  ].filter(Boolean).join(" · ");
   const grid = yTicks
     .map((t) => `<line x1="${pad.left}" y1="${py(t).toFixed(1)}" x2="${width - pad.right}" y2="${py(t).toFixed(1)}" style="stroke:var(--div)" stroke-width="1" />`)
     .join("");
   const yLabels = yTicks
-    .map((t) => `<text x="${pad.left - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5" style="fill:var(--mut)">${formatScheduleTime(t)}</text>`)
+    .map((t) => `<text x="${pad.left - 6}" y="${(py(t) + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5" style="fill:var(--mut)">${chartTickLabel(offsetY ? t - yMin : t)}</text>`)
     .join("");
   const xLabels = xTicks
     .map((t, k) => {
-      const anchor = k === 0 ? "start" : k === xTicks.length - 1 ? "end" : "middle";
-      return `<text x="${px(t).toFixed(1)}" y="${height - pad.bottom + 16}" text-anchor="${anchor}" font-size="10.5" style="fill:var(--mut)">${formatScheduleTime(t)}</text>`;
+      const anchor = xTicks.length === 1 ? "middle" : k === 0 ? "start" : k === xTicks.length - 1 ? "end" : "middle";
+      return `<text x="${px(t).toFixed(1)}" y="${height - pad.bottom + 16}" text-anchor="${anchor}" font-size="10.5" style="fill:var(--mut)">${chartTickLabel(offsetX ? t - xMin : t)}</text>`;
     })
     .join("");
   return `
@@ -2701,11 +2743,12 @@ function renderArcFunctionChart(chartId, title, xs, ys, color, options = {}) {
         <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}" style="stroke:var(--div)" stroke-width="1" />
         ${yLabels}${xLabels}
         <text x="${(pad.left + width - pad.right) / 2}" y="${height - 4}" text-anchor="middle" font-size="10.5" style="fill:var(--mut)">departure time t</text>
-        <polyline fill="none" style="stroke:${color}" stroke-width="2" stroke-linejoin="round" points="${points}" />${markerSvg}
+        ${graph}${markerSvg}
         <line class="arc-crosshair" x1="0" y1="${pad.top}" x2="0" y2="${height - pad.bottom}" style="display:none;stroke:var(--mut)" stroke-width="1" />
         <circle class="arc-hover-dot" r="3.5" style="display:none;fill:${color};stroke:var(--s)" stroke-width="1.5" />
         <rect class="arc-hover-zone" x="${pad.left}" y="${pad.top}" width="${width - pad.left - pad.right}" height="${height - pad.top - pad.bottom}" fill="transparent" />
       </svg>
+      ${axisNotes ? `<div class="meta-line">${escapeHtml(axisNotes)}</div>` : ""}
       <div class="meta-line arc-hover-readout" style="min-height:1.2em"></div>
     </div>`;
 }
@@ -2726,8 +2769,7 @@ function evaluateNdcpwlf(xs, ys, x) {
     while (high > 0 && xs[high - 1] === x) high -= 1;
     return ys[high];
   }
-  const ratio = (x - xs[low]) / (xs[high] - xs[low]);
-  return ys[low] + ratio * (ys[high] - ys[low]);
+  return chartInterpolate(ys[low], ys[high], chartFraction(x, xs[low], xs[high]));
 }
 
 function attachArcChartHover(container, chartId, xs, ys, formatReadout) {
@@ -2738,22 +2780,14 @@ function attachArcChartHover(container, chartId, xs, ys, formatReadout) {
   const crosshair = chart.querySelector(".arc-crosshair");
   const dot = chart.querySelector(".arc-hover-dot");
   const readout = chart.querySelector(".arc-hover-readout");
-  const viewBox = svg.viewBox.baseVal;
-  const pad = { left: 56, right: 14, top: 14, bottom: 34 };
-  const xMin = xs[0];
-  const xMax = xs[xs.length - 1];
-  const yMin = Math.min(...ys);
-  const yMax = Math.max(...ys);
-  const ySpan = yMax - yMin || 1;
-  const xSpan = xMax - xMin || 1;
+  const scale = chartScale(xs, ys);
   zone.addEventListener("mousemove", (event) => {
     const rect = svg.getBoundingClientRect();
-    const sx = ((event.clientX - rect.left) / rect.width) * viewBox.width;
-    const dataX = xMin + ((sx - pad.left) / (viewBox.width - pad.left - pad.right)) * xSpan;
-    const clamped = Math.min(Math.max(dataX, xMin), xMax);
+    const sx = ((event.clientX - rect.left) / rect.width) * scale.width;
+    const clamped = scale.departure(sx);
     const value = evaluateNdcpwlf(xs, ys, clamped);
-    const px = pad.left + ((clamped - xMin) / xSpan) * (viewBox.width - pad.left - pad.right);
-    const py = viewBox.height - pad.bottom - ((value - yMin) / ySpan) * (viewBox.height - pad.top - pad.bottom);
+    const px = scale.px(clamped);
+    const py = scale.py(value);
     crosshair.setAttribute("x1", px);
     crosshair.setAttribute("x2", px);
     crosshair.style.display = "";
@@ -2805,6 +2839,11 @@ function payloadSidecarHref(payloadPath) {
   return relativeFromCurrent(`${resolvePayloadStaticRoot()}${normalized}`, { directory: false });
 }
 
+function routeChartDurations(profile, entry) {
+  if (profile === "td-fold/2" || !profile) return entry.ys.map((y, k) => y - entry.xs[k]);
+  return entry.durations;
+}
+
 function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex) {
   if (routeFunctionsStatus === "loading") {
     return `<div class="meta-line" style="margin-top:0.8rem">Loading the route ready-time function…</div>`;
@@ -2814,17 +2853,26 @@ function renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, route
   }
   const entry = routeFunctions?.routes?.[routeIndex];
   if (!entry) return "";
-  const durations = entry.ys.map((y, k) => y - entry.xs[k]);
+  const profile = routeFunctions.curve_profile || "td-fold/2";
+  const durations = routeChartDurations(profile, entry);
+  if (!durations) {
+    return '<p class="meta-line">The duration coordinates are unavailable for this route.</p>';
+  }
+  const jumpIndices = entry.jump_indices || [];
+  const count = entry.xs.length - jumpIndices.length;
+  const jumpNote = jumpIndices.length ? " Filled points give the arrival or duration at a jump. Open points give the limit for departures just after it." : "";
   return `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-top:0.8rem">
+      <div class="route-function-charts">
         ${renderArcFunctionChart("route-arr", "Arrival time at depot δ(t)", entry.xs, entry.ys, PALETTE[0], {
-          marker: { x: entry.xs[0], y: entry.ys[0], color: "var(--cy)", label: `EAT ${formatScheduleTime(entry.ys[0])}` },
+          jumpIndices,
+          marker: { x: entry.xs[0], y: entry.ys[0], color: "var(--cy)", symbol: "EAT", label: `Earliest arrival ${formatScheduleTime(entry.ys[0])}` },
         })}
         ${renderArcFunctionChart("route-dur", "Duration Δ(t) = δ(t) − t", entry.xs, durations, PALETTE[1], {
-          marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", label: `MDT ${formatScheduleTime(entry.duration)} (at t* ${formatScheduleTime(entry.departure_time)})` },
+          jumpIndices,
+          marker: { x: entry.departure_time, y: entry.duration, color: "var(--gr)", symbol: "Δ*", label: `Minimum duration ${formatScheduleTime(entry.duration)} at t* = ${formatScheduleTime(entry.departure_time)}` },
         })}
       </div>
-      <div class="meta-line" style="margin-top:0.4rem">Route ready-time function δ over the feasible depot-departure domain (${entry.xs.length} breakpoints, historical td-fold/2). EAT = earliest arrival back at the depot; MDT = minimum duration time Δ* = ${formatScheduleTime(entry.duration)}, attained at the optimal departure t* = ${formatScheduleTime(entry.departure_time)}.</div>`;
+      <p class="meta-line">Route profile <code>${escapeHtml(profile)}</code> · ${count} ${count === 1 ? "breakpoint" : "breakpoints"}. The earliest return to the depot (EAT) is ${formatScheduleTime(entry.ys[0])}. Δ* marks the minimum duration at the earliest departure attaining it.${jumpNote}</p>`;
 }
 
 function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex, routeFunctions, routeFunctionsStatus) {
@@ -2845,7 +2893,10 @@ function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex
     return `<option value="${index}"${index === routeIndex ? " selected" : ""}>Route ${index + 1}${stops ? ` · ${stops.length} customers` : ""}</option>`;
   }).join("");
   const selector = `<label>Route <select data-schedule-route>${options}</select></label>`;
-  if (!schedule) return `<section class="mini-card"><h3>${certified ? "Certified" : "Evaluated"} route times</h3>${selector}${exact}<p class="meta-line">Per-stop replay is unavailable for this route.</p></section>`;
+  const charts = witness && !selectedEntry.route_functions_path
+    ? '<p class="meta-line">Route curves are unavailable for this record.</p>'
+    : renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex);
+  if (!schedule) return `<section class="mini-card"><h3>${certified ? "Certified" : "Evaluated"} route times</h3>${selector}${exact}${charts}<p class="meta-line">Per-stop replay is unavailable for this route.</p></section>`;
   const timeWindows = Array.isArray(instanceData?.time_windows) ? instanceData.time_windows : null;
   const serviceTimes = Array.isArray(instanceData?.service_times) ? instanceData.service_times : null;
   const twHeader = timeWindows ? "<th>Time window</th>" : "";
@@ -2863,7 +2914,7 @@ function renderTdScheduleSection(selectedEntry, instanceData, selectedRouteIndex
       <div class="meta-line">${witness ? (certified ? "Certified schedule" : "Exact schedule") : "Historical td-fold/2 replay"}: the route is dispatched at its earliest optimal depot departure t* = ${formatScheduleTime(schedule.departure_time)} and achieves the optimal duration Δ* = ${formatScheduleTime(schedule.duration)}.</div>
       <div class="inline-actions" style="margin:0.6rem 0">${selector}</div>
       ${exact}
-      ${renderTdRouteFunctionCharts(routeFunctions, routeFunctionsStatus, routeIndex)}
+      ${charts}
       <div class="table-wrap" style="margin-top:0.8rem"><table>
         <thead><tr><th>Stop</th>${twHeader}<th>Arrival</th><th>Wait</th><th>Service</th><th>Departure</th></tr></thead>
         <tbody>${rows.join("")}</tbody>
@@ -2896,6 +2947,7 @@ async function renderInstancePage(payload, options = {}) {
     }
   }
   let selectedIndex = 0;
+  let selectionRequest = 0;
   let selectedEntry = payload.bks_entries[selectedIndex] || null;
   let selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
   let selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
@@ -2992,18 +3044,21 @@ async function renderInstancePage(payload, options = {}) {
           ${routeLegend}
         </section>
         ${renderArcFunctionsCard(arcState)}
-        ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute, routeFunctionsData, routeFunctionsStatus)}
+        ${renderTdScheduleSection(selectedEntry, instanceData, selectedScheduleRoute, routeFunctionsData, selectedEntry?.route_functions_path && routeFunctionsStatus === "idle" ? "loading" : routeFunctionsStatus)}
       </div>`;
 
     if (selectedEntry?.route_functions_path && routeFunctionsStatus === "idle") {
       routeFunctionsStatus = "loading";
-      fetchJsonMemo(payloadSidecarHref(selectedEntry.route_functions_path))
+      const requestedEntry = selectedEntry;
+      fetchJsonMemo(payloadSidecarHref(requestedEntry.route_functions_path))
         .then((data) => {
+          if (selectedEntry !== requestedEntry) return;
           routeFunctionsData = data;
           routeFunctionsStatus = "ready";
           renderSelectedState();
         })
         .catch((error) => {
+          if (selectedEntry !== requestedEntry) return;
           console.warn("Unable to load the route functions payload", error);
           routeFunctionsStatus = "error";
           renderSelectedState();
@@ -3012,10 +3067,17 @@ async function renderInstancePage(payload, options = {}) {
 
     state.aside.querySelectorAll("[data-bks-index]").forEach((button) => {
       button.addEventListener("click", async () => {
-        selectedIndex = Number(button.dataset.bksIndex);
-        selectedEntry = payload.bks_entries[selectedIndex] || null;
-        selectedBksData = selectedEntry ? await fetchJsonMemo(artifactHref(selectedEntry.artifact_path)) : null;
-        selectedRouteGeometryMeta = await routeGeometryMetaForEntry(selectedEntry);
+        const request = ++selectionRequest;
+        const index = Number(button.dataset.bksIndex);
+        const entry = payload.bks_entries[index];
+        const [bks, geometry] = await Promise.all([
+          fetchJsonMemo(artifactHref(entry.artifact_path)), routeGeometryMetaForEntry(entry),
+        ]);
+        if (request !== selectionRequest) return;
+        selectedIndex = index;
+        selectedEntry = entry;
+        selectedBksData = bks;
+        selectedRouteGeometryMeta = geometry;
         selectedScheduleRoute = 0;
         routeFunctionsData = null;
         routeFunctionsStatus = "idle";
@@ -3071,11 +3133,13 @@ async function renderInstancePage(payload, options = {}) {
       renderSelectedState();
     });
     if (routeFunctionsStatus === "ready") {
-      const entry = routeFunctionsData?.routes?.[Math.min(selectedScheduleRoute, (routeFunctionsData?.routes?.length || 1) - 1)];
+      const entry = routeFunctionsData?.routes?.[selectedScheduleRoute];
       if (entry) {
-        const durations = entry.ys.map((y, k) => y - entry.xs[k]);
-        attachArcChartHover(state.stage, "route-arr", entry.xs, entry.ys, (t, v) => `depart t = ${formatScheduleTime(t)} → arrival δ(t) = ${formatScheduleTime(v)}`);
-        attachArcChartHover(state.stage, "route-dur", entry.xs, durations, (t, v) => `depart t = ${formatScheduleTime(t)} → duration Δ(t) = ${formatScheduleTime(v)}`);
+        const durations = routeChartDurations(routeFunctionsData.curve_profile, entry);
+        if (durations) {
+          attachArcChartHover(state.stage, "route-arr", entry.xs, entry.ys, (t, v) => `Departure t ≈ ${formatScheduleTime(t)} · arrival δ(t) ≈ ${formatScheduleTime(v)}`);
+          attachArcChartHover(state.stage, "route-dur", entry.xs, durations, (t, v) => `Departure t ≈ ${formatScheduleTime(t)} · duration Δ(t) ≈ ${formatScheduleTime(v)}`);
+        }
       }
     }
     state.stage.querySelector("[data-schedule-route]")?.addEventListener("change", (event) => {
