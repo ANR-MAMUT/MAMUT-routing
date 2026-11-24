@@ -85,7 +85,7 @@ A new annotation on a historical TD record must identify the original arithmetic
 
 ## Historical TD repricing
 
-The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --write` to replay unmarked TD routes. This command refuses v0.13 exact records. For a legacy cost that moved, the migration updated `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times`, and added this record. [Time-dependent instances](time-dependent.md#the-checker-contract-td-fold2)
+The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --write` to replay unmarked TD routes. This command refuses v0.13 exact records. For a legacy cost that moved, the migration updated `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times`, and added this record. [Time-dependent instances](time-dependent.md#historical-td-fold-in-v012)
 
 ```json
 "repriced": {"previous_cost": 8292.0, "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",

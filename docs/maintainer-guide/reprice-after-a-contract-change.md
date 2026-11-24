@@ -1,11 +1,6 @@
 # Re-price after a checker-contract change
 
-Every stored TD cost is the value of one versioned fold, `TD_CHECKER_CONTRACT` (see
-[Time-dependent instances](../benchmarks/formats/time-dependent.md#the-checker-contract-td-fold2)). When a lib
-release changes it, the stored BKS no longer match the checker: the store refuses them as
-`OBJECTIVE_VALUE_MISMATCH`, whose message names this procedure. Re-pricing never changes a route; it rewrites the
-checker's outputs and records what moved. The 2026-09-24 run (td-fold/1 → td-fold/2, lib 0.12.0) is the worked
-example below.
+This procedure reproduces the v0.12 migration of legacy TD records under `td-fold/2`. Current v0.13 records use `td-binary64-exact-v1` and bind the certified result to its edition manifest. The legacy `reprice-td` command refuses a marked exact record. [Historical TD fold](../benchmarks/formats/time-dependent.md#historical-td-fold-in-v012)
 
 ## 1. Point every checkout at the new lib
 

@@ -40,20 +40,13 @@ merge of Visser & Spliet (2020) without normalization, interpolating between enc
 monotone, so the invariant holds structurally under any rounding. The module is the pure-Python reference:
 reimplementations must be bit-identical.
 
-## The checker (`td.checker`)
+## Pricing TD routes
 
-`check_td_solution` prices a solution exactly (no epsilon) under `Duration` or `FleetCostDuration`
-(`TD_OBJECTIVES`): departure at the depot within the horizon, arrival by composing the arc ATFs, waiting at windows,
-service, return. It returns the same status vocabulary as the static checker plus route-level evaluations
-(`TDRouteEvaluation`: feasibility, duration, departure time). `create_td_bks_from_solution` and the TD store
-(`td.bks`) use it; the static `check_solution` refuses TD instances. KAYROS is the reference solver built on this
-checker.
+The family profile for v0.13 is `td-binary64-exact-v1`. The checker reads each materialized ATF knot, time-window bound and service time as its exact binary64 rational. It computes each route's minimum duration and the earliest departure attaining it, then evaluates the family objective across routes. `FleetCostDuration` also includes the fixed cost per vehicle. BKS comparisons use the exact objective. The displayed cost is its nearest binary64 value. The default C++ backend and the selectable Python Fraction backend implement the same profile. A solver may search a different model and submit its routes for this evaluation. [Solutions, BKS and optimality](solutions.md)
 
-### The checker contract: `td-fold/2`
+### Historical TD fold in v0.12
 
-Every stored TD cost is the value of one versioned algorithm, `TD_CHECKER_CONTRACT`. The current contract is
-**`td-fold/2`** (mamut-routing-lib ≥ 0.12.0). Any reimplementation that writes BKS (KAYROS, a solver's own
-evaluator) must reproduce it **bit for bit**; the store compares exact doubles.
+The v0.12 store used `td-fold/2`, identified by `TD_CHECKER_CONTRACT` in the legacy `td.checker` API. Reproducing a result priced under that contract requires its binary64 operation order. Older solver claims can name `td-fold/1` as their target.
 
 A route `r = (v_1, …, v_m)` from depot `0` is folded left to right into its ready-time function `δ_r`, which maps
 depot departure times to the time the vehicle is back:
@@ -97,7 +90,4 @@ and from slope-one travel. The 2026-09-24 re-pricing moved 870 stored costs, all
 [Solutions](solutions.md#historical-td-repricing)). Test vectors for reimplementations are in
 `MAMUT-routing-lib/tests/fixtures/td/fold-v2-vectors.json`.
 
-A cost that differs from the checker's is refused as `OBJECTIVE_VALUE_MISMATCH`. After a contract change the stored
-BKS are re-priced with `mamut-routing bks reprice-td` (runbook: *Re-pricing after a checker-contract change* in the
-maintainer guide); a solver still on the old contract will see about a quarter of its TD submissions refused until
-it is updated.
+The v0.12 migration used `mamut-routing bks reprice-td` to update legacy records. Current certified records identify their edition manifest and exact profile. [Historical TD repricing](solutions.md#historical-td-repricing)
