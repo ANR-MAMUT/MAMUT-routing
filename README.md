@@ -2,9 +2,20 @@
 
 Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes. Each benchmark family is its own repository, mounted here under `benchmarks/`. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
 
-> **Transition to version 0.13.** The `main` branch holds the work towards version 0.13 of `mamut-routing-lib`. Its benchmark tree (one repository per family) is read by the library pinned in this repository, `MAMUT-routing-lib/`, and not by the released library. The released library (0.12.0 on PyPI) reads the former layout, which is available through `mamut-routing remote fetch` (snapshot of 2026-09-23) and in the read-only [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11). The website shows the released state until version 0.13 is out.
+> **Transition to version 0.13.** The `v013` branch contains the edition manifests, certified incumbents and matching library for version 0.13. Its benchmark tree (one repository per family) is read by the library pinned in this repository, `MAMUT-routing-lib/`, and not by the released library. The released library (0.12.0 on PyPI) reads the former layout, which is available through `mamut-routing remote fetch` (snapshot of 2026-09-23) and in the read-only [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11). The website shows the released state until version 0.13 is out.
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
+
+## Verify a benchmark result
+
+Each instance has an adjacent `<instance>.manifest.json`. It identifies the descriptor, required sidecars, materialization recipe where applicable, and the complete static matrix or time-dependent arrival-time functions. Each BKS carries the digest of that manifest in `metadata.standard.manifest_sha256`. Use the pinned library to replay a result from a checkout or an extracted family archive. The following example checks DIMACS C101 with Python Fraction. Omitting `--backend python` selects the native C++ evaluator.
+
+```sh
+cd benchmarks/Dimacs2021/VRPTW/n=100
+mamut-routing check C101.vrp.json C101.bks.MonoCost.json --backend python
+```
+
+The family file `.mamut/editions/r1-index.json` lists the edition's descriptor and manifest digests. The original incumbent files are indexed in `.mamut/archives/r1-original-bks.json`. A historical solver claim has its own target profile and evidence under `metadata.optimality`. The software catalog identifies the exact evaluator and verifier distributions by SHA-256. [Software catalog](.mamut/editions/r1-software.json) · [Certification order (Appendix G)](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/blob/main/tex/certification-order.tex)
 
 ## MAMUT project context
 
