@@ -1573,7 +1573,8 @@ def test_site_build_atf_jobs_pins_the_materialization_worker_count(
     assert "auto" in result.stderr
 
 
-def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path) -> None:
+def test_site_payload_generation_serial_and_parallel_outputs_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mamut_routing_publish.site_payloads._now_utc_iso", lambda: "2026-04-23T12:00:00+00:00")
     serial_repo_dir = tmp_path / "serial" / "MAMUT-routing"
     parallel_repo_dir = tmp_path / "parallel" / "MAMUT-routing"
     build_fixture_site_inputs(serial_repo_dir)
