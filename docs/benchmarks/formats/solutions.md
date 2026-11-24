@@ -53,6 +53,8 @@ In an external run's provenance, `reported_cost_matches_exported_model` answers 
 | JSON | `{"routes": [[...]], "cost": ...}` (a solution or BKS file) or a bare array of routes |
 | LKH-3 `MTSP_SOLUTION_FILE` | a `<name>, Cost: <penalty>_<cost>` header and one `1 a b c 1 (#3)  Cost: x` line per vehicle; node 1 is the depot, a non-zero penalty is refused |
 
+When submitting a standalone CVRPLIB or LKH solution, the CLI retains the printed cost token. A generic CVRPLIB `Cost` line leaves the objective `unspecified` until the submitter supplies its meaning. A standalone LKH solution identifies total arc cost. Both formats can omit the export unit, in which case the BKS retains the report and omits its family-unit display. An ordinary solution JSON can provide its report directly in `metadata.solver_report`.
+
 Stop ids are mapped onto the library's (depot 0, customers 1..n): customers numbered 1..n with an optional 0 as a
 depot marker (CVRPLIB), or 0..n-1 when the file covers exactly those ids (`--ids one-based|zero-based` forces a
 reading; `check` says when it read a file as 0-based). Under 1..n a 0 inside a route is a return to the depot: the
