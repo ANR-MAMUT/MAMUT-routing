@@ -493,10 +493,16 @@ function costSpan(value, className = "badge-cost") {
   return `<span class="${className}">${escapeHtml(formatCost(value))}</span>`;
 }
 
+// The compact form is the publisher's `compact_cost`: the exact cost rounded
+// directly to 2 decimals, ties to even. Rounding the binary64 `cost` here
+// instead could change the last digit through double rounding, so an entry
+// without that string shows the full binary64 display.
 function displayedCost(entry, { compactCost = false } = {}) {
   if (entry?.evaluation?.display_overflow) return "Outside binary64 range";
   const value = entry?.cost;
-  if (compactCost && Number.isFinite(value) && !Number.isInteger(value)) return value.toFixed(2);
+  if (compactCost && Number.isFinite(value) && !Number.isInteger(value) && typeof entry?.compact_cost === "string") {
+    return entry.compact_cost;
+  }
   return formatCost(value);
 }
 

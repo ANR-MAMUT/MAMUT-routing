@@ -114,29 +114,34 @@ def test_exact_sort_breaks_display_ties_and_keeps_overflow_ahead_of_missing() ->
 
 
 @node
-def test_catalogue_badge_rounds_the_stored_cost_and_full_record_preserves_it() -> None:
+def test_catalogue_badge_shows_the_exact_compact_cost_and_full_record_preserves_it() -> None:
+    """The compact cost is the publisher's directly rounded string, never a rounding of the binary64 cost."""
     names = ("formatObjectiveBadge", "displayedCost", "formatCost", "costSpan", "escapeHtml", "isHierarchicalObjective")
     source = SITE_JS.read_text()
     script = "\n".join(re.search(rf"^function {n}\(.*?^\}}", source, re.S | re.M).group(0) for n in names) + """
-    const sample = (cost, evaluation) => {
-      const entry = {cost, evaluation, objective_function: "Duration"};
-      return [formatObjectiveBadge(entry).title, displayedCost(entry), entry.cost];
+    const sample = (cost, compact_cost, evaluation) => {
+      const entry = {cost, compact_cost, evaluation, objective_function: "Duration"};
+      return [formatObjectiveBadge(entry).title, displayedCost(entry), entry.cost, Number.isFinite(cost) ? cost.toFixed(2) : null];
     };
     console.log(JSON.stringify([
-      sample(9150.837), sample(2.675), sample(1.2), sample(0), sample(null),
-      sample(null, {display_overflow: true})
+      sample(9150.837, "9150.84"), sample(1.135, "1.13"), sample(1.2, "1.20"), sample(0), sample(null),
+      sample(2.675), sample(null, undefined, {display_overflow: true})
     ]));
     """
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
     rows = json.loads(result.stdout)
-    assert [(title.removeprefix("Mono-cost objective: cost = "), full, stored) for title, full, stored in rows] == [
+    assert [(title.removeprefix("Mono-cost objective: cost = "), full, stored) for title, full, stored, _ in rows] == [
         ("9150.84", "9150.837", 9150.837),
-        ("2.67", "2.675", 2.675),
+        # The exact value is just below 1.135, the binary64 display just above: toFixed would show 1.14.
+        ("1.13", "1.135", 1.135),
         ("1.20", "1.2", 1.2),
         ("0", "0", 0),
         ("n/a", "n/a", None),
+        # Without an exact value the badge shows the full binary64 display instead of a rounded one.
+        ("2.675", "2.675", 2.675),
         ("Outside binary64 range", "Outside binary64 range", None),
     ]
+    assert rows[1][3] == "1.14"
 
 
 @node

@@ -15,7 +15,10 @@ from mamut_routing_lib.models import BenchmarkBKS, BenchmarkInstanceVRPTW, Bench
 from mamut_routing_lib.sidecars import CollectionMarker, save_collection_marker
 from mamut_routing_publish.cli import app
 from mamut_routing_lib.td.pwlf import NDCPWLF, PWLFError
+from fractions import Fraction
+
 from mamut_routing_publish.site_payloads import (
+    PublishedEvaluation,
     _TD_SCHEDULE_DOMAIN_TOL,
     _atf_group_key,
     _resolve_instance_group,
@@ -23,8 +26,10 @@ from mamut_routing_publish.site_payloads import (
     _deduplicate_discovered_instances,
     _evaluate_on_domain,
     _home_preview_metric_rank,
+    compact_cost_display,
     derive_historical_taxonomy,
     generate_site_payloads,
+    round_fraction_to_decimals,
 )
 from mamut_routing_publish.site_webapp import generate_site_webapp
 
@@ -831,7 +836,7 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": "benchmarks/Sintef2008/VRPTW/n=2/C101.bks.HierarchicalVehicleCost.json",
-            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1", "compact_cost": None,
         },
     ]
 
@@ -858,14 +863,14 @@ def test_instance_list_items_carry_size_and_id_and_per_objective_bks_values(tmp_
             "cost": 12,
             "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.HierarchicalVehicleCost.json",
-            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1", "compact_cost": None,
         },
         {
                 "objective_function": "MonoCost",
                 "cost": 12,
                 "num_routes": 1,
             "artifact_path": f"{mamut_dir}/{generated_vrptw.instance_name}.bks.MonoCost.json",
-            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1",
+            "optimality": None, "evaluation": None, "family_profile": "binary64-exact-v1", "compact_cost": None,
         },
     ]
 
@@ -2220,3 +2225,55 @@ def test_attached_solver_claim_reaches_the_bks_entry_and_summary(tmp_path: Path)
     assert entry.optimality == claim
     summary, = _objective_availability(entries)
     assert summary.optimality == {"status": "solver-reported-optimal", "target_profile": "synthetic-profile-v0"}
+
+
+@pytest.mark.parametrize(
+    ("value", "decimals", "expected"),
+    [
+        (Fraction(1, 8), 2, "0.12"),  # 12.5 hundredths: the tie goes to the even 12.
+        (Fraction(3, 8), 2, "0.38"),  # 37.5 hundredths: the tie goes to the even 38.
+        (Fraction(5, 1000), 2, "0.00"),
+        (Fraction(15, 1000), 2, "0.02"),
+        (Fraction(25, 1000), 2, "0.02"),
+        (Fraction(-1, 1000), 2, "0.00"),  # No negative zero.
+        (Fraction(-3, 8), 2, "-0.38"),
+        (Fraction(12), 2, "12.00"),
+        (Fraction(2, 3), 0, "1"),
+        (Fraction(5, 2), 0, "2"),
+        (Fraction(9150837, 1000), 2, "9150.84"),
+        (Fraction(1, 3), 4, "0.3333"),
+    ],
+)
+def test_round_fraction_to_decimals_rounds_half_to_even(value: Fraction, decimals: int, expected: str) -> None:
+    assert round_fraction_to_decimals(value, decimals) == expected
+
+
+def test_direct_rounding_differs_from_rounding_the_binary64_display() -> None:
+    """Just below 1.135, the nearest binary64 lies above 1.135, so double rounding gives 1.14."""
+    half_way = Fraction(1135, 1000)
+    exact = half_way - Fraction(1, 10**20)
+    display = Fraction(float(exact))
+    assert exact < half_way <= display
+    assert round_fraction_to_decimals(exact, 2) == "1.13"
+    assert round_fraction_to_decimals(display, 2) == "1.14"
+    assert f"{float(exact):.2f}" == "1.14"
+
+
+def _evaluation(numerator: int, denominator: int, *, overflow: bool = False) -> PublishedEvaluation:
+    return PublishedEvaluation.model_validate(
+        {
+            "profile": "binary64-exact-v1",
+            "authoritative_cost": {"numerator": str(numerator), "denominator": str(denominator)},
+            "display_overflow": overflow,
+        }
+    )
+
+
+def test_compact_cost_comes_from_the_exact_value_only() -> None:
+    fraction = Fraction(1135, 1000) - Fraction(1, 10**20)
+    assert compact_cost_display(_evaluation(fraction.numerator, fraction.denominator)) == "1.13"
+    assert compact_cost_display(_evaluation(3, 8)) == "0.38"
+    # Integers keep their integer display, and records without an exact value fall back to the full display.
+    assert compact_cost_display(_evaluation(12, 1)) is None
+    assert compact_cost_display(None) is None
+    assert compact_cost_display(_evaluation(10**400 + 1, 3, overflow=True)) is None
