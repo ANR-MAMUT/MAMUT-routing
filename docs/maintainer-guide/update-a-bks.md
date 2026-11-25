@@ -81,7 +81,7 @@ annotate_td_bks_optimality(
 )
 ```
 
-The store re-evaluates the routes and verifies their stored exact result before recording the claim. For a historical unmarked TD record, a legacy stamp must identify the original arithmetic in `target_profile` (for the Kayros claims dating from before the September repricing, `td-fold/1`).
+The store re-evaluates the routes and verifies their stored exact result before recording the claim. For a historical unmarked TD record, a legacy stamp must identify the original arithmetic in `target_profile`, for example `td-fold/1`.
 
 ## After the file changed
 
