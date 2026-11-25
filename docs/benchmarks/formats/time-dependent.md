@@ -86,4 +86,4 @@ and from slope-one travel. The 2026-09-24 re-pricing moved 870 stored costs, all
 [Solutions](solutions.md#historical-td-repricing)). Test vectors for reimplementations are in
 `MAMUT-routing-lib/tests/fixtures/td/fold-v2-vectors.json`.
 
-The v0.12 migration used `mamut-routing bks reprice-td` to update legacy records. Current certified records identify their edition manifest and exact profile. [Historical TD repricing](solutions.md#historical-td-repricing)
+The v0.12 migration used `mamut-routing bks reprice-td` to update legacy records. Version 0.13 removes this command, and records of earlier library versions are re-priced with `mamut-routing-lib` 0.12.0. Current certified records identify their edition manifest and exact profile. [Historical TD repricing](solutions.md#historical-td-repricing)
