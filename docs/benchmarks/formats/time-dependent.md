@@ -42,7 +42,7 @@ The family profile for v0.13 is `td-binary64-exact-v1`. The checker reads each m
 
 ### Historical TD fold in v0.12
 
-The v0.12 store used `td-fold/2`. In v0.13 its checker and timing helpers are available under `mamut_routing_lib.td.fold2`. Reproducing a result priced under that contract requires its binary64 operation order. Older solver claims can name `td-fold/1` as their target.
+The v0.12 store used `td-fold/2`. In v0.13 its checker and timing helpers are available under `mamut_routing_lib.td.fold2`. Reproducing a result priced under that contract requires its binary64 operation order.
 
 A route `r = (v_1, …, v_m)` from depot `0` is folded left to right into its ready-time function `δ_r`, which maps
 depot departure times to the time the vehicle is back:

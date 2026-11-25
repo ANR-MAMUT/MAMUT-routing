@@ -81,7 +81,7 @@ annotate_td_bks_optimality(
 )
 ```
 
-The store re-evaluates the routes and verifies their stored exact result before recording the claim. For a historical unmarked TD record, a legacy stamp must identify the original arithmetic in `target_profile`, for example `td-fold/1`.
+The store re-evaluates the routes and verifies their stored exact result before recording the claim. The claim's `target_profile` must be `td-binary64-exact-v1`, and the legacy `proven: true` stamp is refused.
 
 ## After the file changed
 
