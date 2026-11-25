@@ -93,7 +93,7 @@ For a v0.13 exact result, `metadata.optimality` records the solver's claim with 
 
 When submitting or annotating a BKS, the claim's `target_profile` must match the profile used to evaluate its routes. Optional `campaign`, `reported_primal`, `reported_dual` and `evidence` fields describe the run, the solver's own bounds and a hash-pinned evidence file. The website labels a BKS with an attached solver claim. Older structured claims remain readable. When a displayed claim has a missing or different target, the website warns that optimality under the family profile is unverified. A BKS without `metadata.optimality` has no attached claim.
 
-Earlier releases wrote a `proven: true` stamp under the same key. The published store holds no such stamp, and the library refuses to write one.
+Library versions before 0.13 wrote a `proven: true` stamp under the same key. The published store holds no such stamp. The library neither reads nor writes one. Loading a file that carries it raises `LegacyOptimalityClaimError`. Read such historical files with `mamut-routing-lib` 0.12.0.
 
 ## Historical TD repricing
 
@@ -104,4 +104,4 @@ The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --writ
              "contract": "td-fold/2", "date": "2026-09-24"}
 ```
 
-The tool never rewrites a record that carries an optimality claim. When such a record would change, it reports `stamp-conflict`.
+The tool refuses a record that carries an optimality claim, and reports `error` for it.

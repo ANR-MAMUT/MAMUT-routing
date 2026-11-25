@@ -17,7 +17,7 @@ changed after the last materialization. Run `site materialize-route-geometry --f
 capped below that size (`--atf-max-n`, default 400). Run `site materialize-atf --max-n <N> --jobs <k>` (each worker
 holds one full ATF set).
 
-**An optimality claim is flagged on a certified BKS.** The site shows the profile targeted by the solver next to the family profile used to evaluate the routes. Rechecking the routes under a new profile can change their cost or feasibility. Only a solver claim for that profile can establish that the submitted routes are optimal under it.
+**An optimality claim is flagged on a certified BKS.** The site flags a missing target or a target that differs from the family profile used to evaluate the routes. Older structured records can carry an earlier target. A new claim requires evidence for the current profile and can be recorded with `annotate_td_bks_optimality` or the static store.
 
 **Docs phase fails.** Strict MkDocs: read the warning (a link to a page that does not exist, an API page whose module
 moved). `uv run mkdocs build --strict` reproduces it in seconds. Missing toolchain: `uv sync --group docs`. A checkout
