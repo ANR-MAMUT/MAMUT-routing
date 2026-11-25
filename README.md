@@ -2,7 +2,7 @@
 
 Curated CVRP, VRPTW, TDVRPTW and TDVRP benchmarks and the fully static benchmark website that visualizes instances and routes. Each benchmark family is its own repository, mounted here under `benchmarks/`. Instance generation and solving run locally with [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools).
 
-> **Transition to version 0.13.** The `v013` branch contains the edition manifests, certified incumbents and matching library for version 0.13. Its benchmark tree (one repository per family) is read by the library pinned in this repository, `MAMUT-routing-lib/`, and not by the released library. The released library (0.12.0 on PyPI) reads the former layout, which is available through `mamut-routing remote fetch` (snapshot of 2026-09-23) and in the read-only [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11). The website shows the released state until version 0.13 is out.
+> **Transition to version 0.13.** The `main` branch contains the edition manifests and certified incumbents for version 0.13. Use the library pinned in `MAMUT-routing-lib/` to read its benchmark tree, which has one repository per family. The released library (0.12.0 on PyPI) reads the former layout, which is available through `mamut-routing remote fetch` (snapshot of 2026-09-23) and in the read-only [MAMUT-routing-archive-2026-11](https://github.com/ANR-MAMUT/MAMUT-routing-archive-2026-11). The website shows the released state until version 0.13 is out.
 
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/ANR-MAMUT/MAMUT-routing/)](https://archive.softwareheritage.org/browse/origin/?origin_url=https://github.com/ANR-MAMUT/MAMUT-routing)
 
