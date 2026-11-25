@@ -21,7 +21,6 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import datetime, timezone
-from decimal import Decimal
 from enum import Enum
 from fractions import Fraction
 import hashlib
@@ -32,7 +31,7 @@ import re
 from typing import Any, Literal
 import warnings
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mamut_routing_lib.checker import canonical_route_order
 from mamut_routing_lib.cvrplib import coordinates_define_arc_costs
@@ -58,7 +57,7 @@ from mamut_routing_publish.atf_cache import ATF_CACHE_RELATIVE, atf_cache_file, 
 from mamut_routing_publish.publish_roots import PublishRoots, hardlink_tree, migrate_legacy_state
 from mamut_routing_lib.td.fold2 import compute_route_ready_time_function
 from mamut_routing_lib.exact_types import STATIC_PROFILE, TD_PROFILE
-from mamut_routing_lib.exact_store import routes_sha256
+from mamut_routing_lib.exact_store import read_result_fraction, routes_sha256
 from mamut_routing_lib.manifests import file_sha256, manifest_path_for
 from mamut_routing_lib import has_structured_metadata
 
@@ -161,9 +160,13 @@ class RationalValue(BaseModel):
     numerator: str
     denominator: str
 
+    @model_validator(mode="after")
+    def _check_canonical(self) -> RationalValue:
+        self.as_fraction()
+        return self
+
     def as_fraction(self) -> Fraction:
-        # Decimal bypasses CPython's decimal-string length limit on large TD results.
-        return Fraction(int(Decimal(self.numerator)), int(Decimal(self.denominator)))
+        return read_result_fraction({"numerator": self.numerator, "denominator": self.denominator})
 
 
 class PublishedEvaluation(BaseModel):

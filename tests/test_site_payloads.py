@@ -2228,8 +2228,10 @@ def test_attached_solver_claim_reaches_the_bks_entry_and_summary(tmp_path: Path)
     assert entry.compact_cost is None and summary.compact_cost is None  # An integer keeps its integer display.
 
 
-def test_compact_cost_reaches_the_bks_entry_and_summary(tmp_path: Path) -> None:
+@pytest.mark.parametrize("exponent", [20, 5002])
+def test_compact_cost_reaches_the_bks_entry_and_summary(tmp_path: Path, exponent: int) -> None:
     """The page entry and the catalogue summary carry the exact cost rounded directly, not its binary64 display."""
+    from decimal import Decimal
     from hashlib import sha256
     from mamut_routing_lib.exact_store import routes_sha256
     from mamut_routing_publish.site_payloads import _build_bks_entries, _objective_availability
@@ -2242,10 +2244,10 @@ def test_compact_cost_reaches_the_bks_entry_and_summary(tmp_path: Path) -> None:
     manifest = tmp_path / "compact.manifest.json"
     manifest.write_text(json.dumps({"default_profile": "binary64-exact-v1", "benchmark_revision": "r1",
         "instance": {"sha256": sha256(descriptor.read_bytes()).hexdigest()}, "objective": "MonoCost"}))
-    exact = Fraction(1135, 1000) - Fraction(1, 10**20)
+    exact = Fraction(1135, 1000) - Fraction(1, 10**exponent)
     marked = {"profile": "binary64-exact-v1", "objective": "MonoCost", "routes_sha256": routes_sha256(routes),
               "num_routes": 1, "display_overflow": False, "benchmark_revision": "r1",
-              "authoritative_cost": {"numerator": str(exact.numerator), "denominator": str(exact.denominator)},
+              "authoritative_cost": {"numerator": str(Decimal(exact.numerator)), "denominator": str(Decimal(exact.denominator))},
               "manifest_sha256": sha256(manifest.read_bytes()).hexdigest()}
     bks = tmp_path / "compact.bks.MonoCost.json"
     bks.write_text(json.dumps({"instance_name": "compact", "routes": routes, "cost": float(exact),
@@ -2308,3 +2310,23 @@ def test_compact_cost_comes_from_the_exact_value_only() -> None:
     assert compact_cost_display(_evaluation(12, 1)) is None
     assert compact_cost_display(None) is None
     assert compact_cost_display(_evaluation(10**400 + 1, 3, overflow=True)) is None
+
+
+@pytest.mark.parametrize("field", ["authoritative_cost", "duration", "departure_time"])
+def test_publisher_rejects_noncanonical_cost_and_route_witnesses(field: str) -> None:
+    from mamut_routing_lib.exact_store import routes_sha256
+    from mamut_routing_publish.site_payloads import _read_bks_evaluation
+
+    routes = [[1]]
+    half = {"numerator": "1", "denominator": "2"}
+    witness = {"duration": half, "departure_time": {"numerator": "0", "denominator": "1"}}
+    record = {"profile": "td-binary64-exact-v1", "objective": "Duration", "num_routes": 1,
+              "routes_sha256": routes_sha256(routes), "authoritative_cost": half,
+              "route_evaluations": [witness], "display_overflow": False}
+    target = record if field == "authoritative_cost" else witness
+    target[field] = ({"numerator": "0", "denominator": "2"} if field == "departure_time"
+                     else {"numerator": "2", "denominator": "4"})
+    bks = BenchmarkBKS(instance_name="toy", objective_function="Duration", routes=routes, cost=0.5,
+                       metadata={"exact_evaluation": record})
+    with pytest.raises(ValueError, match="canonical result fraction"):
+        _read_bks_evaluation("toy.bks.Duration.json", bks, None, None)
