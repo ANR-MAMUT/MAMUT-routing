@@ -539,16 +539,15 @@ function routesStatValue(entry) {
 }
 
 function claimInfo(entry) {
-  // Older snapshot summaries only recorded whether a claim was present.
-  const proof = entry?.optimality || (entry?.optimality_proven ? { proven: true } : null);
+  const proof = entry?.optimality;
   if (!proof) return null;
   const family = entry.family_profile || (["Duration", "FleetCostDuration"].includes(entry.objective_function)
     ? "td-binary64-exact-v1" : "binary64-exact-v1");
   const target = proof.target_profile;
-  const warning = !target
-    ? `This claim does not specify its arithmetic profile. The family default is ${family}.`
-    : (target !== family ? `The solver reported optimality under ${target}. The family evaluates this BKS under ${family}. Optimality under the family default is unverified.` : "");
-  const label = proof.status === "solver-reported-optimal" || proof.proven ? "Solver-reported optimal" : "Optimality record";
+  // The store records a claim only under the evaluated profile. Any other target is flagged, not trusted.
+  const warning = target === family ? ""
+    : `This claim targets ${target || "no profile"}, not the family profile ${family}. Optimality under the family profile is unverified.`;
+  const label = proof.status === "solver-reported-optimal" ? "Solver-reported optimal" : "Optimality record";
   return { proof, label, warning, title: warning || `${label} under ${target}.` };
 }
 
@@ -568,14 +567,12 @@ function optimalityStatRows(entry) {
   const proof = info.proof;
   const rows = [["Optimality", { html: claimBadge(info) }], ["Claim target", proof.target_profile || "Unspecified"]];
   if (info.warning) rows.push(["Profile warning", { html: `<span class="claim-warning">⚠ ${escapeHtml(info.warning)}</span>` }]);
-  if (proof.solver || proof.prover) rows.push(["Solver", proof.solver || proof.prover]);
-  if (proof.date) rows.push(["Claim date", proof.date]);
-  if (proof.certificate) rows.push(["Certificate", proof.certificate]);
+  if (proof.solver) rows.push(["Solver", proof.solver]);
   if (proof.campaign) rows.push(["Campaign", proof.campaign]);
   return rows;
 }
 
-// Check-badge icon marking a BKS that carries a structured optimality proof.
+// Check-badge icon marking a BKS that carries a solver claim of optimality.
 function optimalBadgeIconHtml() {
   return `<img class="optimal-badge-icon" src="${siteAssetHref(OPTIMAL_BADGE_ICON_PATH)}" alt="" aria-hidden="true" />`;
 }
@@ -1788,15 +1785,14 @@ function renderInspectorDetails(item, payload, preview, rawInstance = null) {
   const statCells = stats
     .map(([label, value]) => `<div><span>${escapeHtml(label)}</span>${typeof value === "object" && value?.html ? value.html : `<strong>${escapeHtml(value)}</strong>`}</div>`)
     .join("");
-  // Compact by design: the proven-optimal chip in the title row is enough
-  // here; the full proof detail (certificate, prover, campaign) lives on the
-  // record page's BKS card. Only the short attribution rows stay.
+  // Compact by design: the claim chip in the title row is enough here. The
+  // full claim detail (target, solver, campaign) lives on the record page's
+  // BKS card. Only the short attribution rows stay.
   const provenance = [];
   if (entry?.method) provenance.push(["Method", entry.method]);
   if (entry?.authors) provenance.push(["Authors", entry.authors]);
   const claim = claimInfo(entry);
   if (claim?.warning) provenance.push(["⚠ Profile warning", claim.warning]);
-  if (claim?.proof.date) provenance.push(["Claim date", claim.proof.date]);
   const provenanceGrid = provenance.length
     ? `<div class="inspector-prov">${provenance.map(([key, value]) => `<span>${escapeHtml(key)}</span><span>${escapeHtml(value)}</span>`).join("")}</div>`
     : "";

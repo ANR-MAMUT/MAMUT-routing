@@ -8,7 +8,7 @@ every flag.
 |---|---|
 | Understand the repositories, submodules and the uv workspace | [Repository topology](repository-topology.md) |
 | Ship a change to an existing family (instances, sidecars, README, changelog) | [Update a benchmark family](update-a-family.md) |
-| Replace a best-known solution, stamp an optimality proof, refresh route geometry | [Update or submit a BKS](update-a-bks.md) |
+| Replace a best-known solution, record a solver claim of optimality, refresh route geometry | [Update or submit a BKS](update-a-bks.md) |
 | Run many solver runs and turn the winners into BKS with provenance | [Run a BKS campaign](bks-campaigns.md) |
 | Bring a new family or collection online | [Add a benchmark family](add-a-family.md) |
 | Extend the contract with a problem type or an objective | [Add a problem type or objective](add-a-problem-type.md) |

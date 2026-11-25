@@ -49,7 +49,7 @@ from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME, find_collection_root, load_collection_marker
 from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
-from mamut_routing_lib.td.reprice import load_td_instance_for_routes, route_arcs
+from mamut_routing_lib.td.selected_arcs import load_td_instance_for_routes, route_arcs
 from mamut_routing_lib.exact_td import prepare_td
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
@@ -427,9 +427,9 @@ class BKSPageEntry(BaseModel):
     route_geometry_sha256: str | None = None
     route_geometry_bks_sha256: str | None = None
     route_geometry_metric: str | None = None
-    # Structured optimality proof from the BKS metadata (see the
-    # OptimalityMetadata model in mamut-routing-lib), passed through verbatim
-    # so the site can badge proven-optimal solutions.
+    # Solver claim of optimality from the BKS metadata (the
+    # SolverReportedOptimality model in mamut-routing-lib), passed through
+    # verbatim so the site can label the claimed BKS.
     optimality: dict[str, Any] | None = None
     # ``metadata.repriced`` (previous cost, checker, contract, date) when a
     # checker-contract change re-priced the unchanged routes.
@@ -2229,7 +2229,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
                 artifact_path=entry.artifact_path,
                 evaluation=entry.evaluation,
                 family_profile=entry.family_profile or (TD_PROFILE if objective in TD_SCHEDULE_OBJECTIVES else STATIC_PROFILE),
-                optimality=({key: entry.optimality[key] for key in ("status", "target_profile", "proven")
+                optimality=({key: entry.optimality[key] for key in ("status", "target_profile")
                              if key in entry.optimality} if entry.optimality is not None else None),
             )
         )

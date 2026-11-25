@@ -42,7 +42,7 @@ The family profile for v0.13 is `td-binary64-exact-v1`. The checker reads each m
 
 ### Historical TD fold in v0.12
 
-The v0.12 store used `td-fold/2`. In v0.13 its checker and timing helpers are available under `mamut_routing_lib.td.fold2`. Reproducing a result priced under that contract requires its binary64 operation order. Older solver claims can name `td-fold/1` as their target.
+The v0.12 store used `td-fold/2`. In v0.13 its checker and timing helpers are available under `mamut_routing_lib.td.fold2`. Reproducing a result priced under that contract requires its binary64 operation order.
 
 A route `r = (v_1, …, v_m)` from depot `0` is folded left to right into its ready-time function `δ_r`, which maps
 depot departure times to the time the vehicle is back:
@@ -86,4 +86,4 @@ and from slope-one travel. The 2026-09-24 re-pricing moved 870 stored costs, all
 [Solutions](solutions.md#historical-td-repricing)). Test vectors for reimplementations are in
 `MAMUT-routing-lib/tests/fixtures/td/fold-v2-vectors.json`.
 
-The v0.12 migration used `mamut-routing bks reprice-td` to update legacy records. Current certified records identify their edition manifest and exact profile. [Historical TD repricing](solutions.md#historical-td-repricing)
+The v0.12 migration used `mamut-routing bks reprice-td` to update legacy records. Version 0.13 removes this command, and records of earlier library versions are re-priced with `mamut-routing-lib` 0.12.0. Current certified records identify their edition manifest and exact profile. [Historical TD repricing](solutions.md#historical-td-repricing)

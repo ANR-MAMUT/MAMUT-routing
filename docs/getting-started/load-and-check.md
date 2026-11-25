@@ -34,6 +34,6 @@ evaluation = evaluate_exact(item.instance_path, bks.routes, objective_function=b
 print(evaluation.profile, evaluation.cost, evaluation.display_cost)
 ```
 
-For a time-dependent BKS, use its descriptor and routes in the same call. The profile is `td-binary64-exact-v1`. Each entry in `evaluation.route_evaluations` gives the minimum duration and the earliest depot departure attaining it. The public `mamut_routing_lib.td.check_td_solution` also checks this profile. Historical solver claims identify the arithmetic under which the solver reported optimality. [Solutions, BKS and optimality](../benchmarks/formats/solutions.md)
+For a time-dependent BKS, use its descriptor and routes in the same call. The profile is `td-binary64-exact-v1`. Each entry in `evaluation.route_evaluations` gives the minimum duration and the earliest depot departure attaining it. The public `mamut_routing_lib.td.check_td_solution` also checks this profile. A solver claim of optimality on a TD BKS must target this profile. [Solutions, BKS and optimality](../benchmarks/formats/solutions.md)
 
 Next, [solve with PyVRP and propose a BKS](solve-and-bks.md).
