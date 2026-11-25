@@ -39,6 +39,10 @@
   font-size: 0.72rem;
 }
 
+.md-typeset #additional-contributors ~ ul > li + li {
+  margin-block-start: 1lh;
+}
+
 .md-grid {
   max-width: 76rem;
 }

@@ -1870,6 +1870,10 @@ tbody tr.inspector-selected:hover {
   margin: 0.35rem 0;
 }
 
+[data-route-path="/project/authors/"] .context-prose ul + ul {
+  margin-block-start: 1lh;
+}
+
 .context-prose a,
 .stage a.inline-link {
   color: var(--acc);
