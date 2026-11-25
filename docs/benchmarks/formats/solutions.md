@@ -91,25 +91,15 @@ the status, the routing cost, the route count and an error message.
 
 For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the profile on which the solver reported optimality in `target_profile`. The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
 
-The website displays a green label for a BKS with an attached solver claim. Compare the claim's `target_profile` with the family profile. When the solver reported optimality under another profile, for example an earlier checker arithmetic such as `td-fold/1` on routes certified under `td-binary64-exact-v1`, the claim describes that other objective. The label and the BKS details flag this difference. A BKS without `metadata.optimality` has no attached claim.
+When submitting or annotating a BKS, the claim's `target_profile` must match the profile used to evaluate its routes. Optional `campaign`, `reported_primal`, `reported_dual` and `evidence` fields describe the run, the solver's own bounds and a hash-pinned evidence file. The website labels a BKS with an attached solver claim. Older structured claims remain readable. When a displayed claim has a missing or different target, the website warns that optimality under the family profile is unverified. A BKS without `metadata.optimality` has no attached claim.
 
-Historical BKS records can carry an `OptimalityMetadata` stamp under the original checker.
-
-| Field | |
-|---|---|
-| `proven` | literally `true` |
-| `prover`, `certificate`, `date` | required: who proved it, what the certificate is (a file, a log, a bound argument), when |
-| `arithmetic`, `proven_optimum`, `dual_bound`, `wall_time_s`, `time_limit_s`, `checker`, `campaign`, `note` | optional |
-
-A new annotation on a historical TD record must identify the original arithmetic profile in `target_profile`, for example `td-fold/1`. A declared `proven_optimum` must agree with the stored historical cost within the legacy tolerance, and a nonzero difference requires a `note`.
+Library versions before 0.13 wrote a `proven: true` stamp under the same key. The published store holds no such stamp. The library neither reads nor writes one. Loading a file that carries it raises `LegacyOptimalityClaimError`. Read such historical files with `mamut-routing-lib` 0.12.0.
 
 ## Historical TD repricing
 
-The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --write` to replay unmarked TD routes. This command refuses v0.13 exact records. For a legacy cost that moved, the migration updated `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times`, and added this record. [Time-dependent instances](time-dependent.md#historical-td-fold-in-v012)
+The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --write` to replay unmarked TD routes. Version 0.13 removes this command. Records of earlier library versions are re-priced with `mamut-routing-lib` 0.12.0. For a legacy cost that moved, the migration updated `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times`, and added this record. [Time-dependent instances](time-dependent.md#historical-td-fold-in-v012)
 
 ```json
 "repriced": {"previous_cost": 8292.0, "checker": "mamut-routing-lib td checker, contract td-fold/2 (lib >= 0.12.0)",
              "contract": "td-fold/2", "date": "2026-09-24"}
 ```
-
-During the September repricing, the legacy tool updated a stamped `proven_optimum` when the cost moved by at most 1e-6. Its note identified the original arithmetic and its `dual_bound` retained the solver value. Larger changes on a stamped BKS produced `stamp-conflict`.

@@ -145,7 +145,7 @@ def test_catalogue_badge_shows_the_exact_compact_cost_and_full_record_preserves_
 
 
 @node
-def test_optimality_labels_show_the_claim_target_and_family_default() -> None:
+def test_optimality_labels_show_the_claim_and_flag_an_unexpected_target() -> None:
     names = ["escapeHtml", "claimInfo", "claimBadge", "claimTooltip", "optimalityStatRows", "optimalBadgeIconHtml"]
     source = SITE_JS.read_text()
     functions = "\n".join(re.search(rf"^function {name}\(.*?^\}}", source, re.S | re.M).group(0) for name in names)
@@ -156,15 +156,16 @@ def test_optimality_labels_show_the_claim_target_and_family_default() -> None:
     const record = (profile) => ({...base, optimality: {status:"solver-reported-optimal", target_profile:profile}});
     const html = (entry) => JSON.stringify(optimalityStatRows(entry));
     console.log(JSON.stringify([
-      html(record("td-fold/1")), html(record(base.family_profile)), html({...base, optimality:{proven:true}}), html(base),
+      html(record(base.family_profile)), html(record("synthetic-profile-v0")), html(record(undefined)), html(base),
     ]));
     """
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
-    historical, same, unknown, absent = json.loads(result.stdout)
-    assert "badge optimal" in historical and "Profile warning" in historical
-    assert "td-fold/1" in historical and "td-binary64-exact-v1" in historical
-    assert "Profile warning" not in same and "badge optimal" in same
-    assert "does not specify" in unknown and absent == "[]"
+    same, other, untargeted, absent = json.loads(result.stdout)
+    assert "badge optimal" in same and "Solver-reported optimal" in same and "Profile warning" not in same
+    assert "badge optimal" in other and "Profile warning" in other
+    assert "synthetic-profile-v0" in other and "td-binary64-exact-v1" in other
+    assert "Profile warning" in untargeted and "no profile" in untargeted
+    assert absent == "[]"
 
 
 @node
