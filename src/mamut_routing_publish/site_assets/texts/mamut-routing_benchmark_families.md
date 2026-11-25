@@ -98,7 +98,7 @@ Licensing note: because this family is generated from OpenStreetMap data, the OS
 
 `Poryos2026` is the generated benchmark family introduced by MAMUT-routing. It's VRPTW family is derived from the generated CVRP layer. This split is deliberate: first generate a real-world CVRP customer set and travel model from OSM data, then add service times and time windows under an explicit VRPTW generation contract. This avoids mixing geography, travel-time semantics, and temporal constraints into an opaque one-step generator.
 
-The current VRPTW layer uses integer arc costs for reproducibility. The main metric variant is `fastest`, where arc costs are directly interpreted as travel times from the OSM road-network model. Earlier design notes also considered a `euclidean` VRPTW variant obtained by converting Euclidean meters to travel time using a fixed average speed of `14 m/s` (around 50 km/h). We also tested another conversion consisting in calculating the ratio between `fastest` and another non-time-based metric such as `shortest` or `euclidean` on the CVRP layer, then applying that ratio to the `euclidean` distances to get a time-based arc-cost matrix. Both those variants are highly synthetic and less directly connected to real-world travel times than the `fastest` variant. They also add another layer of complexity to the generation process, while being less useful for studying real-world VRPTW behavior. For these reasons, we decided to simplify the current VRPTW release by only including the meaningful `fastest` instances. 
+The VRPTW layer uses the `fastest` matrix of free-flow travel times in seconds, rounded to three decimal places. Earlier design notes also considered a `euclidean` VRPTW variant obtained by converting Euclidean meters to travel time using a fixed average speed of `14 m/s` (around 50 km/h). We also tested another conversion consisting in calculating the ratio between `fastest` and another non-time-based metric such as `shortest` or `euclidean` on the CVRP layer, then applying that ratio to the `euclidean` distances to get a time-based arc-cost matrix. Both those variants are highly synthetic and less directly connected to real-world travel times than the `fastest` variant. They also add another layer of complexity to the generation process, while being less useful for studying real-world VRPTW behavior. For these reasons, we decided to simplify the current VRPTW release by only including the meaningful `fastest` instances.
 
 Time windows are generated synthetically but with inspiration from Solomon's original benchmark logic. The workbench now supports two methods:
 
@@ -113,7 +113,7 @@ The VRPTW `Poryos2026` family is meant to complement, not replace, the historica
 
 Licensing note: because this family is derived from the OSM-based `Poryos2026` CVRP layer, the OSM-derived VRPTW instances, sidecars, route-rendering artifacts, and related benchmark data are distributed under the [Open Data Commons Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/) where applicable, with attribution to OpenStreetMap and its contributors.
 
-The current family contains instances alongside heuristic BKS for both classical objectives: a `MonoCost` BKS and a `HierarchicalVehicleCost` BKS.
+The published Poryos2026 VRPTW solutions use `MonoCost`. Among routes that satisfy capacity and time windows, the checker ranks solutions by total free-flow travel time.
 
 ### `Dabia2013` (TDVRPTW)
 
