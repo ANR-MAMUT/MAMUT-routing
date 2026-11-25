@@ -2,6 +2,14 @@
 
 This page collects short answers to common questions about contributing benchmark material and comparing MAMUT-routing conventions with other VRPTW sources.
 
+## What is `binary64-exact-v1`, and why did the benchmark change?
+
+`binary64-exact-v1` is the rule MAMUT-routing v0.13 uses to check and rank static routes. *Binary64* means IEEE 754 double precision. For example, an arc cost written as `0.1` becomes the nearest representable binary64 number, a fraction slightly larger than one tenth. *Exact* means that the checker uses that fraction throughout its time-window checks and cost sums. It compares solutions using the family's objective and records the exact cost as a fraction. In a Best-Known Solution (BKS) record, `metadata.standard.authoritative_cost` holds the certified fraction and `cost` gives its nearest binary64 value for display.
+
+In v0.12, the static checker accumulated costs and checked arrival times in floating point, while the BKS store ranked routes by summing the shortest decimal spellings of the arc costs as exact fractions. Those rules can disagree. We adopted one interpretation so independent checkers can reproduce feasibility and agree on which solution is better, even when two totals look identical on screen. For the 25-customer Poryos2026 Hong Kong `fastest` CVRP instance, two four-vehicle solutions both display `9150.837` seconds. Their exact costs differ by `5 / 2^49` seconds.
+
+Time-dependent routes use the companion profile `td-binary64-exact-v1`. Earlier checkers composed travel-time functions in floating point. In `td-fold/1`, rounding could move an arrival across a jump in travel time. Version 0.12 introduced `td-fold/2` to fix that case, but results still depended on the prescribed order of floating-point operations. The exact profile interprets the published arrival-function breakpoints as exact binary64 fractions and computes each route's minimum elapsed duration and the earliest depot departure that attains it. A historical solver claim retains the profile under which the solver reported optimality.
+
 ## Why did instance generation and solving move out of the website?
 
 The workbench used to run OSM city fetches, CVRP/VRPTW instance generation, and heuristic solving on the public server. These are compute-heavy, long-running jobs; hosting them publicly meant rate limits, timeouts, queueing, and abuse handling that made both the website and the tools worse. Since the project is in an active beta phase, we decoupled the two concerns: the website is now fully static and only visualizes the published benchmark data, while all generation and solving runs on your own machine with the [MAMUT-routing-tools](https://github.com/ANR-MAMUT/MAMUT-routing-tools) suite.
