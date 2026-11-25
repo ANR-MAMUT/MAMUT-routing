@@ -112,7 +112,7 @@ def test_publisher_derives_route_curves_without_cache_and_rejects_a_damaged_cach
     from mamut_routing_lib.artifacts import discover_benchmark_instances
     from mamut_routing_lib.exact_store import evaluation_metadata
     from mamut_routing_lib.exact_td import prepare_td
-    from mamut_routing_lib.td.reprice import load_td_instance_for_routes
+    from mamut_routing_lib.td.selected_arcs import load_td_instance_for_routes
     from mamut_routing_publish.site_payloads import _resolve_instance_group
 
     _write_twins(tmp_path)

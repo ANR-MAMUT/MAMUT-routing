@@ -4,7 +4,7 @@ A best-known solution is a validated solution stored next to its instance as `<b
 
 The store writes routes in lexicographic order. A permutation of the route list has the same objective value. Reversing stops within a route can change its cost or feasibility.
 
-The v0.12 guide documents how historical TD costs were repriced under `td-fold/2`. [Re-price after a checker-contract change](reprice-after-a-contract-change.md)
+Records of earlier library versions are re-priced with `mamut-routing-lib` 0.12.0. [Historical TD repricing](../benchmarks/formats/solutions.md#historical-td-repricing)
 
 ## Static families (CVRP, VRPTW)
 

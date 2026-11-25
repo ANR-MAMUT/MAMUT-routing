@@ -49,7 +49,7 @@ from mamut_routing_lib.models import ArcCostsDistancesRef
 from mamut_routing_lib.json_utils import load_json_from_file, save_json_to_file
 from mamut_routing_lib.sidecars import COLLECTION_MARKER_FILENAME, find_collection_root, load_collection_marker
 from mamut_routing_lib.td.artifacts import ATFFormatError, get_atf_path_for_instance, load_instance_atfs
-from mamut_routing_lib.td.reprice import load_td_instance_for_routes, route_arcs
+from mamut_routing_lib.td.selected_arcs import load_td_instance_for_routes, route_arcs
 from mamut_routing_lib.exact_td import prepare_td
 
 from mamut_routing_publish.atf_cache import DEFAULT_MAX_CUSTOMERS as ATF_CACHE_DEFAULT_MAX_CUSTOMERS
