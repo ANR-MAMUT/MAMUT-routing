@@ -93,7 +93,7 @@ For a v0.13 exact result, `metadata.optimality` records the solver's claim with 
 
 The claim's `target_profile` must equal the profile under which the stored routes were evaluated, and the store refuses any other target. Optional `campaign`, `reported_primal`, `reported_dual` and `evidence` fields describe the run, the solver's own bounds and a hash-pinned evidence file. The website displays a green label for a BKS with an attached solver claim. A BKS without `metadata.optimality` has no attached claim.
 
-Library versions before 0.13 wrote a `proven: true` stamp under the same key. The published store holds no such stamp. The library neither reads nor writes one: loading a file that carries it raises `LegacyOptimalityClaimError`. Read such historical files with `mamut-routing-lib` 0.12.0.
+Library versions before 0.13 wrote a `proven: true` stamp under the same key. The published store holds no such stamp. The library neither reads nor writes one. Loading a file that carries it raises `LegacyOptimalityClaimError`. Read such historical files with `mamut-routing-lib` 0.12.0.
 
 ## Historical TD repricing
 
