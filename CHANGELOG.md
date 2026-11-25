@@ -24,6 +24,7 @@ This entry and the ones below it are the work towards version 0.13 of `mamut-rou
 
 - The library reads family collections only (marker `layout_version` 1 for the Poryos2026 shape, 2 for the classic families) and no longer reads the former layout. The tools and the publisher follow.
 - The site keeps every page URL. The raw download paths follow the new on-disk paths.
+- Catalogue rows and preview cards show the exact cost rounded directly to 2 decimals, ties to even. They no longer round the binary64 display, which could change the last digit through double rounding.
 
 ## Unreleased: solver integration
 

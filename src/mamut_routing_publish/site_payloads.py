@@ -188,6 +188,8 @@ class ObjectiveAvailability(BaseModel):
 
     objective_function: ObjectiveFunction
     cost: int | float | None = None
+    # The exact cost rounded directly to COMPACT_COST_DECIMALS places (see compact_cost_display).
+    compact_cost: str | None = None
     num_routes: int | None = None
     artifact_path: str
     evaluation: PublishedEvaluation | None = None
@@ -401,6 +403,8 @@ class BKSPageEntry(BaseModel):
     artifact_path: str
     num_routes: int
     cost: int | float | None = None
+    # The exact cost rounded directly to COMPACT_COST_DECIMALS places (see compact_cost_display).
+    compact_cost: str | None = None
     authors: str | None = None
     source: str | None = None
     method: str | None = None
@@ -1923,6 +1927,7 @@ def _build_bks_entries(
                 artifact_path=bks_path.relative_to(output_repo_dir).as_posix(),
                 num_routes=bks.num_routes,
                 cost=display,
+                compact_cost=compact_cost_display(evaluation),
                 evaluation=evaluation,
                 family_profile=family_profile,
                 route_evaluations=witnesses,
@@ -2216,6 +2221,7 @@ def _objective_availability(entries: list[BKSPageEntry]) -> list[ObjectiveAvaila
             ObjectiveAvailability(
                 objective_function=objective,
                 cost=entry.cost,
+                compact_cost=entry.compact_cost,
                 num_routes=num_routes,
                 artifact_path=entry.artifact_path,
                 evaluation=entry.evaluation,
@@ -3361,6 +3367,36 @@ def _bks_value_from_record(record: dict) -> BksValue:
         authors=record.get("authors"),
         method=record.get("method"),
     )
+
+
+#: Decimal places of the compact cost shown on catalogue rows and preview cards.
+COMPACT_COST_DECIMALS = 2
+
+
+def round_fraction_to_decimals(value: Fraction, decimals: int) -> str:
+    """Round an exact value directly to the nearest multiple of 10**-decimals, ties to even.
+
+    Integer arithmetic only: rounding the binary64 display of the value instead
+    could change the last digit through double rounding. A result that rounds to
+    zero is written without a sign.
+    """
+    if decimals < 0:
+        raise ValueError("decimals must be non-negative")
+    scaled = round(value * 10**decimals)  # Fraction.__round__ rounds half to even, exactly.
+    sign = "-" if scaled < 0 else ""
+    whole, fraction = divmod(abs(scaled), 10**decimals)
+    return f"{sign}{whole}.{fraction:0{decimals}d}" if decimals else f"{sign}{whole}"
+
+
+def compact_cost_display(evaluation: PublishedEvaluation | None) -> str | None:
+    """The compact cost string of a BKS, or None when the site must show the full display instead.
+
+    None when there is no exact value, when the exact value is an integer (shown
+    without decimals) or when its binary64 display overflows.
+    """
+    if evaluation is None or evaluation.display_overflow or evaluation.authoritative_cost.denominator == "1":
+        return None
+    return round_fraction_to_decimals(evaluation.authoritative_cost.as_fraction(), COMPACT_COST_DECIMALS)
 
 
 def _binary64_display(value: Fraction) -> float | None:
