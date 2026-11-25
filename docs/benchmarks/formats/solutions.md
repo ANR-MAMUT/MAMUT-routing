@@ -91,7 +91,7 @@ the status, the routing cost, the route count and an error message.
 
 For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the profile on which the solver reported optimality in `target_profile`. The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
 
-The claim's `target_profile` must equal the profile under which the stored routes were evaluated, and the store refuses any other target. Optional `campaign`, `reported_primal`, `reported_dual` and `evidence` fields describe the run, the solver's own bounds and a hash-pinned evidence file. The website displays a green label for a BKS with an attached solver claim. A BKS without `metadata.optimality` has no attached claim.
+When submitting or annotating a BKS, the claim's `target_profile` must match the profile used to evaluate its routes. Optional `campaign`, `reported_primal`, `reported_dual` and `evidence` fields describe the run, the solver's own bounds and a hash-pinned evidence file. The website labels a BKS with an attached solver claim. Older structured claims remain readable. When a displayed claim has a missing or different target, the website warns that optimality under the family profile is unverified. A BKS without `metadata.optimality` has no attached claim.
 
 Earlier releases wrote a `proven: true` stamp under the same key. The published store holds no such stamp, and the library refuses to write one.
 
