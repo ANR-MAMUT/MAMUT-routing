@@ -2188,7 +2188,7 @@ def test_published_evaluation_survives_overflow_and_detects_changed_manifest(tmp
                                "metadata": {"standard": marked}, "objective_function": "MonoCost"}))
     entries, _, _ = _build_bks_entries(tmp_path, descriptor)
     summary, = _objective_availability(entries)
-    assert summary.cost is None and summary.evaluation.display_overflow
+    assert summary.cost is None and summary.evaluation.display_overflow and summary.compact_cost is None
     assert summary.evaluation.authoritative_cost.model_dump() == value
     assert summary.optimality is None
     assert _objective_availability([]) == []
@@ -2225,6 +2225,37 @@ def test_attached_solver_claim_reaches_the_bks_entry_and_summary(tmp_path: Path)
     assert entry.optimality == claim
     summary, = _objective_availability(entries)
     assert summary.optimality == {"status": "solver-reported-optimal", "target_profile": "synthetic-profile-v0"}
+    assert entry.compact_cost is None and summary.compact_cost is None  # An integer keeps its integer display.
+
+
+def test_compact_cost_reaches_the_bks_entry_and_summary(tmp_path: Path) -> None:
+    """The page entry and the catalogue summary carry the exact cost rounded directly, not its binary64 display."""
+    from hashlib import sha256
+    from mamut_routing_lib.exact_store import routes_sha256
+    from mamut_routing_publish.site_payloads import _build_bks_entries, _objective_availability
+
+    descriptor = tmp_path / "compact.vrp.json"
+    routes = [[1, 2]]
+    instance = make_generated_cvrp_instance().model_copy(update={"instance_name": "compact", "arc_costs": [
+        [0, 1, 0], [0, 0, 1], [1, 0, 0]]})
+    descriptor.write_text(instance.model_dump_json())
+    manifest = tmp_path / "compact.manifest.json"
+    manifest.write_text(json.dumps({"default_profile": "binary64-exact-v1", "benchmark_revision": "r1",
+        "instance": {"sha256": sha256(descriptor.read_bytes()).hexdigest()}, "objective": "MonoCost"}))
+    exact = Fraction(1135, 1000) - Fraction(1, 10**20)
+    marked = {"profile": "binary64-exact-v1", "objective": "MonoCost", "routes_sha256": routes_sha256(routes),
+              "num_routes": 1, "display_overflow": False, "benchmark_revision": "r1",
+              "authoritative_cost": {"numerator": str(exact.numerator), "denominator": str(exact.denominator)},
+              "manifest_sha256": sha256(manifest.read_bytes()).hexdigest()}
+    bks = tmp_path / "compact.bks.MonoCost.json"
+    bks.write_text(json.dumps({"instance_name": "compact", "routes": routes, "cost": float(exact),
+                               "metadata": {"standard": marked}, "objective_function": "MonoCost"}))
+    entries, _, _ = _build_bks_entries(tmp_path, descriptor)
+    entry, = entries
+    summary, = _objective_availability(entries)
+    assert f"{entry.cost:.2f}" == "1.14"
+    assert entry.compact_cost == summary.compact_cost == "1.13"
+    assert entry.model_dump(mode="json")["compact_cost"] == "1.13"
 
 
 @pytest.mark.parametrize(
