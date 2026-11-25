@@ -17,7 +17,7 @@ cd benchmarks/Dimacs2021/VRPTW/n=100
 mamut-routing check C101.vrp.json C101.bks.MonoCost.json --backend python
 ```
 
-The family file `.mamut/editions/r1-index.json` lists the edition's descriptor and manifest digests. The original incumbent files are indexed in `.mamut/archives/r1-original-bks.json`. A historical solver claim has its own target profile and evidence under `metadata.optimality`. The software catalog identifies the exact evaluator and verifier distributions by SHA-256. [Software catalog](.mamut/editions/r1-software.json) · [Certification order (Appendix G)](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/blob/main/tex/certification-order.tex)
+The family file `.mamut/editions/r1-index.json` lists the edition's descriptor and manifest digests. The original incumbent files are indexed in `.mamut/archives/r1-original-bks.json`. An optional solver claim of optimality, with its own solver identity and target profile, is stored under `metadata.optimality`. The software catalog identifies the exact evaluator and verifier distributions by SHA-256. [Software catalog](.mamut/editions/r1-software.json) · [Certification order (Appendix G)](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/blob/main/tex/certification-order.tex)
 
 ## MAMUT project context
 

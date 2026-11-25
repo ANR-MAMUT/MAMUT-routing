@@ -2190,3 +2190,33 @@ def test_published_evaluation_survives_overflow_and_detects_changed_manifest(tmp
     manifest.write_text(manifest.read_text() + "\n")
     with pytest.raises(ValueError, match="adjacent edition manifest"):
         _build_bks_entries(tmp_path, descriptor)
+
+
+def test_attached_solver_claim_reaches_the_bks_entry_and_summary(tmp_path: Path) -> None:
+    """Synthetic fixture for the green claim label: the published store need not hold any claim."""
+    from hashlib import sha256
+    from mamut_routing_lib.exact_store import routes_sha256
+    from mamut_routing_publish.site_payloads import _build_bks_entries, _objective_availability
+
+    descriptor = tmp_path / "claimed.vrp.json"
+    routes = [[1, 2]]
+    instance = make_generated_cvrp_instance().model_copy(update={"instance_name": "claimed", "arc_costs": [
+        [0, 1, 0], [0, 0, 1], [1, 0, 0]]})
+    descriptor.write_text(instance.model_dump_json())
+    manifest = tmp_path / "claimed.manifest.json"
+    manifest.write_text(json.dumps({"default_profile": "binary64-exact-v1", "benchmark_revision": "r1",
+        "instance": {"sha256": sha256(descriptor.read_bytes()).hexdigest()}, "objective": "MonoCost"}))
+    marked = {"profile": "binary64-exact-v1", "objective": "MonoCost", "routes_sha256": routes_sha256(routes),
+              "num_routes": 1, "authoritative_cost": {"numerator": "3", "denominator": "1"},
+              "display_overflow": False, "benchmark_revision": "r1",
+              "manifest_sha256": sha256(manifest.read_bytes()).hexdigest()}
+    claim = {"status": "solver-reported-optimal", "target_profile": "synthetic-profile-v0",
+             "solver": "synthetic exact solver 0.0"}
+    bks = tmp_path / "claimed.bks.MonoCost.json"
+    bks.write_text(json.dumps({"instance_name": "claimed", "routes": routes, "cost": 3.0,
+                               "metadata": {"optimality": claim, "standard": marked}, "objective_function": "MonoCost"}))
+    entries, _, _ = _build_bks_entries(tmp_path, descriptor)
+    entry, = entries
+    assert entry.optimality == claim
+    summary, = _objective_availability(entries)
+    assert summary.optimality == {"status": "solver-reported-optimal", "target_profile": "synthetic-profile-v0"}

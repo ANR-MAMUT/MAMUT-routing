@@ -91,7 +91,7 @@ the status, the routing cost, the route count and an error message.
 
 For a v0.13 exact result, `metadata.optimality` records the solver's claim with `status: "solver-reported-optimal"`, the solver's name in `solver` and the profile on which the solver reported optimality in `target_profile`. The store evaluates the submitted routes. Establishing global optimality requires the solver's proof.
 
-The website displays a green label for a BKS with an attached solver claim. Compare the claim's `target_profile` with the family profile. For example, a Kayros claim for `td-fold/1` on routes certified under `td-binary64-exact-v1` describes the historical objective. The label and the BKS details flag this difference. A BKS without `metadata.optimality` has no attached claim.
+The website displays a green label for a BKS with an attached solver claim. Compare the claim's `target_profile` with the family profile. When the solver reported optimality under another profile, for example an earlier checker arithmetic such as `td-fold/1` on routes certified under `td-binary64-exact-v1`, the claim describes that other objective. The label and the BKS details flag this difference. A BKS without `metadata.optimality` has no attached claim.
 
 Historical BKS records can carry an `OptimalityMetadata` stamp under the original checker.
 
@@ -101,7 +101,7 @@ Historical BKS records can carry an `OptimalityMetadata` stamp under the origina
 | `prover`, `certificate`, `date` | required: who proved it, what the certificate is (a file, a log, a bound argument), when |
 | `arithmetic`, `proven_optimum`, `dual_bound`, `wall_time_s`, `time_limit_s`, `checker`, `campaign`, `note` | optional |
 
-A new annotation on a historical TD record must identify the original arithmetic profile in `target_profile` (for the Kayros claims dating from before the September repricing, `td-fold/1`). A declared `proven_optimum` must agree with the stored historical cost within the legacy tolerance, and a nonzero difference requires a `note`.
+A new annotation on a historical TD record must identify the original arithmetic profile in `target_profile`, for example `td-fold/1`. A declared `proven_optimum` must agree with the stored historical cost within the legacy tolerance, and a nonzero difference requires a `note`.
 
 ## Historical TD repricing
 
@@ -112,4 +112,4 @@ The v0.12 `td-fold/2` migration used `mamut-routing bks reprice-td <tree> --writ
              "contract": "td-fold/2", "date": "2026-09-24"}
 ```
 
-During the September repricing, the legacy tool updated a stamped `proven_optimum` when the cost moved by at most 1e-6. Its note identified the original arithmetic and its `dual_bound` retained the solver value. Larger changes on a stamped BKS produced `stamp-conflict`. The v0.13 migration recovers the original primal from Git for each affected claim and records its historical target explicitly.
+During the September repricing, the legacy tool updated a stamped `proven_optimum` when the cost moved by at most 1e-6. Its note identified the original arithmetic and its `dual_bound` retained the solver value. Larger changes on a stamped BKS produced `stamp-conflict`.
