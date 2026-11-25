@@ -1,6 +1,6 @@
 # Re-price after a checker-contract change
 
-This procedure reproduces the v0.12 migration of legacy TD records under `td-fold/2`. Current v0.13 records use `td-binary64-exact-v1` and bind the certified result to its edition manifest. The legacy `reprice-td` command refuses a marked exact record. [Historical TD fold](../benchmarks/formats/time-dependent.md#historical-td-fold-in-v012)
+This procedure reproduces the v0.12 migration of legacy TD records under `td-fold/2`. Current v0.13 records use `td-binary64-exact-v1` and bind the certified result to its edition manifest. The legacy `reprice-td` command refuses a marked exact record and a record with an optimality claim. A historical tree whose records carry the `proven: true` stamp of earlier versions is read with `mamut-routing-lib` 0.12.0 only. [Historical TD fold](../benchmarks/formats/time-dependent.md#historical-td-fold-in-v012)
 
 ## 1. Point every checkout at the new lib
 
@@ -23,9 +23,9 @@ done
 
 `reprice-td` materializes only the arcs the stored routes use (sidecar, `igp-profile` or road-graph), prices each
 BKS in canonical order and reports one action per file: `unchanged`, `would-reprice`, `skipped-missing-sidecar`,
-`infeasible`, `stamp-conflict` or `error`. Before writing, check that:
+`infeasible` or `error`. Before writing, check that:
 
-- there is no `infeasible`, `stamp-conflict` or `error` row (the exit status is 1 otherwise);
+- there is no `infeasible` or `error` row (the exit status is 1 otherwise);
 - the large moves are the ones the contract change explains. In 2026-09 there were 870 cost moves in 3 072 files,
   all float rounding except Rifki2020 Rifki-30 (8292 → 8267) and Rifki-13 n=60 (17386 → 17385), both on stepwise
   travel times;
@@ -38,7 +38,7 @@ uv run mamut-routing bks reprice-td "$d" --write --jobs 8 --note-date <YYYY-MM-D
 uv run mamut-routing bks reprice-td "$d" --dry-run        # must report every file unchanged
 ```
 
-The write pass rewrites `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times` where they moved and adds `metadata.repriced` when the cost moved. A record that carries an optimality claim is never rewritten. Commit each family repository with a CHANGELOG entry giving the counts and the notable moves. Then bump the gitlinks and run the root tests: `tests/test_td_fold_route_vectors.py` re-prices the published route vectors and `tests/test_relaxation_invariants.py` screens the relaxation twins.
+The write pass rewrites `cost`, `metadata.validated_cost`, `metadata.route_durations` and `metadata.route_departure_times` where they moved and adds `metadata.repriced` when the cost moved. A record that carries an optimality claim is refused. Commit each family repository with a CHANGELOG entry giving the counts and the notable moves. Then bump the gitlinks and run the root tests: `tests/test_td_fold_route_vectors.py` re-prices the published route vectors and `tests/test_relaxation_invariants.py` screens the relaxation twins.
 
 ## 4. After publication
 
