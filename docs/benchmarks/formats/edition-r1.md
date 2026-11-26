@@ -2,6 +2,8 @@
 
 Edition `r1` identifies each instance of `mamut-routing/0.1` by a descriptor, its required sidecars and a SHA-256 digest of the materialized numerical inputs. A record's `metadata.standard.manifest_sha256` binds its routes and exact objective to that instance manifest. Pin the collection revision in your experiment and initialize the families you use. The family file `.mamut/editions/r1-index.json` lists the descriptor and manifest digests. [Installation](../../getting-started/install.md) · [Historical snapshot reader](../../getting-started/browse-and-download.md#read-the-september-2026-snapshot)
 
+Static manifests declare the objective unit in `units.cost` and the time-window unit, when applicable, in `units.time`. For example, Mamut2026's fastest CVRP uses seconds and its shortest CVRP uses metres. A static VRPTW uses the arc matrix for both movement cost and travel time. Earlier development manifests also included the derived `cost_is_travel_time` field. Replaying an older manifest digest requires the family revision that issued it.
+
 ## Migration coverage
 
 The November 2026 migration verified 5,048 best-known solution (BKS) records across 11 families with the native and Python Fraction evaluators. The TD columns count the migrated incumbents and their route witnesses. Each witness contains the minimum duration of a route and its earliest minimizing depot departure. A subsequent improvement can replace the routes in an individual record.
