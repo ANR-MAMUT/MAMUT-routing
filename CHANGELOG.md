@@ -5,9 +5,9 @@ per-snapshot data deltas (families, instances and BKS added, removed, improved) 
 [History](https://mamut-routing.univ-ubs.fr/history/) page. Each benchmark family repository keeps its own `CHANGELOG.md`, and the lib and
 the tools have their own release notes.
 
-## Unreleased: one repository per benchmark family
+## 26 November 2026 · Edition r1 and Standard 0.1
 
-This entry and the ones below it are the work towards version 0.13 of `mamut-routing-lib`. Nothing of it is released yet: the released library (0.12.0) and tools (0.6.0) read the former layout, which stays available in the archive repository named below.
+Library 0.13.0 reads the family-first collection and evaluates routes under Standard 0.1. This snapshot includes 90 improved time-dependent incumbents across 4 families. The tools features described below are available from the source revision pinned by the collection. The current tools package on PyPI is 0.6.0. [Library 0.13.0](https://pypi.org/project/mamut-routing-lib/0.13.0/) · [Standard 0.1](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/releases/tag/v0.1) · [Collection snapshots](https://github.com/ANR-MAMUT/MAMUT-routing/releases)
 
 The edition migration covered 1,976 static and 3,072 time-dependent incumbent records. Use the pinned library for edition r1 and an isolated 0.12.0 environment for the September snapshot. [Migration counts and replay commands](docs/benchmarks/formats/edition-r1.md) · [Package installation](docs/getting-started/install.md)
 
@@ -30,7 +30,7 @@ The edition migration covered 1,976 static and 3,072 time-dependent incumbent re
 - The site keeps every page URL. The raw download paths follow the new on-disk paths.
 - Catalogue rows and preview cards show the exact cost rounded directly to 2 decimals, ties to even. They no longer round the binary64 display, which could change the last digit through double rounding.
 
-## Unreleased: solver integration
+## Solver integration in the source tools
 
 ### Library and tools
 
@@ -100,7 +100,7 @@ The edition migration covered 1,976 static and 3,072 time-dependent incumbent re
 - Getting started (solve and BKS), solution formats, BKS campaigns, update a BKS, workbench API (the
   `/api/workbench/solve` row was wrong), environment variables, developer and user guides.
 
-## Unreleased: MapLibre workbench map and route animation
+## MapLibre workbench map and route animation
 
 ### Website
 
@@ -122,7 +122,7 @@ The edition migration covered 1,976 static and 3,072 time-dependent incumbent re
   MapLibre and deck.gl). `tests/test_shared_frontend_assets.py` keeps the copies equal.
 - Pins the tools test branch (MapLibre GUI, `/timeline`, `arc_starts`).
 
-## Unreleased: 2026-09-24 codebase audit fixes
+## Codebase audit fixes from 24 September 2026
 
 Fixes the two critical and eleven high findings of the 2026-09-24 audit, with the medium and low findings that sat
 on the same code paths. Pins mamut-routing-lib 0.12.0 (`a9f7d9a`, both checkouts) and mamut-routing-tools 0.6.0
