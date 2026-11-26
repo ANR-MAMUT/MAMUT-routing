@@ -7,7 +7,7 @@ the tools have their own release notes.
 
 ## 26 November 2026 · Edition r1 and Standard 0.1
 
-Library 0.13.0 reads the family-first collection and evaluates routes under Standard 0.1. This snapshot includes 90 improved time-dependent incumbents across 4 families. The tools features described below are available from the source revision pinned by the collection. The current tools package on PyPI is 0.6.0. [Library 0.13.0](https://pypi.org/project/mamut-routing-lib/0.13.0/) · [Standard 0.1](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/releases/tag/v0.1) · [Collection snapshots](https://github.com/ANR-MAMUT/MAMUT-routing/releases)
+Library 0.13.0 reads the family-first collection and evaluates routes under Standard 0.1. The heuristic comparison improved 90 TDVRPTW incumbents across 4 families. Rechecking those routes on their corresponding TDVRP instances improved 23 further incumbents. The tools features described below are available from the source revision pinned by the collection. The current tools package on PyPI is 0.6.0. [Library 0.13.0](https://pypi.org/project/mamut-routing-lib/0.13.0/) · [Standard 0.1](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/releases/tag/v0.1) · [Collection snapshots](https://github.com/ANR-MAMUT/MAMUT-routing/releases)
 
 The edition migration covered 1,976 static and 3,072 time-dependent incumbent records. Use the pinned library for edition r1 and an isolated 0.12.0 environment for the September snapshot. [Migration counts and replay commands](docs/benchmarks/formats/edition-r1.md) · [Package installation](docs/getting-started/install.md)
 
