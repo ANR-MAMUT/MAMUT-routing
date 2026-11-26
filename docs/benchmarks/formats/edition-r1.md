@@ -25,7 +25,7 @@ The November 2026 migration verified 5,048 best-known solution (BKS) records acr
 
 ## Replay a static and a time-dependent result
 
-Run these commands from the collection root with the development library and its CLI installed. The native and Python evaluators use the exact binary64 operands stored in the edition. The static checker sums arc costs under `binary64-exact-v1`. The TD checker applies `td-binary64-exact-v1` to each route and evaluates the family objective.
+Run these commands from the collection root with library 0.13.0 and its CLI installed. The native and Python evaluators use the exact binary64 operands stored in the edition. The static checker sums arc costs under `binary64-exact-v1`. The TD checker applies `td-binary64-exact-v1` to each route and evaluates the family objective.
 
 ```bash
 static=benchmarks/Dimacs2021/VRPTW/n=100/C101

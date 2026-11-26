@@ -1,28 +1,19 @@
 # 2. Install the Python stack
 
-For edition `r1` of `mamut-routing/0.1`, use the development checkout below. It pins library 0.13.0.dev0 and tools 0.7.0.dev0. For the problem-first September 2026 snapshot, use the released library 0.12.0 in a separate environment. [Read the historical snapshot](browse-and-download.md#read-the-september-2026-snapshot)
+Library 0.13.0 reads edition `r1` of `mamut-routing/0.1`. The September 2026 problem-first snapshot uses library 0.12.0 in a separate environment. [Read the historical snapshot](browse-and-download.md#read-the-september-2026-snapshot)
 
-=== "Released library on PyPI"
+=== "Edition r1 library"
 
     ```bash
-    pip install "mamut-routing-lib[cli]"          # models, checkers, BKS logic, remote archives, export + CLI
-    pip install "mamut-routing-lib[cli,pyvrp]"    # + the PyVRP solver wrapper
+    python -m pip install 'mamut-routing-lib[cli]==0.13.0'
     mamut-routing --version
     ```
 
-    With uv: `uv add "mamut-routing-lib[cli]"` in a project, or `uv tool install "mamut-routing-lib[cli]"` for the
-    CLI alone.
+    Add the `pyvrp` extra for the static solver. The default Linux x86-64 wheels support CPython 3.11 through 3.14. Source builds use a C++20 compiler, Boost headers and GMP development files. [Library installation and reference-only build](../developer-guide/packages/mamut-routing-lib.md#exact-route-evaluation-on-v013)
 
-=== "Released tools on PyPI"
+=== "Generation tools and Kayros"
 
-    ```bash
-    uvx --from mamut-routing-tools mamut-tools --help     # no install: uv runs it in an ephemeral environment
-    pip install mamut-routing-tools                       # or install it
-    ```
-
-    For Kayros 2.0 before the joint PyPI release, use the matching CPython development wheels listed in the [tools installation guide](../developer-guide/packages/mamut-routing-tools.md#optional-kayros-solver), or build from the checkout below. After the joint release, install `mamut-routing-tools[kayros]` with pip.
-
-    Kayros 1.7.1 requires mamut-routing-lib below 0.12. Use a separate historical environment for that solver alongside the v0.13 tools.
+    The family-first generation and materialization commands use the tools revision pinned in the collection checkout below. These commands and both route checkers work without Kayros. For TD solving with Kayros 2.0, build the pinned development source as shown below or use matching development wheels. Published Kayros 1.7.1 requires `mamut-routing-lib<0.12` in a separate environment. [Tools installation with Kayros](../developer-guide/packages/mamut-routing-tools.md#optional-kayros-solver)
 
 === "Read edition r1 (checkout)"
 
