@@ -161,6 +161,12 @@ code,
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+
+.primary-nav .nav-link:focus-visible {
+  scroll-snap-align: center;
+  outline-offset: -2px;
 }
 
 .primary-nav::-webkit-scrollbar {
