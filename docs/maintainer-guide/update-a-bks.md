@@ -85,14 +85,15 @@ The store re-evaluates the routes and verifies their stored exact result before 
 
 ## After the file changed
 
-1. **Route geometry.** The website draws BKS routes on the road network from a cache keyed by the BKS sha256. A
+1. **Check the relaxed instance.** When a VRPTW or TDVRPTW incumbent improves, check the corresponding CVRP or TDVRP instance on the same metric, if one exists. Replay the submitted routes under the relaxed instance's own manifest and objective. Removing time windows can lower the route duration even if the two stored costs already appear in order. The library helper `mamut_routing_lib.relaxation.check_relaxation_pair(strict_bks_path, priced=True)` checks the pair using the materialized inputs. If the replay beats the relaxed incumbent, store the routes with that instance's exact evaluation and witnesses, credit the original solver run, and verify both records.
+2. **Route geometry.** The website draws BKS routes on the road network from a cache keyed by the BKS sha256. A
    replaced BKS of a road-network family (Poryos2026, Mamut2026 `shortest`/`fastest`) needs its geometry rebuilt:
    ```bash
    uv run mamut-routing-publish site materialize-route-geometry --jobs 1
    ```
    Do it locally, not on the site VM (a large city graph can exceed 15 GiB); the deploy reuses the cache by content.
-2. **Changelog** of the family (at the root of its repository), with the source of the improvement.
-3. **Publish.** The history ledger counts the BKS as `improved`; regressions are impossible by construction but a
+3. **Changelog** of the family (at the root of its repository), with the source of the improvement.
+4. **Publish.** The history ledger counts the BKS as `improved`; regressions are impossible by construction but a
    removed file shows up as `removed`.
 
 ## Contributions from outside
