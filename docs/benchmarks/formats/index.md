@@ -2,9 +2,7 @@
 
 Edition `r1` uses `binary64-exact-v1` for static instances and `td-binary64-exact-v1` for TD instances. Both profiles evaluate the materialized binary64 operands exactly. The BKS stores the certified fraction in `metadata.standard.authoritative_cost` and its binary64 display in `cost`. [Solution records](solutions.md) · [TD evaluation and historical replay](time-dependent.md)
 
-Every artifact is JSON validated by a pydantic model with `extra="forbid"`; the normative description of each
-format is the docstring of the module that owns it, rendered in the [API reference](../../reference/api/index.md).
-These pages are the guided tour.
+The Routing Standard defines how to interpret numerical inputs, evaluate routes and bind a result to an instance edition. The format guides below document the files published by benchmark families. The Python API reference documents the library models and functions that read and write them. [Routing Standard](routing-standard.md) · [Python API reference](../../reference/api/index.md)
 
 | Page | Covers |
 |---|---|

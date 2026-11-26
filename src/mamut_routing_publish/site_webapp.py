@@ -205,6 +205,7 @@ def _nav_links_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> 
         "objectives": "/objectives/",
         "history": "/history/",
         "docs": "/docs/",
+        "standard": "/docs/benchmarks/formats/routing-standard/",
     }
     return "\n".join(
         f'<a class="nav-link{active_class}" href="{_relative_path(route_dir, _route_html_path(output_repo_dir, target))}">{label}</a>'
@@ -216,6 +217,7 @@ def _nav_links_html(output_repo_dir: Path, route_dir: Path, active_nav: str) -> 
             ("Objectives", nav_targets["objectives"], " active" if active_nav == "objectives" else ""),
             ("History", nav_targets["history"], " active" if active_nav == "history" else ""),
             ("Docs", nav_targets["docs"], " active" if active_nav == "docs" else ""),
+            ("Standard", nav_targets["standard"], ""),
         ]
     )
 
@@ -225,7 +227,7 @@ def _render_header_html(output_repo_dir: Path, route_dir: Path, active_nav: str)
     nav_links = _nav_links_html(output_repo_dir, route_dir, active_nav)
     return f"""<header class="app-header">
     <a class="brand-link" href="{home_href}"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">MAMUT-routing</span></a>
-    <nav class="primary-nav">{nav_links}</nav>
+    <nav class="primary-nav" aria-label="Primary navigation">{nav_links}</nav>
     <div class="header-tools">
       <label class="theme-toggle" title="Toggle color theme">
         <input id="themeSwitch" type="checkbox" aria-label="Use the dark theme" />

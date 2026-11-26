@@ -4,6 +4,8 @@ Edition `r1` identifies each instance of `mamut-routing/0.1` by a descriptor, it
 
 Static manifests declare the objective unit in `units.cost` and the time-window unit, when applicable, in `units.time`. For example, Mamut2026's fastest CVRP uses seconds and its shortest CVRP uses metres. A static VRPTW uses the arc matrix for both movement cost and travel time. Earlier development manifests also included the derived `cost_is_travel_time` field. Replaying an older manifest digest requires the family revision that issued it.
 
+Specification version `0.1` identifies the numerical rules. Edition `r1` identifies the published inputs for a particular benchmark variant. [Routing Standard](routing-standard.md)
+
 ## Migration coverage
 
 The November 2026 migration verified 5,048 best-known solution (BKS) records across 11 families with the native and Python Fraction evaluators. The TD columns count the migrated incumbents and their route witnesses. Each witness contains the minimum duration of a route and its earliest minimizing depot departure. A subsequent improvement can replace the routes in an individual record.

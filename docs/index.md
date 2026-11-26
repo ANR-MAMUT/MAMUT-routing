@@ -17,8 +17,7 @@ task done, reference to look things up, and explanation where the *why* matters.
     Download instances and best-known solutions, read the formats, check a solution, export to CVRPLIB `.vrp`,
     cite the data.
 
-    [:octicons-arrow-right-24: Getting started](getting-started/index.md) ·
-    [:octicons-arrow-right-24: Benchmarks](benchmarks/index.md)
+    [:octicons-arrow-right-24: Getting started](getting-started/index.md) · [:octicons-arrow-right-24: Benchmarks](benchmarks/index.md) · [:octicons-arrow-right-24: Routing Standard](benchmarks/formats/routing-standard.md)
 
 -   :material-wrench:{ .lg .middle } **I maintain the platform**
 

@@ -162,6 +162,7 @@ nav:
       - Families: benchmarks/families/
       - Formats:
           - benchmarks/formats/index.md
+          - Routing Standard: benchmarks/formats/routing-standard.md
           - Layouts, naming and pins: benchmarks/formats/layouts.md
           - Static instances: benchmarks/formats/instances.md
           - Time-dependent instances: benchmarks/formats/time-dependent.md

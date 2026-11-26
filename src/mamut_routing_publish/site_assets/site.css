@@ -1000,6 +1000,15 @@ tbody tr:hover {
   padding: 9px 18px;
 }
 
+.home-standard-link {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--acc);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .home-stats {
   display: flex;
   gap: 48px;
