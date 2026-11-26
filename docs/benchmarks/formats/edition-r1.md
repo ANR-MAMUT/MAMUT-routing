@@ -37,6 +37,39 @@ mamut-routing check "$td.vrp.json" "$td.bks.Duration.json" --backend python --js
 
 DIMACS C101's certified cost is 8,273. Dabia C101's 4 routes have a total duration displayed as 24,709.177157546477. Compare the numerator and denominator in `metadata.standard.authoritative_cost` when comparing costs. The top-level `cost` is the nearest binary64 display, or `null` on overflow. A new solver claim of optimality identifies its solver and the family target profile separately from route feasibility and cost. [Solution fields and comparison rules](solutions.md)
 
+## Replay a digest from before the static manifest reissue
+
+Dimacs2021, Mamut2026, Ortec2022, Poryos2026 and Sintef2008 each include `.mamut/archives/r1-before-static-manifest-cleanup.json`. This record identifies the previous family commit, index and manifest archive. Its `overlay` entry gives the path and SHA-256 of the archive of previous files. Both sets of manifests carry the revision label `r1`. A recorded digest identifies which one an experiment used.
+
+From a collection checkout with Dimacs2021 initialized at the reissue, this example restores the former manifests and incumbent files into a temporary directory. It verifies the archive before extraction and checks the former C101 digest and routes.
+
+```bash
+(
+    set -eo pipefail
+    replay=$(mktemp -d)
+    git -C benchmarks/Dimacs2021 archive HEAD | tar -x -C "$replay"
+    cd "$replay"
+    overlay=$(python - <<'PY'
+import hashlib
+import json
+from pathlib import Path
+
+info = json.loads(Path(".mamut/archives/r1-before-static-manifest-cleanup.json").read_bytes())["overlay"]
+with Path(info["path"]).open("rb") as stream:
+    if hashlib.file_digest(stream, "sha256").hexdigest() != info["sha256"]:
+        raise SystemExit("Predecessor overlay digest mismatch")
+print(info["path"])
+PY
+    )
+    tar -xzf "$overlay"
+    instance=VRPTW/n=100/C101
+    mamut-routing verify-manifest "$instance.vrp.json" --sha256 df691085577f72414ce84bc1eecd259a2e43aae6e0186e2ca542f86fb10e7f23
+    mamut-routing check "$instance.vrp.json" "$instance.bks.MonoCost.json" --json
+)
+```
+
+For another instance, use its descriptor, incumbent and former digest. The copied family supplies its sidecars and recipes. When an input is distributed as a pin, materialize it before running the verifier.
+
 ## Rebuild omitted inputs
 
 For Mamut2026, the installed tools can reconstruct a pinned distance matrix from its published road graph. The example below visits only the fastest-metric Amiens descriptor. A new matrix is written after the digest matches, and an existing file yields `kept`. Run `verify-manifest` to check the inputs in either case.
