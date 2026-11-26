@@ -3,25 +3,25 @@
   "format": "mamut-routing-r1-software-catalog-v1",
   "independent_manifest_verification": {
     "native_and_python_wheel": {
-      "path": ".mamut/artifacts/d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl",
+      "path": ".mamut/artifacts/667cd0fd6bfae9a262fe14ef3b08f08e37f73de2f667c784c35f14b5ff5e07a5/mamut_routing_lib-0.13.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
       "scope": "file",
-      "sha256": "d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4",
-      "size": 473430,
-      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/7db77b9f78e213f735984ed5df96eac64f87097b/.mamut/artifacts/d901441b7b9913c5525d8c1b4a5a70dc8d5fbc6242f77aba74b9ed27000763d4/mamut_routing_lib-0.13.0.dev0-cp312-cp312-linux_x86_64.whl"
+      "sha256": "667cd0fd6bfae9a262fe14ef3b08f08e37f73de2f667c784c35f14b5ff5e07a5",
+      "size": 878280,
+      "url": "https://files.pythonhosted.org/packages/ef/d8/d5609a4773cace57cb3ff9e3b3bdae2079999e16a959b32c240294af5486/mamut_routing_lib-0.13.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     },
     "reference_only_wheel": {
-      "path": ".mamut/artifacts/22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1/mamut_routing_lib-0.13.0.dev0-py3-none-any.whl",
+      "path": ".mamut/artifacts/920e5746520f49ea9e6d5b3c929bc8f8a7035748d2c34473191319c726af2c38/mamut_routing_lib-0.13.0-py3-none-any.whl",
       "scope": "file",
-      "sha256": "22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1",
-      "size": 226203,
-      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/7db77b9f78e213f735984ed5df96eac64f87097b/.mamut/artifacts/22c5188a7134ebe01df84d15bbc338749893b287742068e29d8b4b4d2dc5f3f1/mamut_routing_lib-0.13.0.dev0-py3-none-any.whl"
+      "sha256": "920e5746520f49ea9e6d5b3c929bc8f8a7035748d2c34473191319c726af2c38",
+      "size": 256917,
+      "url": "https://github.com/ANR-MAMUT/MAMUT-routing-lib/releases/download/v0.13.0/mamut_routing_lib-0.13.0-py3-none-any.whl"
     },
     "source": {
-      "path": ".mamut/artifacts/362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411/mamut_routing_lib-0.13.0.dev0.tar.gz",
+      "path": ".mamut/artifacts/44bda02964b325235749839e765f20b4b82c7bbc8595eabb42e5b49e07ce9556/mamut_routing_lib-0.13.0.tar.gz",
       "scope": "file",
-      "sha256": "362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411",
-      "size": 385474,
-      "url": "https://raw.githubusercontent.com/ANR-MAMUT/MAMUT-routing/7db77b9f78e213f735984ed5df96eac64f87097b/.mamut/artifacts/362018c6bf02126c908ebcdc1bf4246bdd75a8986ebaf71b34d7a467556f0411/mamut_routing_lib-0.13.0.dev0.tar.gz"
+      "sha256": "44bda02964b325235749839e765f20b4b82c7bbc8595eabb42e5b49e07ce9556",
+      "size": 446696,
+      "url": "https://files.pythonhosted.org/packages/24/43/1f4ea7b244c23f85e121e28dbb62614762959aa2ae4e82a8a63a6516c008/mamut_routing_lib-0.13.0.tar.gz"
     }
   },
   "numerical_environment": {
