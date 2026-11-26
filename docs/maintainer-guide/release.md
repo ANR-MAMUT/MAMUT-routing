@@ -44,4 +44,4 @@ Build the site from the approved collection and software revisions, preserving i
 
 ## Publish the specification
 
-Check the specification revision, PDF, companion schemas, examples and validation report. Agree on a publicly readable destination and version before publication. After approval, attach the verified files at that destination and record their SHA-256 and anonymous download URLs. Cite the specification and data snapshot separately. A Zenodo deposit or DOI has its own approval.
+Check the specification revision, PDF, companion code, worked examples, materialization vectors and validation report. Agree on a publicly readable destination and version before publication. After approval, attach the verified files at that destination and record their SHA-256 and anonymous download URLs. Cite the specification and data snapshot separately. A Zenodo deposit or DOI has its own approval.

@@ -13,7 +13,7 @@ Library 0.13.0 reads edition `r1` of `mamut-routing/0.1`. The September 2026 pro
 
 === "Generation tools and Kayros"
 
-    The family-first generation and materialization commands use the tools revision pinned in the collection checkout below. These commands and both route checkers work without Kayros. For TD solving with Kayros 2.0, build the pinned development source as shown below or use matching development wheels. Published Kayros 1.7.1 requires `mamut-routing-lib<0.12` in a separate environment. [Tools installation with Kayros](../developer-guide/packages/mamut-routing-tools.md#optional-kayros-solver)
+    The family-first generation and materialization commands use the tools revision pinned in the collection checkout below. PyPI tools 0.6.0 retain their original CLI, including `mamut-tools solve --time-limit`. These commands and both route checkers work without Kayros. For TD solving with Kayros 2.0, build the pinned development source as shown below or use matching development wheels. Published Kayros 1.7.1 requires `mamut-routing-lib<0.12` in a separate environment. [Tools installation with Kayros](../developer-guide/packages/mamut-routing-tools.md#optional-kayros-solver)
 
 === "Read edition r1 (checkout)"
 
