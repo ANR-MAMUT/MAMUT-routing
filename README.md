@@ -17,7 +17,9 @@ cd benchmarks/Dimacs2021/VRPTW/n=100
 mamut-routing check C101.vrp.json C101.bks.MonoCost.json --backend python
 ```
 
-The family file `.mamut/editions/r1-index.json` lists the edition's descriptor and manifest digests. The original incumbent files are indexed in `.mamut/archives/r1-original-bks.json`. An optional solver claim of optimality, with its own solver identity and target profile, is stored under `metadata.optimality`. The software catalog identifies the exact evaluator and verifier distributions by SHA-256. [Software catalog](.mamut/editions/r1-software.json) · [Certification order (Appendix G)](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/blob/main/tex/certification-order.tex)
+The family file `.mamut/editions/r1-index.json` lists the edition's descriptor and manifest digests. An optional solver claim of optimality, with its own solver identity and target profile, is stored under `metadata.optimality`. The software catalog identifies the exact evaluator and verifier distributions by SHA-256. [Software catalog](.mamut/editions/r1-software.json) · [Certification order (Appendix G)](https://github.com/ANR-MAMUT/MAMUT-routing-standard-specification/blob/main/tex/certification-order.tex)
+
+The edition migration report gives the family counts, executable checks for static and time-dependent routes, and instructions for rebuilding omitted inputs. [Edition r1 migration and replay](docs/benchmarks/formats/edition-r1.md)
 
 ## MAMUT project context
 
@@ -26,7 +28,7 @@ This repository is part of the
 an academic research project advancing the state of the art in combinatorial optimization for logistics and transportation problems.
 See [AUTHORS.md](AUTHORS.md) for authorship, supervision, funding context, and contributor information.
 
-The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-time-function sidecars and checker-validated best-known solutions) are the reference data of [KAYROS](https://github.com/0nyr/kayros), the MAMUT time-dependent VRP solver. Historical solver claims on these routes retain the checker profile under which Kayros made them.
+The time-dependent benchmark families curated here (TDVRPTW/TDVRP, with arrival-time-function sidecars and checker-validated best-known solutions) are the reference data of [KAYROS](https://github.com/0nyr/kayros), the MAMUT time-dependent VRP solver.
 
 ## Layout
 

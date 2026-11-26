@@ -9,6 +9,8 @@ the tools have their own release notes.
 
 This entry and the ones below it are the work towards version 0.13 of `mamut-routing-lib`. Nothing of it is released yet: the released library (0.12.0) and tools (0.6.0) read the former layout, which stays available in the archive repository named below.
 
+The edition migration covered 1,976 static and 3,072 time-dependent incumbent records. Use the pinned library for edition r1 and an isolated 0.12.0 environment for the September snapshot. [Migration counts and replay commands](docs/benchmarks/formats/edition-r1.md) · [Package installation](docs/getting-started/install.md)
+
 ### Breaking changes for v0.13
 
 - The public static and time-dependent Python checkers and cost helpers now follow `binary64-exact-v1` and `td-binary64-exact-v1` respectively. Existing calls can yield a different feasibility verdict, cost or earliest departure on the same routes. The native backend is the default. Callers can select Python Fraction under the same profile.

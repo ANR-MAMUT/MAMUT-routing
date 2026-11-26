@@ -14,6 +14,7 @@ These pages are the guided tour.
 | [Distances and geo sidecars](sidecars.md) | the distance matrix and the map-drawing sidecar |
 | [Solutions, BKS and optimality](solutions.md) | solution files, BKS files, the checker statuses, optimality metadata |
 | [CVRPLIB `.vrp` export](cvrplib-export.md) | the classic-format export contract shared by the CLI, the workbench and the website |
+| [Edition r1 migration and replay](edition-r1.md) | migration counts, costs, witnesses and public replay examples |
 | [Release archives](releases.md) | per-family zip archives and `snapshot-manifest.json` |
 
 Common rules, everywhere:

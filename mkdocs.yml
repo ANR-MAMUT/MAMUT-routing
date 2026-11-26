@@ -168,6 +168,7 @@ nav:
           - Distances and geo sidecars: benchmarks/formats/sidecars.md
           - Solutions, BKS and optimality: benchmarks/formats/solutions.md
           - CVRPLIB .vrp export: benchmarks/formats/cvrplib-export.md
+          - Edition r1 migration and replay: benchmarks/formats/edition-r1.md
           - Release archives: benchmarks/formats/releases.md
       - Glossary: benchmarks/glossary.md
   - Maintainer guide:

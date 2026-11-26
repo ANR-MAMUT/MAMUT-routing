@@ -1,10 +1,6 @@
 # 4. Solve and propose a BKS
 
-The lib runs solvers by name, behind one protocol, and prices every solution with the reference checker before it
-reports or stores it. PyVRP is built in (`pyvrp` extra); KAYROS solves the time-dependent families (`pip install
-kayros`); literature solvers -- FILO2, HGS-CVRP, AILS-II, LKH-3, or your own -- run as external executables once you
-point the solvers config at them. A BKS file is only ever created or replaced by a strictly better, freshly validated
-solution, so running a solver against the tree is safe.
+The library checks routes returned by each registered solver before reporting or storing them. Install the PyVRP extra for static instances or the development Kayros extra for time-dependent instances. FILO2, HGS-CVRP, AILS-II and LKH-3 run as external executables. Saving a BKS is opt-in and the store accepts a new incumbent only after a strict improvement under the family objective. [Install the solver](install.md)
 
 ```bash
 uv run mamut-routing solvers list      # what is available here, and how to enable the rest
@@ -80,9 +76,7 @@ executable = "/opt/HGS-CVRP/build/hgs"  # vidalt/HGS-CVRP + the lib's full-matri
 
 Relative paths in the configuration are resolved from the directory containing the config file. A bare executable name uses only absolute directories in `PATH`. Unknown keys and invalid values disable the affected solver. `solvers list` reports the configuration error. A solver can inherit from another table using `extends`.
 
-HGS-CVRP's search handles asymmetric distances, but its upstream CVRPLIB reader only computes Euclidean distances
-from coordinates. The lib ships a small reader patch (`git apply` it to HGS-CVRP 1a92795 and rebuild; `mamut-routing
-solvers list` prints its installed path) that reads an explicit full matrix and keeps the coordinates for SWAP*.
+HGS-CVRP needs the packaged full-matrix reader to use asymmetric costs. AILS-II needs the packaged seed and route-output patch. Both patches come with the installed library. The build recipes identify the upstream revisions, toolchains and solver configuration entries. [Build HGS-CVRP and AILS-II](../developer-guide/packages/mamut-routing-lib.md#solving-pyvrp-kayros-and-external-solvers)
 
 ```bash
 uv run mamut-routing solve path/to/inst.vrp.json --solver lkh3 --time-limit-s 60 --keep-artifacts runs/
