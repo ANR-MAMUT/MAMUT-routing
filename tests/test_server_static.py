@@ -54,6 +54,10 @@ def test_normalize_request_path_rejects_traversal() -> None:
     assert normalize_request_path("") == "/"
 
 
+def test_content_type_for_standard_pdf() -> None:
+    assert content_type_for("mamut-routing-standard-0.1.pdf") == "application/pdf"
+
+
 def test_content_type_for_self_hosted_font() -> None:
     # The Nocturne reskin self-hosts Inter; woff2 must not fall back to octet-stream.
     assert content_type_for("InterVariable.woff2") == "font/woff2"

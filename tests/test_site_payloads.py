@@ -1955,8 +1955,10 @@ def test_site_header_links_to_the_documentation_tree(tmp_path: Path) -> None:
     site_output = output_repo_dir / "dist"
     home_html = (site_output / "index.html").read_text(encoding="utf-8")
     assert 'href="docs/index.html">Docs</a>' in home_html
+    assert 'href="docs/benchmarks/formats/routing-standard/index.html">Standard</a>' in home_html
     benchmarks_html = (site_output / "benchmarks" / "index.html").read_text(encoding="utf-8")
     assert 'href="../docs/index.html">Docs</a>' in benchmarks_html
+    assert 'href="../docs/benchmarks/formats/routing-standard/index.html">Standard</a>' in benchmarks_html
     assert 'class="nav-link active" href="../docs/index.html"' not in benchmarks_html
 
 

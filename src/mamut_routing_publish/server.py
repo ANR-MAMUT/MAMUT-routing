@@ -52,6 +52,7 @@ CONTENT_TYPES = {
     ".txt": "text/plain; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
     ".xml": "application/xml; charset=utf-8",
+    ".pdf": "application/pdf",
     ".gz": "application/gzip",
     ".woff2": "font/woff2",
 }
