@@ -1003,16 +1003,7 @@ tbody tr:hover {
 
 .home-cta-row .button-link {
   font-size: 14px;
-  padding: 9px 18px;
-}
-
-.home-standard-link {
-  display: inline-block;
-  margin-top: 14px;
-  color: var(--acc);
-  font-size: 14px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  padding: 9px clamp(10px, 1vw, 18px);
 }
 
 .home-stats {

@@ -1389,8 +1389,8 @@ function renderHome(payload) {
           <div class="home-cta-row">
             <a class="button-link primary" href="${routeHref(payload.benchmarks_route_path)}">Browse the catalog</a>
             <a class="button-link" href="${routeHref(payload.workbench_route_path)}">Open the workbench</a>
+            <a class="button-link" href="${siteAssetHref('/docs/specifications/mamut-routing-standard-0.1.pdf')}">Read the Standard 0.1 (PDF)</a>
           </div>
-          <a class="home-standard-link" href="${siteAssetHref('/docs/specifications/mamut-routing-standard-0.1.pdf')}">Read the Standard 0.1 (PDF)</a>
           ${renderHomeStats(payload)}
         </div>
         ${renderHomePreviewSkeleton()}
