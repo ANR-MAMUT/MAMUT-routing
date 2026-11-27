@@ -3333,7 +3333,7 @@ function timelineCountsHeadline(counts, options = {}) {
     counts.bks_added && `+${counts.bks_added} BKS`,
     counts.bks_removed && `−${counts.bks_removed} BKS`,
   ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "No instance- or BKS-level changes";
+  return parts.join(" · ");
 }
 
 function renderAffectedBadgeRow(scope) {
@@ -3345,9 +3345,17 @@ function renderAffectedBadgeRow(scope) {
   return badges.length ? `<div class="badge-row">${badges.join("")}</div>` : "";
 }
 
+const noHistoryChanges = "No instance- or BKS-level changes";
+
+function historySummary(summary) {
+  const text = (summary || "").trim();
+  return text === "Built static site snapshot." ? "" : text;
+}
+
 function renderHistoryLedger(payload) {
   setPage("History", "Every published website state is tied to an explicit repository snapshot.", [], "editorial");
   const currentEntry = payload.entries[0];
+  const currentSummary = historySummary(currentEntry?.summary);
   const repoCommitUrl = currentEntry
     ? `https://github.com/ANR-MAMUT/MAMUT-routing/commit/${encodeURIComponent(currentEntry.snapshot.source_commit)}`
     : "https://github.com/ANR-MAMUT/MAMUT-routing";
@@ -3355,7 +3363,7 @@ function renderHistoryLedger(payload) {
     renderCard(
       "Current Publication",
       currentEntry
-        ? `<p>${escapeHtml(currentEntry.summary)}</p>${renderStatGrid([["Snapshot", payload.current_snapshot_id], ["Published", currentEntry.snapshot.published_at], ["Commit", currentEntry.snapshot.source_commit]])}`
+        ? `${currentSummary ? `<p>${escapeHtml(currentSummary)}</p>` : ""}${renderStatGrid([["Snapshot", payload.current_snapshot_id], ["Published", currentEntry.snapshot.published_at], ["Commit", currentEntry.snapshot.source_commit]])}`
         : '<div class="empty-state">No history entries yet.</div>',
     ),
     renderCard(
@@ -3373,6 +3381,7 @@ function renderHistoryLedger(payload) {
     const counts = entry.change_counts || {};
     const isInitial = idx === lastIdx;
     const headline = timelineCountsHeadline(counts, { initial: isInitial });
+    const summary = historySummary(entry.summary);
     const dateOnly = String(entry.snapshot.published_at || "").slice(0, 10) || entry.snapshot.published_at;
     const isCurrentAttr = idx === 0 ? ' data-current="true"' : "";
     const initialTag = isInitial ? `<span class="badge alt timeline-initial-tag">initial</span>` : "";
@@ -3384,13 +3393,13 @@ function renderHistoryLedger(payload) {
           <code class="meta-line">${escapeHtml(entry.snapshot.source_commit)}</code>
           ${initialTag}
         </header>
-        <p class="timeline-summary">${escapeHtml(entry.summary)}</p>
-        <p class="timeline-counts">${escapeHtml(headline)}</p>
+        ${summary ? `<p class="timeline-summary">${escapeHtml(summary)}</p>` : ""}
+        <p class="timeline-counts">${escapeHtml(headline || noHistoryChanges)}</p>
         ${renderAffectedBadgeRow(entry)}
-        <div class="inline-actions" style="margin-top:0.8rem">
+        ${headline ? `<div class="inline-actions" style="margin-top:0.8rem">
           <a class="button-link primary" href="${routeHref(entry.detail_route_path)}">Open snapshot</a>
           <a class="button-link" href="${routeHref('/benchmarks/')}">Browse benchmarks</a>
-        </div>
+        </div>` : ""}
       </article>
     </li>`;
   }).join("");
@@ -3543,11 +3552,12 @@ function renderChangesCard(changeLog) {
   const headline = timelineCountsHeadline(changeLog.counts || {}, { initial: changeLog.is_initial });
   return renderCard(
     "Changes",
-    `${banner}<p class="meta-line">${escapeHtml(headline)}</p>${renderFamilyChangeSection(changeLog.family_changes || [])}${renderInstanceChangeSection(changeLog.instance_changes || [])}${renderBksChangeSection(changeLog.bks_changes || [])}`,
+    `${banner}<p class="meta-line">${escapeHtml(headline || noHistoryChanges)}</p>${renderFamilyChangeSection(changeLog.family_changes || [])}${renderInstanceChangeSection(changeLog.instance_changes || [])}${renderBksChangeSection(changeLog.bks_changes || [])}`,
   );
 }
 
 function renderHistoryDetail(payload) {
+  const summary = historySummary(payload.summary);
   setPage(payload.title, "Snapshot-level summary for one published website build.", payload.breadcrumbs, "editorial");
   state.aside.innerHTML = [
     renderCard(
@@ -3556,7 +3566,7 @@ function renderHistoryDetail(payload) {
         ["Snapshot", payload.snapshot.snapshot_id],
         ["Published", payload.snapshot.published_at],
         ["Commit", payload.snapshot.source_commit],
-        ["Summary", payload.summary],
+        ...(summary ? [["Summary", summary]] : []),
       ])}`,
     ),
     renderCard(
