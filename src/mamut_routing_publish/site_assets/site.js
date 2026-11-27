@@ -1673,12 +1673,31 @@ function compareCatalogOrder(left, right) {
     || compareCatalogText(left.display_name, right.display_name);
 }
 
+function catalogDisplayCost(item) {
+  let lowest = null;
+  for (const entry of item.objective_availability || []) {
+    const value = entry.evaluation?.display_overflow
+      ? Infinity : Number(displayedCost(entry, { compactCost: true }));
+    if (!Number.isNaN(value) && (lowest === null || value < lowest)) lowest = value;
+  }
+  return lowest;
+}
+
+function compareCatalogDisplayCosts(left, right, direction) {
+  const a = catalogDisplayCost(left);
+  const b = catalogDisplayCost(right);
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a < b ? -direction : direction;
+}
+
 function compareCatalogItems(left, right, sortValue = "catalog", directionValue = "asc") {
   const sort = normalizeCatalogSort(sortValue);
   const direction = normalizeSortDirection(directionValue) === "desc" ? -1 : 1;
   if (sort === "name") return compareCatalogText(left.display_name, right.display_name) * direction || compareCatalogOrder(left, right);
   if (sort === "size") return compareCatalogNumber(left.num_customers, right.num_customers, direction) || compareCatalogOrder(left, right);
-  if (sort === "cost") return compareCostEntries(lowestCostEntry(left), lowestCostEntry(right), direction) || compareCatalogOrder(left, right);
+  if (sort === "cost") return compareCatalogDisplayCosts(left, right, direction) || compareCatalogOrder(left, right);
   if (sort === "routes") return compareCatalogNumber(catalogObjectiveNumber(left, "num_routes"), catalogObjectiveNumber(right, "num_routes"), direction) || compareCatalogOrder(left, right);
   return compareCatalogOrder(left, right) * direction;
 }

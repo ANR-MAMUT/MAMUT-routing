@@ -2358,7 +2358,7 @@ def test_publisher_rejects_noncanonical_cost_and_route_witnesses(field: str) -> 
         _read_bks_evaluation("toy.bks.Duration.json", bks, None, None)
 
 
-def test_catalog_keeps_exact_tiebreaks_across_family_shards(tmp_path: Path) -> None:
+def test_catalog_defers_exact_costs_to_instance_details(tmp_path: Path) -> None:
     from mamut_routing_publish.catalog_shards import write_catalog_shards
 
     def record(family, display, ratio):
@@ -2377,6 +2377,7 @@ def test_catalog_keeps_exact_tiebreaks_across_family_shards(tmp_path: Path) -> N
     write_catalog_shards({"items": rows}, tmp_path)
     shard = json.loads((tmp_path / "benchmarks/vrptw/b/catalog-rows.json").read_text())
     badges = [row["objective_availability"][0] for row in shard]
-    assert badges[0]["evaluation"] == rows[1]["objective_availability"][0]["evaluation"]
+    assert "evaluation" not in badges[0]
     assert "evaluation" not in badges[1]
-    assert badges[2]["evaluation"] == rows[3]["objective_availability"][0]["evaluation"]
+    assert badges[2]["evaluation"] == {"display_overflow": True}
+    assert rows[3]["objective_availability"][0]["evaluation"]["authoritative_cost"]["numerator"] == "9" * 400

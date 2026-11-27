@@ -24,6 +24,10 @@ FUNCTIONS = (
     "compareCatalogNumber",
     "costRatio",
     "compareCostEntries",
+    "displayedCost",
+    "formatCost",
+    "catalogDisplayCost",
+    "compareCatalogDisplayCosts",
     "lowestCostEntry",
     "normalizeCollectionSort",
     "collectionObjectiveNumber",
@@ -184,3 +188,18 @@ def test_history_explains_improvement_when_the_exact_delta_underflows() -> None:
     """
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout) == [True, True, True]
+
+
+@node
+def test_public_catalog_sorts_the_visible_cost_and_keeps_missing_last() -> None:
+    script = _extract() + """
+    const row = entry => ({ objective_availability: [entry] });
+    const a = row({ cost: 1.2298, compact_cost: "1.23" });
+    const b = row({ cost: 1.2301, compact_cost: "1.23" });
+    const overflow = row({ evaluation: { display_overflow: true } });
+    const missing = row({});
+    console.log(JSON.stringify([compareCatalogDisplayCosts(a, b, 1),
+      compareCatalogDisplayCosts(overflow, a, -1), compareCatalogDisplayCosts(overflow, missing, -1)]));
+    """
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == [0, -1, -1]

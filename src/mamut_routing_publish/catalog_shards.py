@@ -5,38 +5,15 @@ import json
 from pathlib import Path
 
 
-def _costs_requiring_exact_comparison(items: list[dict]) -> set:
-    # The browser compares binary64 displays first. A distinct exact value sharing
-    # the same display (possibly in another family) requires its original fraction.
-    first_ratio = {}
-    collisions = {None}  # Certified overflows always require exact comparison.
-    for item in items:
-        for entry in item["objective_availability"]:
-            cost = entry["cost"]
-            if cost is None:
-                continue
-            display = float(cost)
-            evaluation = entry.get("evaluation") or {}
-            exact = evaluation.get("authoritative_cost")
-            ratio = (exact["numerator"], exact["denominator"]) if exact else None
-            if first_ratio.setdefault(display, ratio) != ratio:
-                collisions.add(display)
-    return collisions
-
-
-def _catalog_row(item: dict, collisions: set) -> dict:
+def _catalog_row(item: dict) -> dict:
+    """Keep display and navigation fields in lists. The record owns the certificate."""
     row = {key: value for key, value in item.items() if value is not None}
     objectives = []
     for entry in item["objective_availability"]:
         badge = {key: value for key, value in entry.items() if key != "evaluation" and value is not None}
         evaluation = entry.get("evaluation")
-        if evaluation:
-            display = float(entry["cost"]) if entry["cost"] is not None else None
-            if display in collisions:
-                badge["evaluation"] = {
-                    "display_overflow": evaluation["display_overflow"],
-                    "authoritative_cost": evaluation["authoritative_cost"],
-                }
+        if evaluation and evaluation["display_overflow"]:
+            badge["evaluation"] = {"display_overflow": True}
         objectives.append(badge)
     row["objective_availability"] = objectives
     return row
@@ -44,10 +21,9 @@ def _catalog_row(item: dict, collisions: set) -> dict:
 
 def write_catalog_shards(root_index: dict, payload_root: Path) -> list[Path]:
     groups = defaultdict(list)
-    collisions = _costs_requiring_exact_comparison(root_index["items"])
     for item in root_index["items"]:
         locator = item["locator"]
-        groups[locator["problem_type"], locator["benchmark_name"]].append(_catalog_row(item, collisions))
+        groups[locator["problem_type"], locator["benchmark_name"]].append(_catalog_row(item))
 
     written = []
 
