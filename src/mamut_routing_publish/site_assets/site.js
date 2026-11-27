@@ -370,6 +370,31 @@ function payloadUrlForRoute(routePath) {
   return payloadStaticHref(normalizedRoute);
 }
 
+let benchmarkManifestPromise;
+
+function fetchBenchmarkCatalogManifest() {
+  if (!benchmarkManifestPromise) {
+    benchmarkManifestPromise = loadBenchmarkCatalogManifest().catch(error => {
+      benchmarkManifestPromise = null;
+      throw error;
+    });
+  }
+  return benchmarkManifestPromise;
+}
+
+async function loadBenchmarkCatalogManifest() {
+  const path = payloadSidecarHref("benchmarks/catalog.json");
+  const response = await fetch(path);
+  // Older publications have only the full public index.
+  if (response.status === 404) return fetchWorkbenchPayloadForRoute("/benchmarks/");
+  if (!response.ok) throw new Error(`Unable to fetch ${path}: ${response.status}`);
+  return response.json();
+}
+
+function fetchBenchmarkCatalogShard(shard) {
+  return fetchJsonMemo(payloadSidecarHref(shard.path));
+}
+
 function setStatus(message) {
   state.status.textContent = message;
 }
@@ -1552,14 +1577,52 @@ function publicCatalogOptions(items, key) {
       : String(left.value).localeCompare(String(right.value), undefined, { numeric: true }));
 }
 
-function publicCatalogSelect(key, label, items) {
-  if (key === "size" && !state.catalogFilters.family) {
-    state.catalogFilters.size = "";
-    return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}" disabled><option value="">Choose a family first</option></select></label>`;
-  }
-  const options = publicCatalogOptions(items, key);
+function publicCatalogSelect(key, label, items, manifest) {
+  const options = manifest && (key === "problem" || key === "family")
+    ? catalogScopeOptions(manifest, key)
+    : publicCatalogOptions(items, key);
   if (!options.some((option) => option.value === state.catalogFilters[key])) state.catalogFilters[key] = "";
   return `<label class="field"><span>${escapeHtml(label)}</span><select data-public-filter="${key}"><option value="">All</option>${options.map(({ value, count }) => `<option value="${escapeHtml(value)}"${state.catalogFilters[key] === value ? " selected" : ""}>${escapeHtml(PUBLIC_CATALOG_OPTION_LABELS[key]?.[value] || value)} (${count})</option>`).join("")}</select></label>`;
+}
+
+function catalogScopeOptions(manifest, key) {
+  const counts = new Map();
+  for (const shard of manifest.shards) {
+    if (key === "family" && state.catalogFilters.problem && shard.problem !== state.catalogFilters.problem) continue;
+    counts.set(shard[key], (counts.get(shard[key]) || 0) + shard.count);
+  }
+  return Array.from(counts, ([value, count]) => ({ value, count })).sort((a, b) =>
+    key === "problem" ? PUBLIC_PROBLEM_ORDER.indexOf(a.value) - PUBLIC_PROBLEM_ORDER.indexOf(b.value)
+      : compareCatalogText(a.value, b.value));
+}
+
+let catalogRequest = 0;
+
+async function loadCatalogScope(manifest) {
+  const request = ++catalogRequest;
+  const filters = state.catalogFilters;
+  const scope = manifest.shards.filter(shard =>
+    (!filters.problem || shard.problem === filters.problem) && (!filters.family || shard.family === filters.family));
+  const search = filters.search.trim().toLowerCase();
+  renderPublicCatalogExplorer([], manifest, true);
+  setStatus("Loading matching catalog entries…");
+  try {
+    let selected = scope;
+    const scopedFacets = PUBLIC_CATALOG_FILTER_ORDER.slice(2).some(key => filters[key]);
+    if (search && scope.length > 1 && !scopedFacets) {
+      const names = await fetchJsonMemo(payloadSidecarHref(manifest.search_path));
+      if (request !== catalogRequest) return;
+      selected = scope.filter(shard => names[shard.path].some(name => name.toLowerCase().includes(search)));
+    }
+    const groups = await Promise.all(selected.map(fetchBenchmarkCatalogShard));
+    if (request === catalogRequest) renderPublicCatalogExplorer(groups.flat(), manifest);
+  } catch (error) {
+    if (request !== catalogRequest) return;
+    setStatus(`Unable to load catalog entries: ${error.message}`);
+    const results = state.stage.querySelector(".catalog-results");
+    results.innerHTML = '<button type="button" class="button-link" data-catalog-retry>Retry loading entries</button>';
+    results.querySelector("button").addEventListener("click", () => loadCatalogScope(manifest));
+  }
 }
 
 function catalogObjectiveNumber(item, field) {
@@ -1633,14 +1696,14 @@ function syncPublicCatalogUrl() {
   window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
 }
 
-function renderPublicCatalogExplorer(items) {
+function renderPublicCatalogExplorer(items, manifest = null, landing = false) {
   const search = state.catalogFilters.search.trim().toLowerCase();
   const filtered = items.filter((item) => {
     if (!PUBLIC_CATALOG_FILTER_ORDER.every((key) => !state.catalogFilters[key] || publicCatalogValue(item, key) === state.catalogFilters[key])) return false;
     if (search && !`${item.display_name || ""} ${item.base_instance || ""} ${item.instance_id || ""}`.toLowerCase().includes(search)) return false;
     return true;
   });
-  if (state.catalogFilters.sort === "cost" && !catalogCostSortAvailable(filtered)) {
+  if (!landing && state.catalogFilters.sort === "cost" && !catalogCostSortAvailable(filtered)) {
     state.catalogFilters.sort = "catalog";
     syncPublicCatalogUrl();
   }
@@ -1651,47 +1714,75 @@ function renderPublicCatalogExplorer(items) {
     .join("");
   const descending = state.catalogFilters.direction === "desc";
   const directionLabel = descending ? "Descending" : "Ascending";
+  const detailFilters = landing ? "" : [
+    publicCatalogSelect("metric", "Metric", items),
+    publicCatalogSelect("city", "City", items),
+    publicCatalogSelect("size", "Size", items),
+    publicCatalogSelect("method", "Method", items),
+    publicCatalogSelect("scenario", "TW / traffic", items),
+    publicCatalogSelect("geometry", "Geometry", items),
+  ].join("");
   const controls = `<section class="card catalog-filter-card">
     <h2>Filter instances</h2>
     <div class="catalog-filter-grid">
-      ${publicCatalogSelect("problem", "Problem", items)}
-      ${publicCatalogSelect("family", "Family", items)}
-      ${publicCatalogSelect("metric", "Metric", items)}
-      ${publicCatalogSelect("city", "City", items)}
-      ${publicCatalogSelect("size", "Size", items)}
-      ${publicCatalogSelect("method", "Method", items)}
-      ${publicCatalogSelect("scenario", "TW / traffic", items)}
-      ${publicCatalogSelect("geometry", "Geometry", items)}
+      ${publicCatalogSelect("problem", "Problem", items, manifest)}
+      ${publicCatalogSelect("family", "Family", items, manifest)}
+      ${detailFilters}
       <label class="field"><span>Search</span><input data-public-search type="search" value="${escapeHtml(state.catalogFilters.search)}" placeholder="Instance or base name" /></label>
     </div>
     <div class="catalog-filter-footer">
-      <p class="meta-line">${filtered.length} matching instances${filtered.length > shown.length ? ` · showing the first ${shown.length}` : ""}</p>
+      ${landing ? `<button type="button" class="button-link" data-browse-all>${state.catalogFilters.problem || state.catalogFilters.family ? "Browse matching instances" : "Browse all instances"}</button>
+      ${manifest.example
+        ? `<a class="button-link" href="?${escapeHtml(new URLSearchParams(manifest.example).toString())}">Example: ${escapeHtml(manifest.example.problem)} · ${escapeHtml(manifest.example.family)} · ${escapeHtml(manifest.example.size)} customers</a>` : ""}` : `<p class="meta-line">${filtered.length} matching instances${filtered.length > shown.length ? ` · showing the first ${shown.length}` : ""}</p>
       <div class="catalog-sort-controls">
         <label class="field catalog-sort-field"><span>Sort by</span><select data-public-sort>${sortOptions}</select></label>
         <button type="button" class="sort-direction-button" data-public-sort-direction aria-label="Sort direction: ${directionLabel.toLowerCase()}. Activate for ${descending ? "ascending" : "descending"}." title="${directionLabel}"><span aria-hidden="true">${descending ? "↓" : "↑"}</span></button>
-      </div>
+      </div>`}
     </div>
   </section>`;
-  const problemNames = items.length
+  const problemNames = !manifest && items.length
     ? Array.from(new Set(items.map((item) => publicCatalogValue(item, "problem"))))
       .sort((left, right) => PUBLIC_PROBLEM_ORDER.indexOf(left) - PUBLIC_PROBLEM_ORDER.indexOf(right))
     : [];
-  const problemCards = problemNames.map((problem) => ({ problem_type: problem, route_path: `/benchmarks/${problem.toLowerCase()}/`, family_count: new Set(items.filter((item) => publicCatalogValue(item, "problem") === problem).map((item) => publicCatalogValue(item, "family"))).size, instance_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).length, bks_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).reduce((total, item) => total + item.bks_count, 0), supported_objective_functions: [] }));
-  state.stage.innerHTML = `${renderProblemCards(problemCards)}${controls}<section class="catalog-results">${renderInstanceRows(shown)}</section>`;
+  const problemCards = manifest?.problems ?? problemNames.map((problem) => ({ problem_type: problem, route_path: `/benchmarks/${problem.toLowerCase()}/`, family_count: new Set(items.filter((item) => publicCatalogValue(item, "problem") === problem).map((item) => publicCatalogValue(item, "family"))).size, instance_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).length, bks_count: items.filter((item) => publicCatalogValue(item, "problem") === problem).reduce((total, item) => total + item.bks_count, 0), supported_objective_functions: [] }));
+  state.stage.innerHTML = `${renderProblemCards(problemCards)}${controls}<section class="catalog-results">${landing ? "" : renderInstanceRows(shown)}</section>`;
   state.stage.querySelectorAll("[data-public-filter]").forEach((select) => select.addEventListener("change", () => {
     const key = select.dataset.publicFilter;
     state.catalogFilters[key] = select.value;
     const keyIndex = PUBLIC_CATALOG_FILTER_ORDER.indexOf(key);
     PUBLIC_CATALOG_FILTER_ORDER.slice(keyIndex + 1).forEach((later) => { state.catalogFilters[later] = ""; });
     syncPublicCatalogUrl();
-    renderPublicCatalogExplorer(items);
+    if (manifest && key === "problem" && !state.catalogFilters.search) {
+      ++catalogRequest;
+      renderPublicCatalogExplorer([], manifest, true);
+    } else if (manifest && (key === "problem" || key === "family")) {
+      loadCatalogScope(manifest);
+    } else {
+      renderPublicCatalogExplorer(items, manifest);
+    }
   }));
-  state.stage.querySelector("[data-public-search]").addEventListener("change", (event) => { state.catalogFilters.search = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
-  state.stage.querySelector("[data-public-sort]").addEventListener("change", (event) => { state.catalogFilters.sort = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items); });
+  state.stage.querySelector("[data-public-search]").addEventListener("change", (event) => {
+    state.catalogFilters.search = event.target.value;
+    syncPublicCatalogUrl();
+    if (manifest && !state.catalogFilters.search && !PUBLIC_CATALOG_FILTER_ORDER.some(key => state.catalogFilters[key])) {
+      ++catalogRequest;
+      renderPublicCatalogExplorer([], manifest, true);
+    } else if (manifest) {
+      loadCatalogScope(manifest);
+    } else {
+      renderPublicCatalogExplorer(items);
+    }
+  });
+  if (landing) {
+    state.stage.querySelector("[data-browse-all]").addEventListener("click", () => loadCatalogScope(manifest));
+    setStatus(`Browse ${manifest.shards.reduce((count, shard) => count + shard.count, 0)} instances`);
+    return;
+  }
+  state.stage.querySelector("[data-public-sort]").addEventListener("change", (event) => { state.catalogFilters.sort = event.target.value; syncPublicCatalogUrl(); renderPublicCatalogExplorer(items, manifest); });
   state.stage.querySelector("[data-public-sort-direction]").addEventListener("click", () => {
     state.catalogFilters.direction = state.catalogFilters.direction === "asc" ? "desc" : "asc";
     syncPublicCatalogUrl();
-    renderPublicCatalogExplorer(items);
+    renderPublicCatalogExplorer(items, manifest);
   });
   syncPublicCatalogUrl();
   setStatus(`Loaded ${filtered.length} matching instances`);
@@ -1710,7 +1801,13 @@ function renderBenchmarksIndex(payload) {
       ])}`,
     ),
   ].join("");
-  if (Array.isArray(payload.items) && payload.items.length > 0) {
+  if (Array.isArray(payload.shards)) {
+    renderPublicCatalogExplorer([], payload, true);
+    if (PUBLIC_CATALOG_FILTER_ORDER.some(key => state.catalogFilters[key]) || state.catalogFilters.search ||
+        state.catalogFilters.sort !== "catalog" || state.catalogFilters.direction !== "asc") {
+      return loadCatalogScope(payload);
+    }
+  } else if (Array.isArray(payload.items) && payload.items.length > 0) {
     renderPublicCatalogExplorer(payload.items);
   } else {
     state.stage.innerHTML = renderProblemCards(payload.problems);
@@ -3471,7 +3568,7 @@ function selectWorkbenchOption(options, predicate) {
 }
 
 async function buildWorkbenchBenchmarkSelection(seed = {}) {
-  const rootPayload = await fetchWorkbenchPayloadForRoute("/benchmarks/");
+  const rootPayload = await fetchBenchmarkCatalogManifest();
   const problemCards = Array.isArray(rootPayload?.problems) ? rootPayload.problems : [];
   const selectedProblem = selectWorkbenchOption(problemCards, (problem) => matchesWorkbenchValue(problem.problem_type, seed.problemType));
 
@@ -4061,13 +4158,15 @@ function setupThemeToggle() {
 }
 
 async function renderPayloadPage() {
-  const payload = await fetchJson(payloadUrlForRoute(state.routePath));
+  const payload = state.routePath === "/benchmarks/"
+    ? await fetchBenchmarkCatalogManifest()
+    : await fetchJson(payloadUrlForRoute(state.routePath));
   switch (payload.payload_kind) {
     case "home_page":
       await renderHome(payload);
       break;
     case "benchmarks_index":
-      renderBenchmarksIndex(payload);
+      await renderBenchmarksIndex(payload);
       break;
     case "problem_index":
     case "family_index":
@@ -4516,6 +4615,8 @@ export {
   escapeHtml,
   optimalityStatRows,
   fetchJson,
+  fetchBenchmarkCatalogManifest,
+  fetchBenchmarkCatalogShard,
   fetchGeometryMetaMemo,
   fetchRouteGeometryMetaMemo,
   fetchWorkbenchPayloadForRoute,

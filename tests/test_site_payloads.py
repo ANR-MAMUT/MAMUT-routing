@@ -297,6 +297,30 @@ def test_generate_site_payloads_writes_problem_catalogs_instance_pages_and_histo
     assert [problem["problem_type"] for problem in root_index["problems"]] == ["CVRP", "VRPTW"]
     assert not (output_repo_dir / "benchmarks" / "vrptw" / "index.json").exists()
 
+    manifest = json.loads((payload_root / "benchmarks/catalog.json").read_text())
+    assert manifest["problems"] == root_index["problems"]
+    assert "items" not in manifest
+    search = json.loads((payload_root / manifest["search_path"]).read_text())
+    rows = []
+    for shard in manifest["shards"]:
+        entries = json.loads((payload_root / shard["path"]).read_text())
+        assert shard["count"] == len(entries)
+        assert shard["workbench_count"] == sum(bool(item.get("place_slug") or item["locator"].get("place_slug")) for item in entries)
+        assert all(item["locator"]["problem_type"] == shard["problem"] for item in entries)
+        assert all(item["locator"]["benchmark_name"] == shard["family"] for item in entries)
+        assert search[shard["path"]] == [
+            " ".join(item.get(field) or "" for field in ("display_name", "base_instance", "instance_id"))
+            for item in entries
+        ]
+        rows.extend(entries)
+    assert sorted(item["route_path"] for item in rows) == sorted(item["route_path"] for item in root_index["items"])
+    source = {item["route_path"]: item for item in root_index["items"]}
+    for row in rows:
+        for badge, original in zip(row["objective_availability"], source[row["route_path"]]["objective_availability"], strict=True):
+            for key in ("cost", "compact_cost", "num_routes", "objective_function", "optimality", "artifact_path"):
+                assert badge.get(key) == original.get(key)
+
+
     objectives_payload = json.loads((payload_root / "objectives" / "index.json").read_text(encoding="utf-8"))
     assert objectives_payload["payload_kind"] == "objectives_page"
     assert objectives_payload["breadcrumbs"] == []
@@ -2332,3 +2356,27 @@ def test_publisher_rejects_noncanonical_cost_and_route_witnesses(field: str) -> 
                        metadata={"exact_evaluation": record})
     with pytest.raises(ValueError, match="canonical result fraction"):
         _read_bks_evaluation("toy.bks.Duration.json", bks, None, None)
+
+
+def test_catalog_keeps_exact_tiebreaks_across_family_shards(tmp_path: Path) -> None:
+    from mamut_routing_publish.catalog_shards import write_catalog_shards
+
+    def record(family, display, ratio):
+        evaluation = None if ratio is None else {
+            "authoritative_cost": {"numerator": ratio[0], "denominator": ratio[1]},
+            "display_overflow": display is None,
+        }
+        return {
+            "locator": {"problem_type": "VRPTW", "benchmark_name": family},
+            "objective_availability": [{"cost": display, "evaluation": evaluation}],
+        }
+
+    # 1 + 2**-54 rounds to the same display as the legacy exact-binary64 row.
+    rows = [record("A", 1.0, None), record("B", 1.0, ("18014398509481985", "18014398509481984")),
+            record("B", 2.0, ("2", "1")), record("B", None, ("9" * 400, "1"))]
+    write_catalog_shards({"items": rows}, tmp_path)
+    shard = json.loads((tmp_path / "benchmarks/vrptw/b/catalog-rows.json").read_text())
+    badges = [row["objective_availability"][0] for row in shard]
+    assert badges[0]["evaluation"] == rows[1]["objective_availability"][0]["evaluation"]
+    assert "evaluation" not in badges[1]
+    assert badges[2]["evaluation"] == rows[3]["objective_availability"][0]["evaluation"]

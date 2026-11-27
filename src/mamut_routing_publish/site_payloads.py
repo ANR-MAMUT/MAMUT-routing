@@ -61,6 +61,7 @@ from mamut_routing_lib.exact_store import read_result_fraction, routes_sha256
 from mamut_routing_lib.manifests import file_sha256, manifest_path_for
 from mamut_routing_lib import has_structured_metadata
 
+from .catalog_shards import write_catalog_shards
 from .progress import ProgressReporter
 from .route_geometry import ROUTE_GEOMETRY_CACHE_DIR, route_geometry_ref_for_bks
 from .route_timeline import (
@@ -4246,6 +4247,8 @@ def generate_site_payloads(
     written_paths.append(history_detail_path)
 
     root_payload = _build_root_benchmarks_index(resolved_items, generated_at, snapshot)
+
+    written_paths.extend(write_catalog_shards(root_payload.model_dump(mode="json"), site_output / payload_root))
 
     home_preview_bundle = _build_home_preview_bundle(resolved_items, output_repo, generated_at, snapshot)
     bundle_relative = (payload_root / HOME_PREVIEW_BUNDLE_FILENAME).as_posix()
