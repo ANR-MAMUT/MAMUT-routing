@@ -1934,9 +1934,11 @@ code {
 /* ── Status pill ─────────────────────────────────────────────────────────── */
 
 .status-pill {
-  position: fixed;
-  right: 18px;
-  bottom: 16px;
+  position: sticky;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  align-self: flex-end;
+  margin: 0 18px max(16px, env(safe-area-inset-bottom));
+  overflow-wrap: anywhere;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1948,7 +1950,7 @@ code {
   padding: 7px 12px;
   box-shadow: 0 0 0 1px var(--div);
   z-index: 60;
-  max-width: min(60vw, 480px);
+  max-width: min(calc(100% - 36px), 480px);
 }
 
 .status-pill::before {
@@ -1981,13 +1983,6 @@ code {
 }
 
 @media (max-width: 720px) {
-  body[data-route-path="/"] .status-pill {
-    position: static;
-    margin: 0 16px max(16px, env(safe-area-inset-bottom));
-    max-width: calc(100% - 32px);
-    overflow-wrap: anywhere;
-  }
-
   .app-header {
     gap: 12px;
     padding: 0 14px;
