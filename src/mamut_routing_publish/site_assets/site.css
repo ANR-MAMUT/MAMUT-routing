@@ -1981,6 +1981,13 @@ code {
 }
 
 @media (max-width: 720px) {
+  body[data-route-path="/"] .status-pill {
+    position: static;
+    margin: 0 16px max(16px, env(safe-area-inset-bottom));
+    max-width: calc(100% - 32px);
+    overflow-wrap: anywhere;
+  }
+
   .app-header {
     gap: 12px;
     padding: 0 14px;
