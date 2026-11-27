@@ -112,6 +112,8 @@ const {
   evaluationStatRows,
   escapeHtml,
   optimalityStatRows,
+  fetchBenchmarkCatalogManifest,
+  fetchBenchmarkCatalogShard,
   fetchGeometryMetaMemo,
   fetchJson,
   fetchRouteGeometryMetaMemo,
@@ -245,7 +247,7 @@ const state = {
     routeGeometryLoadFailed: false,
   },
   benchmarkCatalog: {
-    options: [],
+    groups: new Map(),
     loaded: false,
     loadingPromise: null,
     selectedGroupKey: null,
@@ -317,11 +319,6 @@ function benchmarkCatalogGroupKey(value) {
   return [locator.problem_type, locator.benchmark_name].filter(Boolean).join("::");
 }
 
-function benchmarkCatalogGroupLabel(item) {
-  const locator = benchmarkCatalogLocator(item);
-  return [locator.problem_type, locator.benchmark_name].filter(Boolean).join(" · ") || "Published Instances";
-}
-
 const BENCHMARK_VARIANT_SORT_ORDER = ["euclidean", "fastest", "shortest"];
 
 function benchmarkCatalogVariantSortKey(variant) {
@@ -387,19 +384,53 @@ function buildBenchmarkCatalogInstanceGroups(items) {
   return groups;
 }
 
-function buildBenchmarkCatalogGroups() {
+function buildBenchmarkCatalogGroups(payload) {
   const groups = new Map();
-  state.benchmarkCatalog.options.forEach((item) => {
+  if (Array.isArray(payload.shards)) {
+    for (const shard of payload.shards) {
+      if (shard.workbench_count > 0) {
+        groups.set(`${shard.problem}::${shard.family}`, {
+          problem: shard.problem, family: shard.family, count: shard.workbench_count, shard,
+        });
+      }
+    }
+    return groups;
+  }
+
+  const seen = new Set();
+  for (const item of payload.items || []) {
+    const locator = benchmarkCatalogLocator(item);
+    if (!(locator.place_slug || item.place_slug) || !item.route_path || seen.has(item.route_path)) continue;
+    seen.add(item.route_path);
     const key = benchmarkCatalogGroupKey(item);
-    if (!key) {
-      return;
-    }
     if (!groups.has(key)) {
-      groups.set(key, { label: benchmarkCatalogGroupLabel(item), items: [] });
+      groups.set(key, { problem: locator.problem_type, family: locator.benchmark_name, count: 0, items: [] });
     }
-    groups.get(key).items.push(item);
-  });
+    const group = groups.get(key);
+    group.items.push(item);
+    group.count++;
+  }
   return groups;
+}
+
+async function loadWorkbenchCatalogGroup(group) {
+  if (group.loading) return;
+  group.loading = true;
+  try {
+    const rows = await fetchBenchmarkCatalogShard(group.shard);
+    group.items = rows.filter((item) => benchmarkCatalogLocator(item).place_slug || item.place_slug);
+    if (state.benchmarkCatalog.groups.get(state.benchmarkCatalog.selectedGroupKey) === group) {
+      renderBenchmarkCatalogOptions();
+      syncWorkbenchUrl();
+    }
+  } catch (error) {
+    console.error(error);
+    if (state.benchmarkCatalog.groups.get(state.benchmarkCatalog.selectedGroupKey) === group) {
+      benchmarkInstanceSelect.innerHTML = '<option value="">Unable to load published instances</option>';
+    }
+  } finally {
+    group.loading = false;
+  }
 }
 
 function benchmarkScenarioValue(item) {
@@ -409,6 +440,7 @@ function benchmarkScenarioValue(item) {
 }
 
 function populateBenchmarkFilter(select, values, placeholder, currentValue, labels = {}) {
+  select.disabled = false;
   const counts = new Map();
   values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
   const options = Array.from(counts.keys()).sort((left, right) => String(left).localeCompare(String(right), undefined, { numeric: true }));
@@ -433,36 +465,33 @@ function renderBenchmarkCatalogOptions() {
     return;
   }
 
-  const groups = buildBenchmarkCatalogGroups();
-  const filters = state.benchmarkCatalog.filters;
-  const selectedItem = state.instanceRoute
-    ? state.benchmarkCatalog.options.find((item) => normalizeRoute(item.route_path) === normalizeRoute(state.instanceRoute))
-    : null;
-  if (selectedItem) {
-    filters.problem = benchmarkCatalogLocator(selectedItem).problem_type || filters.problem;
-    filters.family = benchmarkCatalogLocator(selectedItem).benchmark_name || filters.family;
+  const { groups, filters } = state.benchmarkCatalog;
+  const selectedLocator = benchmarkCatalogLocator(state.benchmark.payload);
+  if (state.instanceRoute && groups.has(benchmarkCatalogGroupKey(state.benchmark.payload))) {
+    filters.problem = selectedLocator.problem_type;
+    filters.family = selectedLocator.benchmark_name;
   }
-  const problemValues = state.benchmarkCatalog.options.map((item) => benchmarkCatalogLocator(item).problem_type).filter(Boolean);
-  const problems = Array.from(new Set(problemValues)).sort();
+  const problemCounts = new Map();
+  for (const group of groups.values()) {
+    problemCounts.set(group.problem, (problemCounts.get(group.problem) || 0) + group.count);
+  }
+  const problems = [...problemCounts.keys()].sort();
   filters.problem = problems.includes(filters.problem) ? filters.problem : problems[0] || "";
-  populateBenchmarkFilter(benchmarkProblemSelect, problemValues, "All problems", filters.problem);
+  benchmarkProblemSelect.innerHTML = ['<option value="">All problems</option>', ...problems.map((problem) =>
+    `<option value="${escapeHtml(problem)}">${escapeHtml(problem)} (${problemCounts.get(problem)})</option>`
+  )].join("");
   benchmarkProblemSelect.value = filters.problem;
-  const sortedGroups = Array.from(groups.entries())
-    .filter(([, group]) => !filters.problem || benchmarkCatalogLocator(group.items[0]).problem_type === filters.problem)
-    .sort(([, left], [, right]) => left.label.localeCompare(right.label));
-  const selectedGroupKey = selectedItem && (!filters.problem || benchmarkCatalogLocator(selectedItem).problem_type === filters.problem)
-    ? benchmarkCatalogGroupKey(selectedItem)
-    : state.benchmarkCatalog.selectedGroupKey && sortedGroups.some(([key]) => key === state.benchmarkCatalog.selectedGroupKey)
-      ? state.benchmarkCatalog.selectedGroupKey
-      : sortedGroups.find(([, group]) => benchmarkCatalogLocator(group.items[0]).benchmark_name === filters.family)?.[0]
-        || sortedGroups[0]?.[0]
-        || "";
-  state.benchmarkCatalog.selectedGroupKey = selectedGroupKey || null;
-  filters.family = selectedGroupKey ? benchmarkCatalogLocator(groups.get(selectedGroupKey).items[0]).benchmark_name || "" : "";
+  const sortedGroups = [...groups.entries()]
+    .filter(([, group]) => group.problem === filters.problem)
+    .sort(([, left], [, right]) => left.family.localeCompare(right.family));
+  const selectedGroup = sortedGroups.find(([, group]) => group.family === filters.family) || sortedGroups[0];
+  state.benchmarkCatalog.selectedGroupKey = selectedGroup?.[0] || null;
+  const group = selectedGroup?.[1];
+  filters.family = group?.family || "";
 
   if (sortedGroups.length > 0) {
     benchmarkCatalogSelect.innerHTML = sortedGroups
-      .map(([groupKey, group]) => `<option value="${escapeHtml(groupKey)}"${groupKey === selectedGroupKey ? " selected" : ""}>${escapeHtml(benchmarkCatalogLocator(group.items[0]).benchmark_name || group.label)} (${group.items.length})</option>`)
+      .map(([key, entry]) => `<option value="${escapeHtml(key)}"${key === state.benchmarkCatalog.selectedGroupKey ? " selected" : ""}>${escapeHtml(entry.family)} (${entry.count})</option>`)
       .join("");
     benchmarkCatalogSelect.disabled = false;
   } else {
@@ -471,7 +500,16 @@ function renderBenchmarkCatalogOptions() {
   }
 
   const fragments = ['<option value="">Select a published variant…</option>'];
-  const rawGroupItems = selectedGroupKey ? groups.get(selectedGroupKey)?.items || [] : [];
+  if (group && !group.items) {
+    benchmarkInstanceSelect.disabled = true;
+    benchmarkInstanceSelect.innerHTML = '<option value="">Loading published instances…</option>';
+    for (const select of [benchmarkMetricFilter, benchmarkCityFilter, benchmarkSizeFilter, benchmarkMethodFilter, benchmarkScenarioFilter, benchmarkGeometryFilter]) {
+      select.disabled = true;
+    }
+    void loadWorkbenchCatalogGroup(group);
+    return;
+  }
+  const rawGroupItems = group?.items || [];
   filters.metric = populateBenchmarkFilter(benchmarkMetricFilter, rawGroupItems.map((item) => benchmarkCatalogLocator(item).metric_variant), "All metrics", filters.metric);
   const metricItems = rawGroupItems.filter((item) => !filters.metric || benchmarkCatalogLocator(item).metric_variant === filters.metric);
   filters.city = populateBenchmarkFilter(benchmarkCityFilter, metricItems.map((item) => benchmarkCatalogLocator(item).place_slug), "All cities", filters.city);
@@ -538,7 +576,7 @@ function renderBenchmarkCatalogOptions() {
 async function loadBenchmarkCatalogOptions() {
   if (state.benchmarkCatalog.loaded) {
     renderBenchmarkCatalogOptions();
-    return state.benchmarkCatalog.options;
+    return state.benchmarkCatalog.groups;
   }
   if (state.benchmarkCatalog.loadingPromise) {
     return state.benchmarkCatalog.loadingPromise;
@@ -550,21 +588,11 @@ async function loadBenchmarkCatalogOptions() {
   benchmarkInstanceSelect.innerHTML = '<option value="">Loading published instances…</option>';
 
   state.benchmarkCatalog.loadingPromise = (async () => {
-    const benchmarksPayload = await fetchWorkbenchPayloadForRoute("/benchmarks/");
-    const itemsByRoute = new Map();
-    (Array.isArray(benchmarksPayload?.items) ? benchmarksPayload.items : []).forEach((item) => {
-      if (!item?.route_path || itemsByRoute.has(item.route_path)) {
-        return;
-      }
-      itemsByRoute.set(item.route_path, item);
-    });
-
-    state.benchmarkCatalog.options = Array.from(itemsByRoute.values()).filter(
-      (item) => Boolean(item?.locator?.place_slug || item?.place_slug),
-    );
+    const payload = await fetchBenchmarkCatalogManifest();
+    state.benchmarkCatalog.groups = buildBenchmarkCatalogGroups(payload);
     state.benchmarkCatalog.loaded = true;
     renderBenchmarkCatalogOptions();
-    return state.benchmarkCatalog.options;
+    return state.benchmarkCatalog.groups;
   })();
 
   try {
@@ -575,7 +603,6 @@ async function loadBenchmarkCatalogOptions() {
     benchmarkCatalogSelect.disabled = true;
     benchmarkInstanceSelect.innerHTML = '<option value="">Unable to load published instances</option>';
     benchmarkInstanceSelect.disabled = true;
-    throw error;
   } finally {
     state.benchmarkCatalog.loadingPromise = null;
   }
@@ -1311,6 +1338,7 @@ function setActiveTab(tab, options = {}) {
     syncWorkbenchUrl();
   }
   if (visualize) {
+    if (state.sourceKind === "benchmark") void loadBenchmarkCatalogOptions();
     renderVisualState();
   }
   refreshMapSize();
@@ -1632,13 +1660,10 @@ benchmarkSearchFilter.addEventListener("change", (event) => {
 
 benchmarkCatalogSelect.addEventListener("change", async (event) => {
   state.benchmarkCatalog.selectedGroupKey = event.target.value || null;
-  const selectedGroupItem = state.benchmarkCatalog.options.find((item) => benchmarkCatalogGroupKey(item) === state.benchmarkCatalog.selectedGroupKey);
-  state.benchmarkCatalog.filters.family = benchmarkCatalogLocator(selectedGroupItem).benchmark_name || "";
+  const group = state.benchmarkCatalog.groups.get(state.benchmarkCatalog.selectedGroupKey);
+  state.benchmarkCatalog.filters.family = group?.family || "";
   ["metric", "city", "size", "method", "scenario", "geometry"].forEach((key) => { state.benchmarkCatalog.filters[key] = ""; });
-  const activeItem = state.instanceRoute
-    ? state.benchmarkCatalog.options.find((item) => normalizeRoute(item.route_path) === normalizeRoute(state.instanceRoute))
-    : null;
-  if (!activeItem || benchmarkCatalogGroupKey(activeItem) !== state.benchmarkCatalog.selectedGroupKey) {
+  if (!state.instanceRoute || benchmarkCatalogGroupKey(state.benchmark.payload) !== state.benchmarkCatalog.selectedGroupKey) {
     await loadBenchmarkInstance(null, null, { quiet: true, fitMap: false });
   } else {
     renderBenchmarkCatalogOptions();
@@ -1755,9 +1780,6 @@ setupThemeToggle();
 browseBenchmarksBtn.href = routeHref("/benchmarks/");
 updateVisualModePanels();
 updateBenchmarkContextUi();
-const benchmarkCatalogPromise = loadBenchmarkCatalogOptions();
-await loadBenchmarkInstance(state.instanceRoute, state.objectiveFunction, { quiet: true });
-await benchmarkCatalogPromise;
 await setSourceKind(state.sourceKind, { sync: false });
 setActiveTab(state.activeTab, { sync: false });
 syncWorkbenchUrl();

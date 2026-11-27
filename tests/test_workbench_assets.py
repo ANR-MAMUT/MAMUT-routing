@@ -112,3 +112,51 @@ def test_the_webgl2_notice_does_not_count_as_a_running_animation() -> None:
     assert "const reopen = animationPlaying() &&" in source
     for stale in ("dim: state.animation ?", 'state.animation ? "Stop animation"', "reopen = Boolean(state.animation)"):
         assert stale not in source
+
+
+@node
+def test_catalog_groups_preserve_legacy_counts_and_load_only_requested_families() -> None:
+    source = WORKBENCH_JS.read_text(encoding="utf-8")
+    loader = re.search(r"^async function loadWorkbenchCatalogGroup\(.*?^\}", source, re.S | re.M)
+    assert loader
+    helpers = "\n".join(_extract_function(name) for name in (
+        "benchmarkCatalogLocator", "benchmarkCatalogGroupKey", "buildBenchmarkCatalogGroups",
+    ))
+    script = helpers + "\n" + loader.group(0) + """
+const assert = require("node:assert/strict");
+const row = (family, city) => ({
+  locator: { problem_type: "CVRP", benchmark_name: family, place_slug: city },
+  route_path: "/" + family + "/" + city,
+});
+const a = row("A", "Paris"), b = row("B", "Lyon"), noMap = row("C", null);
+const legacy = buildBenchmarkCatalogGroups({ items: [a, a, b, noMap] });
+const groups = buildBenchmarkCatalogGroups({ shards: ["A", "B", "C"].map(family => ({
+  problem: "CVRP", family, workbench_count: family === "C" ? 0 : 1,
+})) });
+for (const map of [groups, legacy]) {
+  assert.deepEqual([...map].map(([key, g]) => [key, g.count]), [["CVRP::A", 1], ["CVRP::B", 1]]);
+}
+const state = { benchmarkCatalog: { groups, selectedGroupKey: "CVRP::A" } };
+const requests = new Map();
+const rendered = [];
+function fetchBenchmarkCatalogShard(shard) {
+  assert(!requests.has(shard.family));
+  return new Promise(resolve => requests.set(shard.family, resolve));
+}
+function renderBenchmarkCatalogOptions() { rendered.push(state.benchmarkCatalog.selectedGroupKey); }
+function syncWorkbenchUrl() {}
+(async () => {
+  const first = loadWorkbenchCatalogGroup(groups.get("CVRP::A"));
+  assert.deepEqual([...requests.keys()], ["A"]);
+  await loadWorkbenchCatalogGroup(groups.get("CVRP::A"));
+  state.benchmarkCatalog.selectedGroupKey = "CVRP::B";
+  const second = loadWorkbenchCatalogGroup(groups.get("CVRP::B"));
+  requests.get("B")([b]);
+  await second;
+  requests.get("A")([a, noMap]);
+  await first;
+  assert.deepEqual(rendered, ["CVRP::B"]);
+  assert.deepEqual(groups.get("CVRP::A").items, [a]);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True, timeout=30)
